@@ -52,8 +52,22 @@ env:
   NODE_VERSION: "22"
 
 jobs:
+  validate-version:
+    name: Validate version consistency and release channel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Check version and release tag match
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          node scripts/check-release-version.mjs --tag "$TAG"
+
   build-macos:
     name: Build macOS
+    needs: [validate-version]
     # A tag push builds every platform. A manual dispatch builds only the
     # platforms listed in build_targets (macos-only is the common case: a
     # smoke-test release before spending EAS minutes on Android).
@@ -118,6 +132,7 @@ jobs:
 
   build-windows:
     name: Build Windows
+    needs: [validate-version]
     if: >-
       github.event_name == 'push' ||
       contains(format(',{0},', inputs.build_targets), ',windows,')
@@ -157,6 +172,7 @@ jobs:
 
   build-linux:
     name: Build Linux
+    needs: [validate-version]
     if: >-
       github.event_name == 'push' ||
       contains(format(',{0},', inputs.build_targets), ',linux,')
@@ -192,6 +208,7 @@ jobs:
 
   build-android:
     name: Build Android (Local, ${{ matrix.abi }})
+    needs: [validate-version]
     # Tag push builds every platform; a manual dispatch builds Android only
     # when build_targets asks for it. Within Android, requested ABIs are
     # filtered at the STEP level (ABI_SELECTED below). A leg whose ABI was
@@ -280,6 +297,7 @@ jobs:
 
   build-worker:
     name: Build Cloudflare Worker
+    needs: [validate-version]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -357,9 +375,11 @@ jobs:
           if [[ "$TAG" == *-* ]]; then
             PRERELEASE="--prerelease"
             KIND="Prerelease"
+            LATEST_FLAG="--latest=false"
           else
             PRERELEASE=""
             KIND="Release"
+            LATEST_FLAG="--latest"
           fi
           FILES=$(find bundles -type f | sort)
           echo "Found bundles to publish:"
@@ -369,15 +389,16 @@ jobs:
             # Release already exists (e.g. this tag was re-run after a
             # pipeline fix) — just (re)upload the assets.
             gh release upload "$TAG" $FILES --clobber
-            # `gh release edit` requires at least one flag. Stable tags set
-            # PRERELEASE="" so skip edit in that case.
             if [ -n "$PRERELEASE" ]; then
-              gh release edit "$TAG" $PRERELEASE
+              gh release edit "$TAG" $PRERELEASE $LATEST_FLAG
+            else
+              gh release edit "$TAG" $LATEST_FLAG
             fi
           else
             gh release create "$TAG" \
               --target "${{ github.sha }}" \
               $PRERELEASE \
+              $LATEST_FLAG \
               --title "Nextdo $TAG" \
               --notes "Nextdo $TAG — $KIND. Assets: $(cd bundles && find . -type f | sed 's#^\./##' | sort | paste -sd', ' -)." \
               $FILES

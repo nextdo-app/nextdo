@@ -12,6 +12,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "verify:web": "node scripts/verify-web.mjs",
+    "check:version": "node scripts/check-release-version.mjs",
     "build:web": "pnpm --filter @nextdo/mobile build:web"
   },
   "devDependencies": {
