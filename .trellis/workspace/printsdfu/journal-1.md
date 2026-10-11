@@ -992,3 +992,30 @@ Released v0.1.2 with all 4 Android ABIs after fixing three consecutive blockers 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 32: 澄清向导场景样式统一与发布版本规范
+<!-- trellis-session: v=2 fp=8af537e088a0797e -->
+
+**Date**: 2026-10-11
+**Task**: 澄清向导场景样式统一与发布版本规范
+**Branch**: `feature/stitch-scene-redesign`
+
+### Summary
+
+统一澄清向导中的场景选择样式为Now屏同款高对比胶囊样式，移除表单内内联新增改为跳转场景管理页并通过useFocusEffect实现返回即时刷新；设置页补充场景管理入口及版本发布渠道（正式版/测试版）标识；更新CI发布校验脚本确保版本号一致性及预发布标识，并同步版本号至0.1.5-beta.3。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `beeb67a` | ci(release): validate version match and enforce latest flag based on prerelease channel |
+| `c91b920` | feat(update): add release channel detection, badge display, and scene management entry in settings |
+| `bac6d7c` | feat(clarify): align scene selector style with Now tab and route to contexts management |
+| `e7f7495` | chore(release): bump version to 0.1.5-beta.3 |
+| `70127aa` | chore(desktop): sync version to 0.1.5-beta.3 across package, cargo, and tauri config |
+| `23723b2` | chore(desktop): update Cargo.lock to 0.1.5-beta.3 |
+
+### Status
+
+[OK] **Completed**

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 31
+- **Total Sessions**: 32
 - **Last Active**: 2026-10-11
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~994 | Active |
+| `journal-1.md` | ~1021 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 32 | 2026-10-11 | 澄清向导场景样式统一与发布版本规范 | `beeb67a`, `c91b920`, `bac6d7c`, `e7f7495`, `70127aa`, `23723b2` | `feature/stitch-scene-redesign` |
 | 31 | 2026-10-11 | 还原全平台经典图标与优化 .verify 规范结构 | `fd42de8`, `5395226` | `feature/stitch-scene-redesign` |
 | 30 | 2026-10-11 | Android 架构精简至 arm64-v8a、更新 README 与重新发布 v0.1.4 | `f79afa9`, `336b62e` | `main` |
 | 29 | 2026-10-09 | 优化推荐理由权重贡献、可信度过滤与 Now 页面视觉层级 | `13b348f`, `001e6fb`, `c71c038`, `ee47a4e` | `main` |
