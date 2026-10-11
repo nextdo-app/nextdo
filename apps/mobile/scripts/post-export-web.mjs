@@ -113,9 +113,14 @@ function pruneUnusedWasm(dir) {
   for (const file of walk(dir)) {
     const base = path.basename(file);
     if (!isWaSqlite(base) || shouldKeep(base)) continue;
-    bytes += fs.statSync(file).size;
-    fs.rmSync(file);
-    count += 1;
+    try {
+      if (!fs.existsSync(file)) continue;
+      bytes += fs.statSync(file).size;
+      fs.rmSync(file, { force: true });
+      count += 1;
+    } catch {
+      // Ignore if file was already removed
+    }
   }
   if (count > 0) {
     console.log(

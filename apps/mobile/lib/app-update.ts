@@ -46,6 +46,9 @@ const RELEASE_LATEST = `https://github.com/${UPDATE_REPO}/releases/latest`;
 /** release 页面（原始地址，仅作拼接素材，不直接打开）。 */
 const RELEASE_PAGE = `https://github.com/${UPDATE_REPO}/releases/latest`;
 
+/** releases.atom feed 原始地址（包含包含预发布版在内的所有 release 记录）。 */
+const RELEASES_ATOM = `https://github.com/${UPDATE_REPO}/releases.atom`;
+
 /** release 资源下载前缀（原始地址，仅作拼接素材）。 */
 const RELEASE_DOWNLOAD = `https://github.com/${UPDATE_REPO}/releases/download`;
 
@@ -62,8 +65,16 @@ export function latestReleaseUrl(): string {
   return viaProxy(RELEASE_LATEST);
 }
 
-/** 实际打开的 release 页面地址。 */
-export function releasePageUrl(): string {
+/** 实际请求 releases.atom feed 的地址。 */
+export function releasesAtomUrl(): string {
+  return viaProxy(RELEASES_ATOM);
+}
+
+/** 实际打开的 release 页面地址（可选指定 tag，未指定时打开 latest）。 */
+export function releasePageUrl(tag?: string): string {
+  if (tag !== undefined && tag.trim() !== '') {
+    return viaProxy(`https://github.com/${UPDATE_REPO}/releases/tag/${tag.trim()}`);
+  }
   return viaProxy(RELEASE_PAGE);
 }
 
@@ -193,6 +204,79 @@ export function parseLatestTag(finalUrl: string): string | null {
   if (match === null || match[1] === undefined) return null;
   const tag = decodeURIComponent(match[1]);
   return tag.replace(/^v/i, '') === '' ? null : tag;
+}
+
+/**
+ * 从 GitHub releases.atom feed 的 XML 文本中提取 release tag 列表（按 feed 顺序）。
+ *
+ * Atom Feed 每个 entry 均有形如 `/releases/tag/<tag>` 的 link 或 id：
+ * `<link rel="alternate" type="text/html" href="https://github.com/.../releases/tag/v0.1.5-beta.3"/>`
+ * 纯正则提取，不引入第三方 XML 解析库以保持体积轻量。
+ */
+export function parseAtomFeedTags(atomXml: string): string[] {
+  const matches = atomXml.matchAll(/\/releases\/tag\/([^"/?#\s]+)/g);
+  const tags: string[] = [];
+  const seen = new Set<string>();
+  for (const match of matches) {
+    const rawTag = match[1];
+    if (rawTag !== undefined && rawTag !== '') {
+      const decoded = decodeURIComponent(rawTag);
+      if (!seen.has(decoded)) {
+        seen.add(decoded);
+        tags.push(decoded);
+      }
+    }
+  }
+  return tags;
+}
+
+/**
+ * 根据发布渠道从 tag 候选列表中挑选最新版本。
+ *
+ * 渠道过滤规则：
+ * - stable: 仅接受正式版（如 v0.1.4）。
+ * - beta: 接受测试版（beta）与正式版（stable）。
+ * - alpha: 接受内测版（alpha）、测试版（beta）与正式版（stable）。
+ * - rc: 接受候选版（rc）与正式版（stable）。
+ * - dev: 接受所有渠道版本。
+ *
+ * 在符合条件的候选 tag 中，使用 `compareVersions` 挑选版本号最高的一个返回。
+ */
+export function pickLatestReleaseForChannel(
+  tags: string[],
+  channel: ReleaseChannel,
+): LatestRelease | null {
+  const isCandidate = (candidateChannel: ReleaseChannel): boolean => {
+    switch (channel) {
+      case 'stable':
+        return candidateChannel === 'stable';
+      case 'beta':
+        return candidateChannel === 'beta' || candidateChannel === 'stable';
+      case 'alpha':
+        return candidateChannel === 'alpha' || candidateChannel === 'beta' || candidateChannel === 'stable';
+      case 'rc':
+        return candidateChannel === 'rc' || candidateChannel === 'stable';
+      case 'dev':
+        return true;
+    }
+  };
+
+  let bestTag: string | null = null;
+  let bestVersion: string | null = null;
+
+  for (const tag of tags) {
+    const version = tag.replace(/^v/i, '');
+    const candChannel = getReleaseChannel(version);
+    if (!isCandidate(candChannel)) continue;
+
+    if (bestVersion === null || compareVersions(version, bestVersion) > 0) {
+      bestTag = tag;
+      bestVersion = version;
+    }
+  }
+
+  if (bestTag === null || bestVersion === null) return null;
+  return { tag: bestTag, version: bestVersion };
 }
 
 /**
@@ -369,12 +453,9 @@ export type LatestReleaseResult =
   | { ok: false; reason: UpdateFailureReason };
 
 /**
- * 请求「最新版本」。地址带加速代理前缀，超时 10 秒。
- *
- * 失败分三类：`network`（连不上/超时/被 CORS 拦）、`http`（代理返回非 2xx）、
- * `payload`（最终地址里没有 tag —— GitHub 改了跳转形状时会走这里）。
+ * 从 GitHub `/releases/latest` 请求最新的正式版本。
  */
-export async function fetchLatestRelease(): Promise<LatestReleaseResult> {
+async function fetchReleaseFromLatest(): Promise<LatestReleaseResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => {
     controller.abort();
@@ -393,6 +474,65 @@ export async function fetchLatestRelease(): Promise<LatestReleaseResult> {
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * 从 GitHub `releases.atom` Feed 提取指定渠道的最新版本。
+ */
+async function fetchReleaseFromAtom(channel: ReleaseChannel): Promise<LatestReleaseResult> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    controller.abort();
+  }, REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(releasesAtomUrl(), {
+      signal: controller.signal,
+    });
+    if (!response.ok) return { ok: false, reason: 'http' };
+    const text = await response.text();
+    const tags = parseAtomFeedTags(text);
+    const release = pickLatestReleaseForChannel(tags, channel);
+    if (release === null) return { ok: false, reason: 'payload' };
+    return { ok: true, release };
+  } catch {
+    return { ok: false, reason: 'network' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * 请求指定发布渠道的「最新版本」。地址带加速代理前缀，超时 10 秒。
+ *
+ * 策略：
+ * 1. 若为 stable（正式版），直接查 releases/latest（快速 302 跟随，且 GitHub 保证只返回最新正式版）。
+ * 2. 若为非正式版渠道（如 beta、alpha 等）：GitHub 的 releases/latest 接口只返回正式版，
+ *    会忽略所有预发布版本（如 beta.4）。因此优先从 releases.atom feed 拿全量 release 列表挑选对应渠道版本；
+ *    若 atom 请求或解析异常，平滑降级回退到 releases/latest 兜底。
+ *
+ * 失败分三类：`network`（连不上/超时/被 CORS 拦）、`http`（代理返回非 2xx）、
+ * `payload`（没有找到符合渠道的 release tag）。
+ */
+export async function fetchLatestRelease(
+  channel: ReleaseChannel = 'stable',
+): Promise<LatestReleaseResult> {
+  if (channel === 'stable') {
+    return fetchReleaseFromLatest();
+  }
+
+  const atomResult = await fetchReleaseFromAtom(channel);
+  if (atomResult.ok) {
+    return atomResult;
+  }
+
+  // 降级兜底：如果 atom feed 访问失败或未匹配到，尝试 releases/latest
+  const latestResult = await fetchReleaseFromLatest();
+  if (latestResult.ok) {
+    return latestResult;
+  }
+
+  // 均失败时返回 atom 的错误原因
+  return atomResult;
 }
 
 /**

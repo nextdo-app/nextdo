@@ -112,7 +112,7 @@ export function useAppUpdate(): UseAppUpdateResult {
     if (checking) return;
     setChecking(true);
     void Promise.all([
-      fetchLatestRelease(),
+      fetchLatestRelease(channel),
       macArch !== null ? Promise.resolve(macArch) : platform === 'macos' ? detectMacArch() : Promise.resolve(null),
     ]).then(([result, resolvedArch]) => {
       if (!mountedRef.current) return;
@@ -136,7 +136,7 @@ export function useAppUpdate(): UseAppUpdateResult {
           : { kind: 'up-to-date', latestVersion: release.version },
       );
     });
-  }, [checking, currentVersion, macArch, platform]);
+  }, [channel, checking, currentVersion, macArch, platform]);
 
   /** 开始桌面端应用内下载，并启动进度轮询。 */
   const startDownload = useCallback(
@@ -197,7 +197,10 @@ export function useAppUpdate(): UseAppUpdateResult {
     checking,
     outcome,
     check,
-    pageUrl: releasePageUrl(),
+    pageUrl:
+      outcome && outcome.kind === 'available' && channel !== 'stable'
+        ? releasePageUrl(`v${outcome.latestVersion}`)
+        : releasePageUrl(),
     isDesktop,
     download,
     startDownload,

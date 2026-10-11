@@ -14,16 +14,20 @@ import {
   compareVersions,
   currentAppChannel,
   detectMacArch,
+  fetchLatestRelease,
   getChannelLabel,
   getReleaseChannel,
   isPrerelease,
   isTauriDesktop,
   latestReleaseUrl,
   openExternalUrl,
+  parseAtomFeedTags,
   parseLatestTag,
   pickDownloads,
+  pickLatestReleaseForChannel,
   pollDesktopDownloadProgress,
   releasePageUrl,
+  releasesAtomUrl,
   startDesktopDownload,
   viaProxy,
   type LatestRelease,
@@ -43,6 +47,8 @@ describe('proxy prefixing', () => {
     expect(viaProxy('https://github.com/a/b')).toBe(`${PREFIX}https://github.com/a/b`);
     expect(latestReleaseUrl()).toBe(`${PREFIX}https://github.com/nextdo-app/nextdo/releases/latest`);
     expect(releasePageUrl()).toBe(`${PREFIX}https://github.com/nextdo-app/nextdo/releases/latest`);
+    expect(releasePageUrl('v0.1.5-beta.3')).toBe(`${PREFIX}https://github.com/nextdo-app/nextdo/releases/tag/v0.1.5-beta.3`);
+    expect(releasesAtomUrl()).toBe(`${PREFIX}https://github.com/nextdo-app/nextdo/releases.atom`);
   });
 
   it('the version query does NOT use the GitHub API (a shared proxy IP gets rate-limited)', () => {
@@ -137,6 +143,81 @@ describe('parseLatestTag', () => {
     ['a bare v tag', `${PREFIX}https://github.com/a/b/releases/tag/v`],
   ])('returns null for %s rather than throwing', (_label, url) => {
     expect(parseLatestTag(url)).toBeNull();
+  });
+});
+
+describe('parseAtomFeedTags', () => {
+  it('extracts unique release tags from atom xml feed in order', () => {
+    const sampleXml = `
+      <?xml version="1.0" encoding="UTF-8"?>
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <entry>
+          <id>tag:github.com,2008:Repository/123/v0.1.5-beta.3</id>
+          <link rel="alternate" type="text/html" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.5-beta.3"/>
+          <title>Nextdo v0.1.5-beta.3</title>
+        </entry>
+        <entry>
+          <id>tag:github.com,2008:Repository/123/v0.1.5-beta.2</id>
+          <link rel="alternate" type="text/html" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.5-beta.2"/>
+          <title>Nextdo v0.1.5-beta.2</title>
+        </entry>
+        <entry>
+          <id>tag:github.com,2008:Repository/123/v0.1.4</id>
+          <link rel="alternate" type="text/html" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4"/>
+          <title>Nextdo v0.1.4</title>
+        </entry>
+      </feed>
+    `;
+    expect(parseAtomFeedTags(sampleXml)).toEqual([
+      'v0.1.5-beta.3',
+      'v0.1.5-beta.2',
+      'v0.1.4',
+    ]);
+  });
+
+  it('handles empty feed or feed with no tags', () => {
+    expect(parseAtomFeedTags('<feed></feed>')).toEqual([]);
+    expect(parseAtomFeedTags('')).toEqual([]);
+  });
+
+  it('decodes url-encoded characters and deduplicates tags', () => {
+    const xml = `
+      <link href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.0%2Bbuild.1"/>
+      <link href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.0%2Bbuild.1"/>
+    `;
+    expect(parseAtomFeedTags(xml)).toEqual(['v0.1.0+build.1']);
+  });
+});
+
+describe('pickLatestReleaseForChannel', () => {
+  const tags = ['v0.1.5-beta.3', 'v0.1.5-beta.2', 'v0.1.4', 'v0.1.3'];
+
+  it('picks highest release matching beta channel (beta or stable)', () => {
+    expect(pickLatestReleaseForChannel(tags, 'beta')).toEqual({
+      tag: 'v0.1.5-beta.3',
+      version: '0.1.5-beta.3',
+    });
+  });
+
+  it('picks highest release matching stable channel (stable only)', () => {
+    expect(pickLatestReleaseForChannel(tags, 'stable')).toEqual({
+      tag: 'v0.1.4',
+      version: '0.1.4',
+    });
+  });
+
+  it('picks newer stable release when stable is higher than beta', () => {
+    const mixedTags = ['v0.1.5-beta.1', 'v0.1.6'];
+    expect(pickLatestReleaseForChannel(mixedTags, 'beta')).toEqual({
+      tag: 'v0.1.6',
+      version: '0.1.6',
+    });
+  });
+
+  it('returns null when no candidate matches the channel', () => {
+    const betaOnly = ['v0.1.5-beta.1', 'v0.1.5-beta.2'];
+    expect(pickLatestReleaseForChannel(betaOnly, 'stable')).toBeNull();
+    expect(pickLatestReleaseForChannel([], 'beta')).toBeNull();
   });
 });
 
@@ -387,5 +468,88 @@ describe('pollDesktopDownloadProgress', () => {
     setWindow(undefined);
     const result = await pollDesktopDownloadProgress();
     expect(result.state).toBe('idle');
+  });
+});
+
+describe('fetchLatestRelease', () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('queries /releases/latest directly for stable channel', async () => {
+    const mockFetch = jest.fn().mockResolvedValue({
+      ok: true,
+      url: `${PREFIX}https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4`,
+    });
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
+
+    const result = await fetchLatestRelease('stable');
+    expect(result).toEqual({
+      ok: true,
+      release: { tag: 'v0.1.4', version: '0.1.4' },
+    });
+    expect(mockFetch).toHaveBeenCalledWith(latestReleaseUrl(), expect.any(Object));
+  });
+
+  it('queries releases.atom feed for beta channel and detects beta.4 when available', async () => {
+    const atomXml = `
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <entry>
+          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.5-beta.4"/>
+        </entry>
+        <entry>
+          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.5-beta.3"/>
+        </entry>
+        <entry>
+          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4"/>
+        </entry>
+      </feed>
+    `;
+    const mockFetch = jest.fn().mockResolvedValue({
+      ok: true,
+      text: async () => atomXml,
+    });
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
+
+    const result = await fetchLatestRelease('beta');
+    expect(result).toEqual({
+      ok: true,
+      release: { tag: 'v0.1.5-beta.4', version: '0.1.5-beta.4' },
+    });
+    expect(mockFetch).toHaveBeenCalledWith(releasesAtomUrl(), expect.any(Object));
+  });
+
+  it('falls back to /releases/latest if releases.atom fails for beta channel', async () => {
+    const mockFetch = jest.fn().mockImplementation(async (url: string) => {
+      if (url === releasesAtomUrl()) {
+        return { ok: false, status: 500 };
+      }
+      return {
+        ok: true,
+        url: `${PREFIX}https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4`,
+      };
+    });
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
+
+    const result = await fetchLatestRelease('beta');
+    expect(result).toEqual({
+      ok: true,
+      release: { tag: 'v0.1.4', version: '0.1.4' },
+    });
+    expect(mockFetch).toHaveBeenCalledWith(releasesAtomUrl(), expect.any(Object));
+    expect(mockFetch).toHaveBeenCalledWith(latestReleaseUrl(), expect.any(Object));
+  });
+
+  it('returns ok: false with error reason when network fails', async () => {
+    const mockFetch = jest.fn().mockRejectedValue(new Error('Network offline'));
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
+
+    const result = await fetchLatestRelease('beta');
+    expect(result).toEqual({
+      ok: false,
+      reason: 'network',
+    });
   });
 });
