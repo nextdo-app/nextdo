@@ -969,3 +969,26 @@ Released v0.1.2 with all 4 Android ABIs after fixing three consecutive blockers 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 31: 还原全平台经典图标与优化 .verify 规范结构
+<!-- trellis-session: v=2 fp=ac71cc034c8fe9bf -->
+
+**Date**: 2026-10-11
+**Task**: 还原全平台经典图标与优化 .verify 规范结构
+**Branch**: `feature/stitch-scene-redesign`
+
+### Summary
+
+全平台图标还原为原版深墨色清单条样式；更新交付前验证 Spec，要求 .verify 截图按功能/session 独立子文件夹归档，并整理历史验证文件
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fd42de8` | fix(icons): revert app icons to original task-list motif across all platforms |
+| `5395226` | docs(spec): require feature subdirectories under .verify for browser verification |
+
+### Status
+
+[OK] **Completed**
