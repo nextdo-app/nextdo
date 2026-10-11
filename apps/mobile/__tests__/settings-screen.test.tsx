@@ -244,11 +244,11 @@ jest.mock('expo-notifications', () => mockExpoNotifications);
 
 import { mockExpoNotifications } from './mocks/expo-notifications';
 
-import { render } from '@testing-library/react-native';
+import { render, waitFor } from '@testing-library/react-native';
 import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-library';
 import { useCloudSync } from '@/hooks/use-cloud-sync';
 import { Linking, Platform } from 'react-native';
-import { UPDATE_PROXY_PREFIX } from '@/lib/app-update';
+import { UPDATE_PROXY_PREFIX, UPDATE_REPO } from '@/lib/app-update';
 
 /** A tiny harness that drives the REAL `useCloudSync` hook directly. The
  *  button's canSubmit (two addresses non-empty) blocks empty-address
@@ -351,8 +351,8 @@ afterEach(() => {
  * ------------------------------------------------------------------ */
 
 const PROXY = UPDATE_PROXY_PREFIX;
-const GITHUB_RELEASES = 'https://github.com/printsdf/nextdo/releases';
-const GITHUB_DOWNLOAD = 'https://github.com/printsdf/nextdo/releases/download';
+const GITHUB_RELEASES = `https://github.com/${UPDATE_REPO}/releases`;
+const GITHUB_DOWNLOAD = `https://github.com/${UPDATE_REPO}/releases/download`;
 
 /**
  * What the real fetch resolves with: the version query hits
@@ -437,6 +437,27 @@ describe('root (no gate)', () => {
 });
 
 /* ------------------------------------------------------------------ *
+ * 设置 — 场景管理 block
+ * ------------------------------------------------------------------ */
+describe('settings scenes block', () => {
+  it('renders 场景管理 card and navigates to /contexts when clicking 管理 →', async () => {
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+
+    expect(screen.getByText('场景管理')).toBeTruthy();
+    const manageButton = screen.getByRole('button', { name: '管理 →' });
+    expect(manageButton).toBeTruthy();
+    fireEvent.press(manageButton);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('场景是行动的运行环境 —— Now 屏按当前场景筛选待办。不选即随处可执行。'),
+      ).toBeTruthy(),
+    );
+  });
+});
+
+/* ------------------------------------------------------------------ *
  * 设置 — 检查更新 block: version query + installer links both go
  * through the accelerator proxy prefix.
  * ------------------------------------------------------------------ */
@@ -447,6 +468,7 @@ describe('settings update-check block', () => {
 
     expect(screen.getByText('应用更新')).toBeTruthy();
     expect(screen.getByText(/当前版本 0\.1\.3/)).toBeTruthy();
+    expect(screen.getByText('正式版')).toBeTruthy();
     expect(screen.getByRole('button', { name: '检查更新' })).toBeTruthy();
     // No silent polling — the check is the user's action.
     expect(mockUpdateFetch).not.toHaveBeenCalled();
@@ -492,7 +514,7 @@ describe('settings update-check block', () => {
     fireEvent.press(screen.getByRole('link', { name: '查看全部安装包' }));
     await flush();
 
-    expect(openedUrls).toEqual([`${PROXY}https://github.com/printsdf/nextdo/releases/latest`]);
+    expect(openedUrls).toEqual([`${PROXY}https://github.com/nextdo-app/nextdo/releases/latest`]);
   });
 
   it('newer version on macOS desktop → ONLY the installer matching the detected chip, and pressing it triggers in-app download', async () => {
@@ -555,7 +577,7 @@ describe('settings update-check block', () => {
     fireEvent.press(screen.getByRole('link', { name: '查看全部安装包' }));
     await flush();
 
-    expect(openedUrls).toEqual([`${PROXY}https://github.com/printsdf/nextdo/releases/latest`]);
+    expect(openedUrls).toEqual([`${PROXY}https://github.com/nextdo-app/nextdo/releases/latest`]);
   });
 
   it.each([

@@ -12,7 +12,11 @@ import { Linking } from 'react-native';
 import {
   UPDATE_PROXY_PREFIX,
   compareVersions,
+  currentAppChannel,
   detectMacArch,
+  getChannelLabel,
+  getReleaseChannel,
+  isPrerelease,
   isTauriDesktop,
   latestReleaseUrl,
   openExternalUrl,
@@ -26,7 +30,7 @@ import {
 } from './app-update';
 
 const PREFIX = UPDATE_PROXY_PREFIX;
-const DOWNLOAD = 'https://github.com/printsdf/nextdo/releases/download';
+const DOWNLOAD = 'https://github.com/nextdo-app/nextdo/releases/download';
 const TAG = 'v0.1.4';
 
 function release(tag = TAG): LatestRelease {
@@ -37,8 +41,8 @@ describe('proxy prefixing', () => {
   it('every URL is served through the accelerator, never straight from GitHub', () => {
     expect(PREFIX).toBe('https://proxyd.picpi.top/');
     expect(viaProxy('https://github.com/a/b')).toBe(`${PREFIX}https://github.com/a/b`);
-    expect(latestReleaseUrl()).toBe(`${PREFIX}https://github.com/printsdf/nextdo/releases/latest`);
-    expect(releasePageUrl()).toBe(`${PREFIX}https://github.com/printsdf/nextdo/releases/latest`);
+    expect(latestReleaseUrl()).toBe(`${PREFIX}https://github.com/nextdo-app/nextdo/releases/latest`);
+    expect(releasePageUrl()).toBe(`${PREFIX}https://github.com/nextdo-app/nextdo/releases/latest`);
   });
 
   it('the version query does NOT use the GitHub API (a shared proxy IP gets rate-limited)', () => {
@@ -70,9 +74,47 @@ describe('compareVersions', () => {
   });
 });
 
+describe('release channel identification (Issue #14)', () => {
+  it.each([
+    ['0.1.4', 'stable'],
+    ['v1.0.0', 'stable'],
+    ['0.1.5-beta.1', 'beta'],
+    ['v0.1.5-beta.2', 'beta'],
+    ['0.2.0-alpha.1', 'alpha'],
+    ['0.2.0-rc.1', 'rc'],
+    ['0.2.0-preview.1', 'dev'],
+  ])('getReleaseChannel(%s) returns %s', (version, expectedChannel) => {
+    expect(getReleaseChannel(version)).toBe(expectedChannel);
+  });
+
+  it.each([
+    ['0.1.4', false],
+    ['v1.0.0', false],
+    ['0.1.5-beta.1', true],
+    ['0.2.0-alpha.1', true],
+    ['0.2.0-rc.1', true],
+  ])('isPrerelease(%s) returns %s', (version, expected) => {
+    expect(isPrerelease(version)).toBe(expected);
+  });
+
+  it('getChannelLabel maps channels to user-friendly Chinese labels', () => {
+    expect(getChannelLabel('stable')).toBe('正式版');
+    expect(getChannelLabel('beta')).toBe('测试版');
+    expect(getChannelLabel('alpha')).toBe('内测版');
+    expect(getChannelLabel('rc')).toBe('候选版');
+    expect(getChannelLabel('dev')).toBe('开发版');
+  });
+
+  it('currentAppChannel reads channel from currentAppVersion', () => {
+    // In test environment, expoConfig.version is defined
+    const channel = currentAppChannel();
+    expect(['stable', 'beta', 'alpha', 'rc', 'dev']).toContain(channel);
+  });
+});
+
 describe('parseLatestTag', () => {
   it('reads the tag out of the post-redirect URL, proxy prefix and all', () => {
-    expect(parseLatestTag(`${PREFIX}https://github.com/printsdf/nextdo/releases/tag/v0.1.3`)).toBe(
+    expect(parseLatestTag(`${PREFIX}https://github.com/nextdo-app/nextdo/releases/tag/v0.1.3`)).toBe(
       'v0.1.3',
     );
   });
@@ -90,7 +132,7 @@ describe('parseLatestTag', () => {
   });
 
   it.each([
-    ['the un-redirected URL', `${PREFIX}https://github.com/printsdf/nextdo/releases/latest`],
+    ['the un-redirected URL', `${PREFIX}https://github.com/nextdo-app/nextdo/releases/latest`],
     ['an unrelated URL', 'https://example.com/'],
     ['a bare v tag', `${PREFIX}https://github.com/a/b/releases/tag/v`],
   ])('returns null for %s rather than throwing', (_label, url) => {

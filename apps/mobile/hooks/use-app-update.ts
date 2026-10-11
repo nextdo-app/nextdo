@@ -18,6 +18,8 @@ import {
   detectMacArch,
   detectUpdatePlatform,
   fetchLatestRelease,
+  getChannelLabel,
+  getReleaseChannel,
   isTauriDesktop,
   openDownloadedInstaller,
   pickDownloads,
@@ -26,6 +28,7 @@ import {
   startDesktopDownload,
   type DesktopDownloadProgress,
   type MacArch,
+  type ReleaseChannel,
   type ReleaseDownload,
   type UpdateFailureReason,
 } from '@/lib/app-update';
@@ -49,6 +52,10 @@ export type DownloadState =
 export interface UseAppUpdateResult {
   /** 本机当前版本（app.json 的 `version`；读不到时是空串）。 */
   currentVersion: string;
+  /** 当前版本所属发布渠道（stable / beta / alpha / rc / dev）。 */
+  channel: ReleaseChannel;
+  /** 当前发布渠道的中文标签（正式版 / 测试版 / 等）。 */
+  channelLabel: string;
   /** 检查进行中（按钮禁用 + 「检查中…」）。 */
   checking: boolean;
   /** 上一次检查的结论；还没查过是 `null`。 */
@@ -70,6 +77,8 @@ export interface UseAppUpdateResult {
 export function useAppUpdate(): UseAppUpdateResult {
   // 版本号 / 平台在一次会话里不变，所以不是 state——避免无谓的重渲染。
   const currentVersion = currentAppVersion();
+  const channel = getReleaseChannel(currentVersion);
+  const channelLabel = getChannelLabel(channel);
   const platform = detectUpdatePlatform();
   const isDesktop = isTauriDesktop();
   // 架构要问系统（桌面壳走 IPC，浏览器走 UA 高熵字段），是异步的，所以是
@@ -183,6 +192,8 @@ export function useAppUpdate(): UseAppUpdateResult {
 
   return {
     currentVersion,
+    channel,
+    channelLabel,
     checking,
     outcome,
     check,

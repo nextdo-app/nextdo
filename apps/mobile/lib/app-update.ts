@@ -35,7 +35,7 @@ import { Linking, Platform } from 'react-native';
 import Constants from 'expo-constants';
 
 /** 唯一的 release 源仓库。 */
-export const UPDATE_REPO = 'printsdf/nextdo';
+export const UPDATE_REPO = 'nextdo-app/nextdo';
 
 /** 下载加速代理前缀。**一切对外请求都拼在它后面，绝不直连 GitHub。 */
 export const UPDATE_PROXY_PREFIX = 'https://proxyd.picpi.top/';
@@ -111,6 +111,53 @@ export function compareVersions(a: string, b: string): number {
   if (left.prerelease === null) return 1;
   if (right.prerelease === null) return -1;
   return left.prerelease > right.prerelease ? 1 : -1;
+}
+
+/* ------------------------------------------------------------------ *
+ * 版本渠道识别（Issue #14 核心机制）
+ * ------------------------------------------------------------------ */
+
+/** 应用版本发布渠道。 */
+export type ReleaseChannel = 'stable' | 'beta' | 'alpha' | 'rc' | 'dev';
+
+/**
+ * 根据版本号解析其所属的发布渠道。
+ *
+ * - 纯三段数字（如 0.1.4）为 stable（正式版）。
+ * - 包含 -beta.N 为 beta（测试版）。
+ * - 包含 -alpha.N 为 alpha（内测版）。
+ * - 包含 -rc.N 为 rc（候选发布版）。
+ * - 其他预发布标识归为 dev（开发版）。
+ */
+export function getReleaseChannel(version: string): ReleaseChannel {
+  const parsed = parseVersion(version);
+  if (parsed.prerelease === null) return 'stable';
+  const lower = parsed.prerelease.toLowerCase();
+  if (lower.startsWith('beta')) return 'beta';
+  if (lower.startsWith('alpha')) return 'alpha';
+  if (lower.startsWith('rc')) return 'rc';
+  return 'dev';
+}
+
+/** 判断给定版本号是否为预发布/测试版本。 */
+export function isPrerelease(version: string): boolean {
+  return parseVersion(version).prerelease !== null;
+}
+
+/** 获取发布渠道的中文显示标签。 */
+export function getChannelLabel(channel: ReleaseChannel): string {
+  switch (channel) {
+    case 'beta':
+      return '测试版';
+    case 'alpha':
+      return '内测版';
+    case 'rc':
+      return '候选版';
+    case 'dev':
+      return '开发版';
+    case 'stable':
+      return '正式版';
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -236,6 +283,11 @@ export function detectUpdatePlatform(): UpdatePlatform {
 /** 本机当前版本号（读 app.json 的 `version`）；读不到时返回空串。 */
 export function currentAppVersion(): string {
   return Constants.expoConfig?.version ?? '';
+}
+
+/** 本机当前应用版本所属渠道。 */
+export function currentAppChannel(): ReleaseChannel {
+  return getReleaseChannel(currentAppVersion());
 }
 
 /**

@@ -44,7 +44,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { useAppTheme, type ThemePreference } from '@/lib/theme';
@@ -366,6 +366,26 @@ export default function SettingsScreen() {
                 </Text>
               </Pressable>
             ))}
+          </View>
+        </Card>
+
+        {/* Contexts / Scene management block */}
+        <Card className="mt-4 gap-2.5 p-3.5">
+          <View className="flex-row items-center justify-between">
+            <View className="flex-1 pr-2">
+              <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+                场景管理
+              </Text>
+              <Text className="mt-0.5 font-sans text-xs text-muted dark:text-muted-dark">
+                配置行动的执行场景（如 办公室、电脑、客厅），用于推荐筛选。
+              </Text>
+            </View>
+            <Button
+              size="sm"
+              variant="secondary"
+              label="管理 →"
+              onPress={() => router.push('/contexts')}
+            />
           </View>
         </Card>
 
@@ -799,11 +819,33 @@ export default function SettingsScreen() {
           <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
             应用更新
           </Text>
-          {/* 版本号独占一行 —— 这一行不需要「版本查询 / 下载走代理」之类的
-              实现说明，用户不关心，也不该在界面上占位置。 */}
-          <Text className="font-sans text-xs text-muted dark:text-muted-dark">
-            当前版本 {update.currentVersion === '' ? '未知' : update.currentVersion}
-          </Text>
+          {/* 版本号与发布渠道标识（Issue #14：明确区分正式版与测试版） */}
+          <View className="flex-row items-center gap-2">
+            <Text className="font-sans text-xs text-muted dark:text-muted-dark">
+              当前版本 {update.currentVersion === '' ? '未知' : update.currentVersion}
+            </Text>
+            {update.currentVersion !== '' ? (
+              <View
+                className={cn(
+                  'rounded-full px-2 py-0.5',
+                  update.channel === 'stable'
+                    ? 'bg-surface-container dark:bg-surface-container-dark'
+                    : 'bg-accent/15 dark:bg-accent-dark/20',
+                )}
+              >
+                <Text
+                  className={cn(
+                    'font-sans text-[11px] font-semibold',
+                    update.channel === 'stable'
+                      ? 'text-muted dark:text-muted-dark'
+                      : 'text-accent dark:text-accent-dark',
+                  )}
+                >
+                  {update.channelLabel}
+                </Text>
+              </View>
+            ) : null}
+          </View>
           <Button
             label={update.checking ? '检查中…' : '检查更新'}
             disabled={update.checking}
