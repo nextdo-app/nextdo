@@ -1019,3 +1019,26 @@ Released v0.1.2 with all 4 Android ABIs after fixing three consecutive blockers 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 33: 修复测试版更新检测通道与恢复贴底导航栏
+<!-- trellis-session: v=2 fp=2963f0f5e3148eb6 -->
+
+**Date**: 2026-10-11
+**Task**: 修复测试版更新检测通道与恢复贴底导航栏
+**Branch**: `main`
+
+### Summary
+
+基于 releases.atom Feed 支持测试版通道检测预发布版本（解决 Issue #14），并移除桌面端悬浮药丸样式，恢复为贴底原生 Tab 栏以防止内容被遮挡。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7c9505d` | feat(mobile): support beta channel prerelease updates via releases.atom (fixes #14) |
+| `641dbc2` | fix(mobile): restore bottom-attached tab bar layout to prevent content overlap |
+
+### Status
+
+[OK] **Completed**
