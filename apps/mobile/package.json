@@ -11,8 +11,8 @@
   "scripts": {
     "start": "expo start",
     "web": "expo start --web",
-    "export:web": "expo export -p web && node scripts/post-export-web.mjs",
-    "build:web": "expo export -p web && node scripts/post-export-web.mjs",
+    "export:web": "expo export -p web --clear && node scripts/post-export-web.mjs",
+    "build:web": "expo export -p web --clear && node scripts/post-export-web.mjs",
     "typecheck": "tsc --noEmit",
     "test": "jest"
   },
