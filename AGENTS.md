@@ -20,11 +20,11 @@
    `http://localhost:4180`（expo 的 web 输出是 SPA，脚本已做
    index.html 回落）。用浏览器打开它：
    - 走一遍**本次改动涉及的行为**（改了哪个页面就点哪个页面），
-   - 截图留证（截图放 `.verify/`，该目录已 gitignore，别提交），
+   - **截图按 session / 功能建独立子目录存放**：在 `.verify/` 下按本次任务或功能建子文件夹（如 `.verify/<feature-or-task-slug>/`，例：`.verify/app-update-check/`、`.verify/now-hierarchy/`），**禁止将截图直接散落在 `.verify/` 根目录**，以便隔离和检查（`.verify/` 目录已 gitignore，别提交），
    - 改动会失败时，也要确认界面上确实出现了预期的失败态。
 
 4. **交付。** 报告时说清楚实测了什么：跑了哪些命令、看了哪几个页面、
-   截了哪些图。**不要**把「单测绿了」当成界面行为已验证。
+   截了哪些图并注明具体的子目录路径（如 `.verify/<feature-slug>/xxx.png`）。**不要**把「单测绿了」当成界面行为已验证。
 
 改动只涉及 `packages/*`、`server/*` 且不触及 `apps/mobile` 时，第 2 步
 仍然全跑，但第 3 步可以只验证受影响的那部分界面。
