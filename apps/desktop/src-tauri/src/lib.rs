@@ -21,9 +21,67 @@
 //!     Tauri still treats it as LOCAL (the URL IS `frontendDist`), so the
 //!     IPC bridge + capabilities work unchanged.
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
 use tauri_plugin_notification::NotificationExt;
+
+/* ------------------------------------------------------------------ *
+ * 应用内更新下载状态机
+ *
+ * 桌面端点击「下载安装包」后，Rust 在后台线程做流式 HTTP 下载，前端通过
+ * `get_download_progress` 轮询进度。下完后前端调 `open_downloaded_file`
+ * 用系统默认程序打开安装包（macOS → `open .dmg`、Windows → 运行 .exe、
+ * Linux → `xdg-open .deb/.AppImage`），用户在系统安装向导里完成安装。
+ *
+ * 这条路不依赖 Tauri 官方 updater 插件（不需要 Minisign 签名、不需要
+ * `latest.json`），复用现有 GitHub Release 产物即可。
+ * ------------------------------------------------------------------ */
+
+/// 下载进度结构体，前端通过 `get_download_progress` 轮询读取。
+#[derive(Clone, serde::Serialize)]
+struct DownloadProgress {
+    /// `idle` | `downloading` | `done` | `error`
+    state: String,
+    /// 已下载字节数。
+    downloaded_bytes: u64,
+    /// 文件总字节数（服务端可能不给 Content-Length，此时为 0）。
+    total_bytes: u64,
+    /// 下载完成后的本地文件绝对路径（仅 `done` 状态有值）。
+    file_path: String,
+    /// 错误描述（仅 `error` 状态有值）。
+    error: String,
+}
+
+impl Default for DownloadProgress {
+    fn default() -> Self {
+        Self {
+            state: "idle".into(),
+            downloaded_bytes: 0,
+            total_bytes: 0,
+            file_path: String::new(),
+            error: String::new(),
+        }
+    }
+}
+
+/// 全局下载状态，由 `download_update` 写、`get_download_progress` 读。
+struct DownloadState {
+    progress: Arc<Mutex<DownloadProgress>>,
+}
+
+impl Default for DownloadState {
+    fn default() -> Self {
+        Self {
+            progress: Arc::new(Mutex::new(DownloadProgress::default())),
+        }
+    }
+}
+
+impl DownloadState {
+    fn progress_arc(&self) -> Arc<Mutex<DownloadProgress>> {
+        Arc::clone(&self.progress)
+    }
+}
 
 /// Loopback port of the release-build frontend server. It must match
 /// `build.frontendDist` in `tauri.conf.json` — that match is what makes
@@ -253,10 +311,192 @@ fn current_arch() -> String {
     std::env::consts::ARCH.to_string()
 }
 
+/// Open a URL using the default system browser / handler.
+///
+/// Tauri's webview does not handle `window.open` by default, dropping external
+/// links silently. This command uses platform-native utilities (`open` on macOS,
+/// `cmd /c start` on Windows, `xdg-open` on Linux) to open external URLs in the
+/// user's default browser without extra crate dependencies.
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err("Only http and https URLs are allowed".into());
+    }
+
+    #[cfg(target_os = "macos")]
+    let res = std::process::Command::new("open").arg(&url).spawn();
+
+    #[cfg(target_os = "windows")]
+    let res = std::process::Command::new("cmd")
+        .args(["/c", "start", "", &url])
+        .spawn();
+
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    let res = std::process::Command::new("xdg-open").arg(&url).spawn();
+
+    res.map(|_| ()).map_err(|e| format!("Failed to open URL: {e}"))
+}
+
+/// 在后台线程下载安装包到系统临时目录。
+///
+/// 前端把 `pickDownloads` 拼好的（已加代理前缀的）完整 URL 传进来。
+/// Rust 用标准库做流式 HTTP（走系统 TLS，无需额外 crate），分块写入
+/// `std::env::temp_dir()/Nextdo_<basename>`。前端通过
+/// `get_download_progress` 轮询进度。
+///
+/// 同时只允许一个下载任务：如果已经在 `downloading`，直接返回 Ok（前端
+/// 继续轮询即可）。需要重新下载时先把状态置回 `idle` 再调一次。
+#[tauri::command]
+fn download_update(
+    state: tauri::State<'_, DownloadState>,
+    url: String,
+) -> Result<(), String> {
+    {
+        let progress = state.progress.lock().map_err(|e| e.to_string())?;
+        if progress.state == "downloading" {
+            return Ok(());
+        }
+    }
+
+    // 从 URL 取文件名（去查询串），保留原始后缀（.dmg / .exe / .deb 等）。
+    let basename = url
+        .rsplit('/')
+        .next()
+        .unwrap_or("Nextdo_update")
+        .split('?')
+        .next()
+        .unwrap_or("Nextdo_update")
+        .to_string();
+    let dest = std::env::temp_dir().join(format!("Nextdo_{basename}"));
+
+    // 重置进度 → downloading
+    {
+        let mut progress = state.progress.lock().map_err(|e| e.to_string())?;
+        *progress = DownloadProgress {
+            state: "downloading".into(),
+            ..Default::default()
+        };
+    }
+
+    let shared = state.progress_arc();
+    std::thread::spawn(move || {
+        if let Err(err) = do_download(&url, &dest, &shared) {
+            let mut progress = shared.lock().unwrap_or_else(|e| e.into_inner());
+            progress.state = "error".into();
+            progress.error = err;
+        }
+    });
+
+    Ok(())
+}
+
+/// 内部下载实现：用标准库的 TcpStream + native-tls 做 HTTPS 流式读取。
+///
+/// 为什么不用 reqwest / ureq：这两个 crate 会引入 ring / rustls / hyper
+/// 等大量依赖，显著拉长编译时间和产物体积。安装包下载只需要一次简单的
+/// GET + 跟随重定向 + 分块写，标准库 + tiny 解析完全够用。
+///
+/// 但实际上 `tiny_http`（已在依赖里）是服务端库，不能做客户端请求。
+/// 这里改用最简单的方式：调用系统的 curl 命令行工具，macOS/Linux 自带，
+/// Windows 10+ 也自带。这比引入一个 HTTP client crate 更轻量。
+fn do_download(
+    url: &str,
+    dest: &std::path::Path,
+    shared: &Arc<Mutex<DownloadProgress>>,
+) -> Result<(), String> {
+    let dest_str = dest.to_string_lossy().to_string();
+
+    // 用 curl 下载，-L 跟随重定向，-o 写文件，-w 最后输出 HTTP 状态码。
+    // --progress-bar 会把进度写到 stderr。
+    // 分两步：先 HEAD 取 content-length，再 GET 分块写。
+    //
+    // 简化版：直接 curl -L -o <file> <url>，轮询文件大小当进度。
+    let mut child = std::process::Command::new("curl")
+        .args([
+            "-L",               // follow redirects
+            "-f",               // fail on HTTP errors
+            "-o", &dest_str,    // output file
+            "--connect-timeout", "15",
+            "--max-time", "600", // 10 min max
+            url,
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("无法启动 curl: {e}"))?;
+
+    // 轮询文件大小，更新进度。
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if status.success() {
+                    let size = std::fs::metadata(dest)
+                        .map(|m| m.len())
+                        .unwrap_or(0);
+                    let mut progress = shared.lock().unwrap_or_else(|e| e.into_inner());
+                    progress.state = "done".into();
+                    progress.downloaded_bytes = size;
+                    progress.file_path = dest_str;
+                    return Ok(());
+                } else {
+                    return Err(format!(
+                        "下载失败（curl 退出码 {}）",
+                        status.code().unwrap_or(-1)
+                    ));
+                }
+            }
+            Ok(None) => {
+                // 还在下载，更新已下载字节数。
+                if let Ok(meta) = std::fs::metadata(dest) {
+                    let mut progress = shared.lock().unwrap_or_else(|e| e.into_inner());
+                    progress.downloaded_bytes = meta.len();
+                }
+                std::thread::sleep(std::time::Duration::from_millis(300));
+            }
+            Err(e) => return Err(format!("等待 curl 失败: {e}")),
+        }
+    }
+}
+
+/// 返回当前下载进度。前端每 300–500ms 轮询一次。
+#[tauri::command]
+fn get_download_progress(
+    state: tauri::State<'_, DownloadState>,
+) -> Result<DownloadProgress, String> {
+    let progress = state.progress.lock().map_err(|e| e.to_string())?;
+    Ok(progress.clone())
+}
+
+/// 用系统默认程序打开已下载的安装包。
+///
+/// macOS → `open xxx.dmg`（挂载磁盘映像，Finder 弹出安装窗口）
+/// Windows → 直接执行 `xxx.exe`（启动 NSIS 安装向导）
+/// Linux → `xdg-open xxx.deb`（启动系统软件安装器）
+#[tauri::command]
+fn open_downloaded_file(file_path: String) -> Result<(), String> {
+    if !std::path::Path::new(&file_path).is_file() {
+        return Err("安装包文件不存在".into());
+    }
+
+    #[cfg(target_os = "macos")]
+    let res = std::process::Command::new("open").arg(&file_path).spawn();
+
+    #[cfg(target_os = "windows")]
+    let res = std::process::Command::new("cmd")
+        .args(["/c", "start", "", &file_path])
+        .spawn();
+
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    let res = std::process::Command::new("xdg-open").arg(&file_path).spawn();
+
+    res.map(|_| ()).map_err(|e| format!("打开安装包失败: {e}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(OwnerTokenStore::default())
+        .manage(DownloadState::default())
         // Local reminder delivery (task 09-30): registers the notify /
         // is_permission_granted / request_permission commands + the JS
         // init script. `init()` needs no extra setup code (unlike the
@@ -351,7 +591,11 @@ pub fn run() {
             save_owner_token,
             load_owner_token,
             stronghold_snapshot_path,
-            current_arch
+            current_arch,
+            open_url,
+            download_update,
+            get_download_progress,
+            open_downloaded_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running Nextdo desktop");

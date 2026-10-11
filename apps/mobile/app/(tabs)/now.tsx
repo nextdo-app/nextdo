@@ -20,7 +20,7 @@ import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { router, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Button, Card, ContextChip, Tag, cn } from '@nextdo/ui';
+import { Button, Card, ContextChip, SceneOption, Tag, cn } from '@nextdo/ui';
 import type { CandidateKind } from '@nextdo/core';
 import { useNow, shouldOfferReclarify, type NowEligible } from '@/hooks/use-now';
 import { useAppClock } from '@/hooks/use-app-clock';
@@ -48,14 +48,7 @@ const CHIP_HIT_SLOP = { top: 6, bottom: 6, left: 4, right: 4 } as const;
 /** Extended hitSlop for inputs. */
 const FIELD_HIT_SLOP = { top: 6, bottom: 6 } as const;
 
-/**
- * Byte-identical class string for unselected scenes (tested by class-guard).
- */
-const SCENE_UNSELECTED_CLASS =
-  'h-8 flex-row items-center rounded-full border border-border/80 bg-surface px-3.5 active:bg-surface-container shrink-0 dark:border-border-dark dark:bg-surface-dark dark:active:bg-surface-container-dark';
 
-const SCENE_SELECTED_CLASS =
-  'h-8 flex-row items-center rounded-full border border-accent bg-accent px-3.5 shadow-xs shrink-0 dark:border-accent-dark dark:bg-accent-dark';
 
 /**
  * Top header matching stitch_scene_design/_1:
@@ -93,48 +86,7 @@ function TopHeader({ onQuickAction }: { onQuickAction?: () => void }) {
   );
 }
 
-/**
- * Engine-bar scene option (multi-select pill).
- */
-const SceneOption = memo(function SceneOption({
-  label,
-  selected,
-  onPress,
-}: {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${selected ? '取消场景' : '选择场景'}：${label}`}
-      accessibilityState={{ selected }}
-      hitSlop={CHIP_HIT_SLOP}
-      onPress={onPress}
-      className={selected ? SCENE_SELECTED_CLASS : SCENE_UNSELECTED_CLASS}
-    >
-      {selected ? (
-        <View className="mr-1.5 h-3.5 w-3.5 items-center justify-center rounded-full bg-on-accent/25 dark:bg-on-accent-dark/25">
-          <Text className="font-sans text-[10px] font-bold leading-none text-on-accent dark:text-on-accent-dark">
-            ✓
-          </Text>
-        </View>
-      ) : null}
-      <Text
-        numberOfLines={1}
-        className={cn(
-          'font-sans text-xs',
-          selected
-            ? 'font-semibold text-on-accent dark:text-on-accent-dark'
-            : 'font-medium text-ink dark:text-ink-dark',
-        )}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
-});
+
 
 /**
  * Engine-bar minutes option (5-col grid pill from stitch_scene_design/_1).

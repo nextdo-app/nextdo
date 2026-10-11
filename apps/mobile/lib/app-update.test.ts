@@ -8,14 +8,19 @@
  * (`detectUpdatePlatform` / `currentAppVersion`) are exercised end-to-end in
  * `__tests__/settings-screen.test.tsx`.
  */
+import { Linking } from 'react-native';
 import {
   UPDATE_PROXY_PREFIX,
   compareVersions,
   detectMacArch,
+  isTauriDesktop,
   latestReleaseUrl,
+  openExternalUrl,
   parseLatestTag,
   pickDownloads,
+  pollDesktopDownloadProgress,
   releasePageUrl,
+  startDesktopDownload,
   viaProxy,
   type LatestRelease,
 } from './app-update';
@@ -211,5 +216,134 @@ describe('detectMacArch', () => {
   it('an unrecognized architecture string is null, not a coin flip', async () => {
     setWindow({ __TAURI_INTERNALS__: { invoke: jest.fn().mockResolvedValue('riscv64') } });
     await expect(detectMacArch()).resolves.toBeNull();
+  });
+});
+
+describe('openExternalUrl', () => {
+  const originalWindow = (globalThis as { window?: unknown }).window;
+
+  afterEach(() => {
+    (globalThis as { window?: unknown }).window = originalWindow;
+  });
+
+  function setWindow(value: unknown): void {
+    (globalThis as { window?: unknown }).window = value;
+  }
+
+  it('calls Tauri open_url command when running in desktop shell', async () => {
+    const invokeMock = jest.fn().mockResolvedValue(undefined);
+    setWindow({ __TAURI_INTERNALS__: { invoke: invokeMock } });
+    const linkingSpy = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
+
+    await openExternalUrl('https://example.com/test');
+
+    expect(invokeMock).toHaveBeenCalledWith('open_url', { url: 'https://example.com/test' });
+    expect(linkingSpy).not.toHaveBeenCalled();
+    linkingSpy.mockRestore();
+  });
+
+  it('falls back to Linking.openURL when not in desktop shell or when invoke fails', async () => {
+    setWindow(undefined);
+    const linkingSpy = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
+
+    await openExternalUrl('https://example.com/fallback');
+    expect(linkingSpy).toHaveBeenCalledWith('https://example.com/fallback');
+
+    // With failing Tauri invoke
+    const failingInvoke = jest.fn().mockRejectedValue(new Error('command failed'));
+    setWindow({ __TAURI_INTERNALS__: { invoke: failingInvoke } });
+
+    await openExternalUrl('https://example.com/invoke-error');
+    expect(linkingSpy).toHaveBeenCalledWith('https://example.com/invoke-error');
+    linkingSpy.mockRestore();
+  });
+});
+
+describe('isTauriDesktop', () => {
+  const originalWindow = (globalThis as { window?: unknown }).window;
+
+  afterEach(() => {
+    (globalThis as { window?: unknown }).window = originalWindow;
+  });
+
+  function setWindow(value: unknown): void {
+    (globalThis as { window?: unknown }).window = value;
+  }
+
+  it('returns true when __TAURI_INTERNALS__ with invoke is present', () => {
+    setWindow({ __TAURI_INTERNALS__: { invoke: jest.fn() } });
+    expect(isTauriDesktop()).toBe(true);
+  });
+
+  it('returns false when window is undefined', () => {
+    setWindow(undefined);
+    expect(isTauriDesktop()).toBe(false);
+  });
+
+  it('returns false when __TAURI_INTERNALS__ is missing', () => {
+    setWindow({ navigator: {} });
+    expect(isTauriDesktop()).toBe(false);
+  });
+});
+
+describe('startDesktopDownload', () => {
+  const originalWindow = (globalThis as { window?: unknown }).window;
+
+  afterEach(() => {
+    (globalThis as { window?: unknown }).window = originalWindow;
+  });
+
+  function setWindow(value: unknown): void {
+    (globalThis as { window?: unknown }).window = value;
+  }
+
+  it('calls Tauri download_update with the url', async () => {
+    const invokeMock = jest.fn().mockResolvedValue(undefined);
+    setWindow({ __TAURI_INTERNALS__: { invoke: invokeMock } });
+
+    await startDesktopDownload('https://example.com/Nextdo_0.1.5.dmg');
+    expect(invokeMock).toHaveBeenCalledWith('download_update', {
+      url: 'https://example.com/Nextdo_0.1.5.dmg',
+    });
+  });
+
+  it('throws when not in Tauri shell', async () => {
+    setWindow(undefined);
+    await expect(startDesktopDownload('https://example.com/file')).rejects.toThrow(
+      'Not running in Tauri desktop shell',
+    );
+  });
+});
+
+describe('pollDesktopDownloadProgress', () => {
+  const originalWindow = (globalThis as { window?: unknown }).window;
+
+  afterEach(() => {
+    (globalThis as { window?: unknown }).window = originalWindow;
+  });
+
+  function setWindow(value: unknown): void {
+    (globalThis as { window?: unknown }).window = value;
+  }
+
+  it('returns the progress from Tauri invoke', async () => {
+    const progress = {
+      state: 'downloading' as const,
+      downloaded_bytes: 1024,
+      total_bytes: 4096,
+      file_path: '',
+      error: '',
+    };
+    setWindow({ __TAURI_INTERNALS__: { invoke: jest.fn().mockResolvedValue(progress) } });
+
+    const result = await pollDesktopDownloadProgress();
+    expect(result.state).toBe('downloading');
+    expect(result.downloaded_bytes).toBe(1024);
+  });
+
+  it('returns idle when not in Tauri shell', async () => {
+    setWindow(undefined);
+    const result = await pollDesktopDownloadProgress();
+    expect(result.state).toBe('idle');
   });
 });

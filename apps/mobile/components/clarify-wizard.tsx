@@ -39,7 +39,7 @@ import { useMemo, useReducer, useState, type Dispatch, type ReactNode } from 're
 import { router } from 'expo-router';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Button, Card, ContextChip, ProgressBar, Tag, cn } from '@nextdo/ui';
+import { Button, Card, ContextChip, ProgressBar, SceneOption, Tag, cn } from '@nextdo/ui';
 import { DateTimePicker } from '@/components/datetime-picker';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { goBack } from '@/lib/go-back';
@@ -1035,17 +1035,18 @@ function FormCard({
           ) : null}
           <View className="flex-row flex-wrap items-center gap-2">
             {contexts.map((context) => (
-              <ContextChip
+              <SceneOption
                 key={context.id}
-                name={context.name}
-                active={fields.contextIds.includes(context.id)}
+                label={context.name}
+                selected={fields.contextIds.includes(context.id)}
                 onPress={() => toggleContext(context.id)}
+                accessibilityLabel={`选择情境：${context.name}`}
               />
             ))}
             {addingContext ? (
               <View className="flex-row items-center gap-1.5">
                 <TextInput
-                  className="h-8 w-24 rounded-lg border border-accent bg-surface px-2.5 font-sans text-xs text-ink placeholder:text-muted dark:border-accent-dark dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark"
+                  className="h-8 w-24 rounded-full border border-accent bg-surface px-3 font-sans text-xs text-ink placeholder:text-muted dark:border-accent-dark dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark"
                   style={{
                     paddingVertical: 0,
                     textAlignVertical: 'center',
@@ -1061,7 +1062,7 @@ function FormCard({
                   accessibilityRole="button"
                   accessibilityLabel="添加场景"
                   onPress={createContext}
-                  className="h-8 w-8 items-center justify-center rounded-lg border border-accent/80 bg-accent/10 active:bg-accent/25 dark:border-accent-dark/80 dark:bg-accent-dark/20"
+                  className="h-8 w-8 items-center justify-center rounded-full border border-accent/80 bg-accent/10 active:bg-accent/25 dark:border-accent-dark/80 dark:bg-accent-dark/20"
                 >
                   <Text className="font-sans text-sm font-semibold leading-none text-accent dark:text-accent-dark">
                     +
@@ -1074,7 +1075,7 @@ function FormCard({
                     setAddingContext(false);
                     setNewContextName('');
                   }}
-                  className="h-8 w-8 items-center justify-center rounded-lg border border-border/80 bg-surface active:bg-surface-container dark:border-border-dark dark:bg-surface-dark dark:active:bg-surface-container-dark"
+                  className="h-8 w-8 items-center justify-center rounded-full border border-border/80 bg-surface active:bg-surface-container dark:border-border-dark dark:bg-surface-dark dark:active:bg-surface-container-dark"
                 >
                   <Text className="font-sans text-xs text-muted dark:text-muted-dark">✕</Text>
                 </Pressable>
@@ -1085,11 +1086,9 @@ function FormCard({
                 accessibilityLabel="新建场景"
                 accessibilityState={{ selected: false }}
                 onPress={() => setAddingContext(true)}
-                className="h-8 flex-row items-center gap-1 rounded-lg border border-border/80 bg-surface px-2.5 active:bg-surface-container dark:border-border-dark dark:bg-surface-dark dark:active:bg-surface-container-dark"
+                className="h-8 flex-row items-center gap-1 rounded-full border border-dashed border-border/80 bg-surface px-3 active:scale-95 dark:border-border-dark dark:bg-surface-dark"
               >
-                <Text className="font-sans text-sm font-semibold leading-none text-accent dark:text-accent-dark">
-                  +
-                </Text>
+                <Ionicons name="add" size={14} color="#716b64" />
                 <Text className="font-sans text-xs font-medium text-muted dark:text-muted-dark">
                   场景
                 </Text>

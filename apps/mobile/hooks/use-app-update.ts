@@ -18,8 +18,13 @@ import {
   detectMacArch,
   detectUpdatePlatform,
   fetchLatestRelease,
+  isTauriDesktop,
+  openDownloadedInstaller,
   pickDownloads,
+  pollDesktopDownloadProgress,
   releasePageUrl,
+  startDesktopDownload,
+  type DesktopDownloadProgress,
   type MacArch,
   type ReleaseDownload,
   type UpdateFailureReason,
@@ -34,6 +39,13 @@ export type UpdateOutcome =
   /** 检查失败，`reason` 供屏幕选文案。 */
   | { kind: 'failed'; reason: UpdateFailureReason };
 
+/** 桌面端应用内下载的状态（非桌面端不使用）。 */
+export type DownloadState =
+  | { kind: 'idle' }
+  | { kind: 'downloading'; downloadedBytes: number; totalBytes: number }
+  | { kind: 'done'; filePath: string }
+  | { kind: 'error'; error: string };
+
 export interface UseAppUpdateResult {
   /** 本机当前版本（app.json 的 `version`；读不到时是空串）。 */
   currentVersion: string;
@@ -45,23 +57,38 @@ export interface UseAppUpdateResult {
   check: () => void;
   /** release 页面地址（已加加速代理前缀），供「查看全部安装包」用。 */
   pageUrl: string;
+  /** 是否运行在 Tauri 桌面壳中（决定是否显示应用内下载按钮）。 */
+  isDesktop: boolean;
+  /** 桌面端应用内下载状态。 */
+  download: DownloadState;
+  /** 桌面端启动应用内下载（传入安装包 URL）。 */
+  startDownload: (url: string) => void;
+  /** 桌面端打开已下载的安装包。 */
+  openInstaller: () => void;
 }
 
 export function useAppUpdate(): UseAppUpdateResult {
   // 版本号 / 平台在一次会话里不变，所以不是 state——避免无谓的重渲染。
   const currentVersion = currentAppVersion();
   const platform = detectUpdatePlatform();
+  const isDesktop = isTauriDesktop();
   // 架构要问系统（桌面壳走 IPC，浏览器走 UA 高熵字段），是异步的，所以是
   // state。macOS 上一次会话只探测一次；其他平台根本不探测。
   const [macArch, setMacArch] = useState<MacArch | null>(null);
   const [checking, setChecking] = useState(false);
   const [outcome, setOutcome] = useState<UpdateOutcome | null>(null);
+  const [download, setDownload] = useState<DownloadState>({ kind: 'idle' });
   // 请求在途时卸载（用户直接退出设置页）不要再写 state。
   const mountedRef = useRef(true);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      if (pollTimerRef.current !== null) {
+        clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -102,5 +129,67 @@ export function useAppUpdate(): UseAppUpdateResult {
     });
   }, [checking, currentVersion, macArch, platform]);
 
-  return { currentVersion, checking, outcome, check, pageUrl: releasePageUrl() };
+  /** 开始桌面端应用内下载，并启动进度轮询。 */
+  const startDownload = useCallback(
+    (url: string) => {
+      if (!isDesktop) return;
+      if (download.kind === 'downloading') return;
+      setDownload({ kind: 'downloading', downloadedBytes: 0, totalBytes: 0 });
+      void startDesktopDownload(url).catch((e) => {
+        if (mountedRef.current) {
+          setDownload({ kind: 'error', error: String(e) });
+        }
+      });
+
+      // 开始轮询进度
+      if (pollTimerRef.current !== null) clearInterval(pollTimerRef.current);
+      pollTimerRef.current = setInterval(() => {
+        void pollDesktopDownloadProgress().then((p: DesktopDownloadProgress) => {
+          if (!mountedRef.current) return;
+          if (p.state === 'downloading') {
+            setDownload({
+              kind: 'downloading',
+              downloadedBytes: p.downloaded_bytes,
+              totalBytes: p.total_bytes,
+            });
+          } else if (p.state === 'done') {
+            setDownload({ kind: 'done', filePath: p.file_path });
+            if (pollTimerRef.current !== null) {
+              clearInterval(pollTimerRef.current);
+              pollTimerRef.current = null;
+            }
+            // 下载完成后自动打开安装程序
+            void openDownloadedInstaller(p.file_path).catch(() => {
+              // 打开失败不影响 done 状态，用户可以手动点「打开安装包」
+            });
+          } else if (p.state === 'error') {
+            setDownload({ kind: 'error', error: p.error });
+            if (pollTimerRef.current !== null) {
+              clearInterval(pollTimerRef.current);
+              pollTimerRef.current = null;
+            }
+          }
+        });
+      }, 400);
+    },
+    [isDesktop, download.kind],
+  );
+
+  /** 手动打开已下载的安装包。 */
+  const openInstaller = useCallback(() => {
+    if (download.kind !== 'done') return;
+    void openDownloadedInstaller(download.filePath);
+  }, [download]);
+
+  return {
+    currentVersion,
+    checking,
+    outcome,
+    check,
+    pageUrl: releasePageUrl(),
+    isDesktop,
+    download,
+    startDownload,
+    openInstaller,
+  };
 }

@@ -31,7 +31,7 @@
  * React）。Settings 页面只通过 `useAppUpdate` 读结果，不直接触碰本模块的
  * 网络部分（component-guidelines：屏幕不碰平台模块）。
  */
-import { Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import Constants from 'expo-constants';
 
 /** 唯一的 release 源仓库。 */
@@ -341,4 +341,101 @@ export async function fetchLatestRelease(): Promise<LatestReleaseResult> {
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * 打开外部链接。
+ *
+ * 在 Tauri 桌面端壳内，WKWebView/WebView2 默认拦截 window.open 弹窗；
+ * 此时通过 Tauri IPC bridge 调用原生的 `open_url` 命令打开系统默认浏览器。
+ * 在移动端或普通浏览器中，优雅回落到 React Native 的 `Linking.openURL`。
+ */
+export async function openExternalUrl(url: string): Promise<void> {
+  const host = globalThis as {
+    window?: {
+      __TAURI_INTERNALS__?: TauriInternals;
+    };
+  };
+  const bridge = host.window?.__TAURI_INTERNALS__;
+  if (bridge?.invoke !== undefined) {
+    try {
+      await bridge.invoke('open_url', { url });
+      return;
+    } catch {
+      // 若桌面壳命令异常，回落到 Linking.openURL
+    }
+  }
+  await Linking.openURL(url);
+}
+
+/* ------------------------------------------------------------------ *
+ * 桌面端应用内下载
+ *
+ * 桌面端（Tauri 壳）支持在应用内直接下载安装包并自动打开安装程序，
+ * 不需要跳到浏览器。三个函数分别对应 Rust 侧的三个 Tauri 命令。
+ * 非 Tauri 环境下（纯浏览器 / 移动端）这些函数不应被调用——调用方
+ * 先用 `isTauriDesktop()` 判断。
+ * ------------------------------------------------------------------ */
+
+/** Rust 侧 `get_download_progress` 返回的结构体。 */
+export interface DesktopDownloadProgress {
+  /** `idle` | `downloading` | `done` | `error` */
+  state: 'idle' | 'downloading' | 'done' | 'error';
+  /** 已下载字节数。 */
+  downloaded_bytes: number;
+  /** 文件总字节数（服务端不给 Content-Length 时为 0）。 */
+  total_bytes: number;
+  /** 下载完成后的本地文件路径（仅 done 状态有值）。 */
+  file_path: string;
+  /** 错误描述（仅 error 状态有值）。 */
+  error: string;
+}
+
+/** 当前是否运行在 Tauri 桌面壳内。 */
+export function isTauriDesktop(): boolean {
+  const host = globalThis as {
+    window?: { __TAURI_INTERNALS__?: TauriInternals };
+  };
+  return host.window?.__TAURI_INTERNALS__?.invoke !== undefined;
+}
+
+/**
+ * 启动桌面端后台下载。`url` 是已加代理前缀的安装包完整地址。
+ *
+ * 调用后前端应立即开始用 `pollDesktopDownloadProgress()` 轮询进度。
+ * 重复调用在下载进行中会被 Rust 侧静默忽略（幂等）。
+ */
+export async function startDesktopDownload(url: string): Promise<void> {
+  const host = globalThis as {
+    window?: { __TAURI_INTERNALS__?: TauriInternals };
+  };
+  const bridge = host.window?.__TAURI_INTERNALS__;
+  if (bridge?.invoke === undefined) {
+    throw new Error('Not running in Tauri desktop shell');
+  }
+  await bridge.invoke('download_update', { url });
+}
+
+/** 轮询下载进度。返回 Rust 侧的 `DownloadProgress` 结构体快照。 */
+export async function pollDesktopDownloadProgress(): Promise<DesktopDownloadProgress> {
+  const host = globalThis as {
+    window?: { __TAURI_INTERNALS__?: TauriInternals };
+  };
+  const bridge = host.window?.__TAURI_INTERNALS__;
+  if (bridge?.invoke === undefined) {
+    return { state: 'idle', downloaded_bytes: 0, total_bytes: 0, file_path: '', error: '' };
+  }
+  return (await bridge.invoke('get_download_progress')) as DesktopDownloadProgress;
+}
+
+/** 用系统默认程序打开已下载的安装包（macOS 挂 DMG、Windows 执行 EXE 等）。 */
+export async function openDownloadedInstaller(filePath: string): Promise<void> {
+  const host = globalThis as {
+    window?: { __TAURI_INTERNALS__?: TauriInternals };
+  };
+  const bridge = host.window?.__TAURI_INTERNALS__;
+  if (bridge?.invoke === undefined) {
+    throw new Error('Not running in Tauri desktop shell');
+  }
+  await bridge.invoke('open_downloaded_file', { filePath });
 }

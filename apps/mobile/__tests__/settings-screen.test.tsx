@@ -326,6 +326,7 @@ beforeEach(() => {
   mockUpdateFetch = jest.fn();
   (globalThis as { fetch: unknown }).fetch = mockUpdateFetch;
   openedUrls = [];
+  downloadedUrls = [];
   jest.spyOn(Linking, 'openURL').mockImplementation(async (url: string) => {
     openedUrls.push(url);
     return true;
@@ -366,6 +367,8 @@ function redirectedTo(tag: string): { ok: true; url: string } {
 let mockUpdateFetch: jest.Mock;
 /** Every URL handed to Linking.openURL by the update block. */
 let openedUrls: string[] = [];
+/** Every URL handed to Tauri download_update command. */
+let downloadedUrls: string[] = [];
 
 /**
  * Pretend the app runs in the Tauri desktop shell on macOS: Platform 'web'
@@ -379,7 +382,22 @@ function pretendDesktopMac(arch: 'aarch64' | 'x86_64' = 'aarch64'): void {
   Object.defineProperty(Platform, 'OS', { value: 'web', configurable: true });
   (globalThis as { window?: unknown }).window = {
     navigator: { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15' },
-    __TAURI_INTERNALS__: { invoke: jest.fn().mockResolvedValue(arch) },
+    __TAURI_INTERNALS__: {
+      invoke: jest.fn().mockImplementation(async (cmd: string, args?: { url?: string; filePath?: string }) => {
+        if (cmd === 'open_url' && args?.url) {
+          openedUrls.push(args.url);
+          return undefined;
+        }
+        if (cmd === 'download_update' && args?.url) {
+          downloadedUrls.push(args.url);
+          return undefined;
+        }
+        if (cmd === 'get_download_progress') {
+          return { state: 'idle', downloaded_bytes: 0, total_bytes: 0, file_path: '', error: '' };
+        }
+        return arch;
+      }),
+    },
   };
 }
 
@@ -477,7 +495,7 @@ describe('settings update-check block', () => {
     expect(openedUrls).toEqual([`${PROXY}https://github.com/printsdf/nextdo/releases/latest`]);
   });
 
-  it('newer version on macOS → ONLY the installer matching the detected chip, and pressing it opens the PROXIED download URL', async () => {
+  it('newer version on macOS desktop → ONLY the installer matching the detected chip, and pressing it triggers in-app download', async () => {
     pretendDesktopMac('aarch64');
     mockUpdateFetch.mockResolvedValue(redirectedTo('v0.1.4'));
     renderRouter('app', { initialUrl: '/(tabs)/settings' });
@@ -486,21 +504,21 @@ describe('settings update-check block', () => {
     await pressCheckForUpdate();
 
     // Exactly one button — never both architectures, the user must not choose.
-    expect(screen.getAllByRole('button', { name: /^下载 / })).toHaveLength(1);
-    const installer = screen.getByRole('button', { name: '下载 macOS 安装包（Apple 芯片）' });
+    expect(screen.getAllByRole('button', { name: /^下载并安装 / })).toHaveLength(1);
+    const installer = screen.getByRole('button', { name: '下载并安装 macOS 安装包（Apple 芯片）' });
     expect(screen.queryByRole('button', { name: /Intel/ })).toBeNull();
 
     fireEvent.press(installer);
     await flush();
 
-    expect(openedUrls).toEqual([
+    expect(downloadedUrls).toEqual([
       `${PROXY}${GITHUB_DOWNLOAD}/v0.1.4/Nextdo_0.1.4_aarch64.dmg`,
     ]);
     // …and never the bare GitHub URL.
-    expect(openedUrls[0]?.startsWith('https://github.com/')).toBe(false);
+    expect(downloadedUrls[0]?.startsWith('https://github.com/')).toBe(false);
   });
 
-  it('an Intel mac gets the OTHER installer — the choice follows the host, not a fixed default', async () => {
+  it('an Intel mac desktop gets the OTHER installer — the choice follows the host, not a fixed default', async () => {
     pretendDesktopMac('x86_64');
     mockUpdateFetch.mockResolvedValue(redirectedTo('v0.1.4'));
     renderRouter('app', { initialUrl: '/(tabs)/settings' });
@@ -508,13 +526,13 @@ describe('settings update-check block', () => {
 
     await pressCheckForUpdate();
 
-    const installer = screen.getByRole('button', { name: '下载 macOS 安装包（Intel）' });
+    const installer = screen.getByRole('button', { name: '下载并安装 macOS 安装包（Intel）' });
     expect(screen.queryByRole('button', { name: /Apple 芯片/ })).toBeNull();
 
     fireEvent.press(installer);
     await flush();
 
-    expect(openedUrls).toEqual([`${PROXY}${GITHUB_DOWNLOAD}/v0.1.4/Nextdo_0.1.4_x64.dmg`]);
+    expect(downloadedUrls).toEqual([`${PROXY}${GITHUB_DOWNLOAD}/v0.1.4/Nextdo_0.1.4_x64.dmg`]);
   });
 
   it('macOS whose architecture cannot be detected → NO installer button, just the release page', async () => {

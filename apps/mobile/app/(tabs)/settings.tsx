@@ -43,7 +43,7 @@
  * boundary); this screen owns only the form's transient state.
  */
 import { useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import { useAppInsets } from '@/lib/use-app-insets';
@@ -52,7 +52,7 @@ import { Button, Card, cn } from '@nextdo/ui';
 import { useCloudSync } from '@/hooks/use-cloud-sync';
 import { useReminderPermission } from '@/hooks/use-reminder-permission';
 import { useAppUpdate } from '@/hooks/use-app-update';
-import type { UpdateFailureReason } from '@/lib/app-update';
+import { openExternalUrl, type UpdateFailureReason } from '@/lib/app-update';
 import {
   formatConnectionString,
   formatDeepLink,
@@ -532,7 +532,7 @@ export default function SettingsScreen() {
               accessibilityRole="link"
               accessibilityLabel="打开云同步搭建教程"
               onPress={() => {
-                void Linking.openURL(
+                void openExternalUrl(
                   'https://my.feishu.cn/wiki/FDWJwoCHsiBgltk0sW4cKs47nKb?from=from_copylink',
                 );
               }}
@@ -830,23 +830,74 @@ export default function SettingsScreen() {
                 </Text>
               ) : (
                 <View className="gap-2">
-                  {update.outcome.downloads.map((download) => (
-                    <Button
-                      key={download.url}
-                      label={`下载 ${download.label}`}
-                      variant="secondary"
-                      onPress={() => {
-                        void Linking.openURL(download.url);
-                      }}
-                    />
-                  ))}
+                  {/* 桌面端应用内下载进度条 */}
+                  {update.isDesktop && update.download.kind === 'downloading' ? (
+                    <View className="gap-1.5">
+                      <Text className="font-sans text-xs text-muted dark:text-muted-dark">
+                        正在下载…{' '}
+                        {update.download.downloadedBytes > 0
+                          ? `${(update.download.downloadedBytes / 1024 / 1024).toFixed(1)} MB`
+                          : ''}
+                      </Text>
+                      <View className="h-2 overflow-hidden rounded-full bg-muted/20 dark:bg-muted-dark/20">
+                        {/* 总大小未知时用不确定态（宽度 30% 动画），已知时按比例 */}
+                        <View
+                          className="h-full rounded-full bg-accent dark:bg-accent-dark"
+                          style={{
+                            width:
+                              update.download.totalBytes > 0
+                                ? `${Math.min(100, (update.download.downloadedBytes / update.download.totalBytes) * 100)}%`
+                                : '30%',
+                          }}
+                        />
+                      </View>
+                    </View>
+                  ) : null}
+                  {update.isDesktop && update.download.kind === 'done' ? (
+                    <View className="gap-1.5">
+                      <Text className="font-sans text-xs text-accent dark:text-accent-dark">
+                        ✓ 下载完成，安装程序已打开
+                      </Text>
+                      <Button
+                        label="重新打开安装包"
+                        variant="secondary"
+                        onPress={update.openInstaller}
+                      />
+                    </View>
+                  ) : null}
+                  {update.isDesktop && update.download.kind === 'error' ? (
+                    <Text className="font-sans text-xs text-danger dark:text-danger-dark">
+                      下载失败：{update.download.error}
+                    </Text>
+                  ) : null}
+                  {/* 下载按钮：桌面端走应用内下载，其他端走浏览器 */}
+                  {update.download.kind !== 'downloading' && update.download.kind !== 'done'
+                    ? update.outcome.downloads.map((dl) => (
+                        <Button
+                          key={dl.url}
+                          label={
+                            update.isDesktop
+                              ? `下载并安装 ${dl.label}`
+                              : `下载 ${dl.label}`
+                          }
+                          variant="secondary"
+                          onPress={() => {
+                            if (update.isDesktop) {
+                              update.startDownload(dl.url);
+                            } else {
+                              void openExternalUrl(dl.url);
+                            }
+                          }}
+                        />
+                      ))
+                    : null}
                 </View>
               )}
               <Pressable
                 accessibilityRole="link"
                 accessibilityLabel="查看全部安装包"
                 onPress={() => {
-                  void Linking.openURL(update.pageUrl);
+                  void openExternalUrl(update.pageUrl);
                 }}
                 className="self-start py-0.5"
               >
