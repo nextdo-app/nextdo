@@ -49,7 +49,7 @@ function ContextForm({
   add,
   onAdded,
 }: {
-  add: (name: string) => Promise<void>;
+  add: (name: string) => Promise<unknown>;
   onAdded: () => void;
 }) {
   const [name, setName] = useState('');

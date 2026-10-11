@@ -17,8 +17,8 @@ export interface UseContextsResult {
   /** null until the first read settles. */
   data: Context[] | null;
   error: string | null;
-  /** Quick-create a context (the "＋" chip). */
-  add: (name: string) => Promise<void>;
+  /** Quick-create a context (returns the created context id, or null on empty/error). */
+  add: (name: string) => Promise<string | null>;
   /**
    * Soft delete a context (the contexts screen's per-row 删除).
    * Resolves true when the local write committed; false on error (the
@@ -76,9 +76,9 @@ export function useContexts(): UseContextsResult {
   }, [db, reloadKey]);
 
   const add = useCallback(
-    async (name: string) => {
+    async (name: string): Promise<string | null> => {
       const trimmed = name.trim();
-      if (trimmed === '') return;
+      if (trimmed === '') return null;
       const nowIso = toIso(now);
       const context: Context = {
         id: ulid(now),
@@ -91,9 +91,11 @@ export function useContexts(): UseContextsResult {
         await addContext(db, context);
         setError(null);
         setReloadKey((key) => key + 1);
+        return context.id;
       } catch (err: unknown) {
         logger.error('context create failed', err instanceof Error ? err : new Error(String(err)));
         setError(err instanceof Error ? err.message : String(err));
+        return null;
       }
     },
     [db, now],

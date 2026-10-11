@@ -428,10 +428,14 @@ describe('WizardBody — progress line + GTD 决策摘要 (design §3.4)', () =>
     expect(screen.getByText('步骤 7/7')).toBeTruthy();
   });
 
-  it('decision summary: answered rows show the answer; unanswered rows stay listed', () => {
+  it('decision summary: collapsed by default, expandable on tap to show question chain', () => {
     renderWizard();
-    // Unanswered rows are listed from the start (q1…q5 chain, 8 rows).
     expect(screen.getByText('GTD 决策摘要')).toBeTruthy();
+    // Default collapsed: chain questions are hidden to avoid clutter.
+    expect(screen.queryByText('那它更接近哪一类？')).toBeNull();
+
+    // Expand on tap.
+    fireEvent.press(screen.getByLabelText('展开GTD决策摘要'));
     expect(screen.getByText('那它更接近哪一类？')).toBeTruthy();
     expect(screen.getByText('必须在固定日期/时间执行吗？')).toBeTruthy();
 
@@ -440,9 +444,10 @@ describe('WizardBody — progress line + GTD 决策摘要 (design §3.4)', () =>
     expect(screen.getByText('可以，是行动')).toBeTruthy();
   });
 
-  it('reclarify decision summary: q1/q1b rows are not shown', () => {
+  it('reclarify decision summary: collapsed by default, expanded q1/q1b rows are not shown', () => {
     renderWizard({ mode: 'reclarify', id: 'act-1', actionKind: 'next', currentProjectId: 'proj-1' });
     expect(screen.getByText('GTD 决策摘要')).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('展开GTD决策摘要'));
     expect(screen.queryByText('可以变成下一步行动吗？')).toBeNull();
     expect(screen.queryByText('那它更接近哪一类？')).toBeNull();
     expect(screen.getAllByText('需要多个步骤才能完成吗？').length).toBeGreaterThan(0);

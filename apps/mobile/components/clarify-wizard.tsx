@@ -38,6 +38,7 @@
 import { useMemo, useReducer, useState, type Dispatch, type ReactNode } from 'react';
 import { router } from 'expo-router';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Button, Card, ContextChip, ProgressBar, Tag, cn } from '@nextdo/ui';
 import { DateTimePicker } from '@/components/datetime-picker';
 import { useAppInsets } from '@/lib/use-app-insets';
@@ -530,9 +531,8 @@ export function WizardBody({
 }
 
 // ---------------------------------------------------------------------------
-// The "GTD 决策摘要" card (design §3.2.5) — the mode's question chain with
-// the answers given so far (answered: highlighted + the answer text;
-// unanswered: muted — branches not taken stay muted, as in the mockup).
+// The "GTD 决策摘要" card (design §3.2.5) — collapsible by default to keep
+// focus on the current question, expandable on tap to inspect the full chain.
 // ---------------------------------------------------------------------------
 
 function DecisionSummaryCard({
@@ -542,57 +542,89 @@ function DecisionSummaryCard({
   mode: WizardMode;
   answered: AnsweredQuestion[];
 }) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const chain = mode === 'clarify' ? CLARIFY_CHAIN : RECLARIFY_CHAIN;
+  const answeredCount = answered.length;
+
   return (
-    <Card className="p-3.5">
-      <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
-        GTD 决策摘要
-      </Text>
-      <View className="mt-2.5 gap-2">
-        {chain.map((questionId, index) => {
-          const entry = answered.find((candidate) => candidate.id === questionId);
-          const answeredNow = entry !== undefined;
-          return (
-            <View key={questionId} className="flex-row items-center gap-2.5">
-              <View
-                className={cn(
-                  'h-6 w-6 items-center justify-center rounded-full',
-                  answeredNow
-                    ? 'bg-accent/15 dark:bg-accent-dark/20'
-                    : 'bg-border/60 dark:bg-border-dark',
-                )}
-              >
-                <Text
+    <Card variant="outlined" className="p-3.5">
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={isExpanded ? '收起GTD决策摘要' : '展开GTD决策摘要'}
+        accessibilityState={{ expanded: isExpanded }}
+        onPress={() => setIsExpanded((prev) => !prev)}
+        className="flex-row items-center justify-between"
+      >
+        <View className="flex-row items-center gap-2">
+          <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+            GTD 决策摘要
+          </Text>
+          <View className="rounded-full bg-surface-container px-2 py-0.5 dark:bg-surface-container-dark">
+            <Text className="font-sans text-[11px] text-muted dark:text-muted-dark">
+              {answeredCount > 0 ? `已完成 ${answeredCount} 步` : '默认折叠'}
+            </Text>
+          </View>
+        </View>
+
+        <View className="flex-row items-center gap-1">
+          <Text className="font-sans text-xs text-muted dark:text-muted-dark">
+            {isExpanded ? '收起' : '展开'}
+          </Text>
+          <Ionicons
+            name={isExpanded ? 'chevron-up' : 'chevron-down'}
+            size={14}
+            color="#9b948a"
+          />
+        </View>
+      </Pressable>
+
+      {isExpanded ? (
+        <View className="mt-3 gap-2 border-t border-border/40 pt-2.5 dark:border-border-dark/40">
+          {chain.map((questionId, index) => {
+            const entry = answered.find((candidate) => candidate.id === questionId);
+            const answeredNow = entry !== undefined;
+            return (
+              <View key={questionId} className="flex-row items-center gap-2.5">
+                <View
                   className={cn(
-                    'font-sans text-xs font-semibold',
-                    answeredNow ? 'text-accent dark:text-accent-dark' : 'text-muted dark:text-muted-dark',
+                    'h-6 w-6 items-center justify-center rounded-full',
+                    answeredNow
+                      ? 'bg-accent/15 dark:bg-accent-dark/20'
+                      : 'bg-border/60 dark:bg-border-dark',
                   )}
                 >
-                  {index + 1}
-                </Text>
-              </View>
-              <Text
-                className={cn(
-                  'flex-1 font-sans text-xs',
-                  answeredNow
-                    ? 'font-medium text-ink dark:text-ink-dark'
-                    : 'text-muted dark:text-muted-dark',
-                )}
-              >
-                {QUESTION_TITLES[questionId]}
-              </Text>
-              {answeredNow ? (
+                  <Text
+                    className={cn(
+                      'font-sans text-xs font-semibold',
+                      answeredNow ? 'text-accent dark:text-accent-dark' : 'text-muted dark:text-muted-dark',
+                    )}
+                  >
+                    {index + 1}
+                  </Text>
+                </View>
                 <Text
-                  className="font-sans text-xs font-medium text-accent dark:text-accent-dark"
-                  numberOfLines={1}
+                  className={cn(
+                    'flex-1 font-sans text-xs',
+                    answeredNow
+                      ? 'font-medium text-ink dark:text-ink-dark'
+                      : 'text-muted dark:text-muted-dark',
+                  )}
                 >
-                  {entry.answer}
+                  {QUESTION_TITLES[questionId]}
                 </Text>
-              ) : null}
-            </View>
-          );
-        })}
-      </View>
+                {answeredNow ? (
+                  <Text
+                    className="font-sans text-xs font-medium text-accent dark:text-accent-dark"
+                    numberOfLines={1}
+                  >
+                    {entry.answer}
+                  </Text>
+                ) : null}
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
     </Card>
   );
 }
@@ -1013,7 +1045,11 @@ function FormCard({
             {addingContext ? (
               <View className="flex-row items-center gap-1.5">
                 <TextInput
-                  className="h-8 w-24 rounded-lg border border-accent/80 bg-surface px-2.5 font-sans text-xs text-ink placeholder:text-muted dark:border-accent-dark/80 dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark"
+                  className="h-8 w-24 rounded-lg border border-accent bg-surface px-2.5 font-sans text-xs text-ink placeholder:text-muted dark:border-accent-dark dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark"
+                  style={{
+                    paddingVertical: 0,
+                    textAlignVertical: 'center',
+                  }}
                   value={newContextName}
                   onChangeText={setNewContextName}
                   placeholder="新场景"
@@ -1025,10 +1061,10 @@ function FormCard({
                   accessibilityRole="button"
                   accessibilityLabel="添加场景"
                   onPress={createContext}
-                  className="h-8 items-center justify-center rounded-lg bg-accent px-2.5 active:opacity-85 dark:bg-accent-dark"
+                  className="h-8 w-8 items-center justify-center rounded-lg border border-accent/80 bg-accent/10 active:bg-accent/25 dark:border-accent-dark/80 dark:bg-accent-dark/20"
                 >
-                  <Text className="font-sans text-xs font-semibold text-on-accent dark:text-on-accent-dark">
-                    加
+                  <Text className="font-sans text-sm font-semibold leading-none text-accent dark:text-accent-dark">
+                    +
                   </Text>
                 </Pressable>
                 <Pressable
@@ -1038,7 +1074,7 @@ function FormCard({
                     setAddingContext(false);
                     setNewContextName('');
                   }}
-                  className="h-8 items-center justify-center rounded-lg px-1.5 active:bg-surface-container dark:active:bg-surface-container-dark"
+                  className="h-8 w-8 items-center justify-center rounded-lg border border-border/80 bg-surface active:bg-surface-container dark:border-border-dark dark:bg-surface-dark dark:active:bg-surface-container-dark"
                 >
                   <Text className="font-sans text-xs text-muted dark:text-muted-dark">✕</Text>
                 </Pressable>

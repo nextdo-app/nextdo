@@ -700,6 +700,27 @@ describe('Now screen', () => {
 
       await waitFor(() => expect(contextReads.count).toBeGreaterThan(base));
     });
+
+    it('opens AddSceneModal when tapping "+ 添加场景" and allows quick creation', async () => {
+      renderRouter('app', { initialUrl: '/(tabs)/now' });
+      await waitFor(() => expect(screen.getByText('当前场景')).toBeTruthy());
+
+      // Tap "+ 添加场景" button
+      fireEvent.press(screen.getByRole('button', { name: '新建场景' }));
+
+      // AddSceneModal appears with title and presets
+      await waitFor(() => expect(screen.getByText('添加新场景')).toBeTruthy());
+      expect(screen.getByText('情境聚焦')).toBeTruthy();
+      expect(screen.getByText('咖啡馆')).toBeTruthy();
+
+      // Tap preset 咖啡馆
+      fireEvent.press(screen.getByRole('button', { name: '预设推荐：咖啡馆' }));
+      expect(screen.getByDisplayValue('咖啡馆 ☕️')).toBeTruthy();
+
+      // Tap close/cancel to close
+      fireEvent.press(screen.getByRole('button', { name: '取消' }));
+      await waitFor(() => expect(screen.queryByText('添加新场景')).toBeNull());
+    });
   });
 
   // ── Habit block (task 10-02) ──────────────────────────────────────────

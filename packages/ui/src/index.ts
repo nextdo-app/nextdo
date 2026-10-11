@@ -13,7 +13,7 @@ export { cn } from './lib/cn';
 export { Button } from './components/button';
 export type { ButtonProps } from './components/button';
 export { Card } from './components/card';
-export type { CardProps } from './components/card';
+export type { CardProps, CardVariant } from './components/card';
 export { Tag } from './components/tag';
 export type { TagProps, TagTone } from './components/tag';
 export { EmptyState } from './components/empty-state';

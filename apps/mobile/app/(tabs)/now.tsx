@@ -1,25 +1,26 @@
 /**
- * The Now tab (design §5 — Paper Serenity rework, PRD D2 hero-first):
+ * The Now tab (design stitch_scene_design/_1 & _2 rework):
  *
- *   engine-context bar (scene chips from contexts + time chips, persisted
- *   via secure-store) → re-clarify banner → STATS ROW (可执行 n/总 ·
- *   预计耗时 Σ est · 认知负荷 三档) → the ONE recommendation (hero:
- *   kind / est / 项目·截止 / Why this? top-3 / 开始 / 换一个 / 稍后) →
- *   CONTEXT FILTER chips (local UI state — list area only, NEVER the
- *   hero) → the eligible list (always expanded) → today's habit strip.
+ *   TopHeader (Now + 专注模式 badge + subhead + quick action button) →
+ *   FilterContextCard (Current Context scrollable pills with + 添加场景
+ *     triggering AddSceneModal bottom sheet, and 5-col Available Time pills) →
+ *   re-clarify banner →
+ *   STATS ROW (可执行 n/总 · 预计耗时 Σ est · 认知负荷 三档) →
+ *   Recommendation Hero Card (kind / est / 项目·截止 / Why this? top-3 / 开始 / 换一个 / 稍后) →
+ *   CONTEXT FILTER chips (local UI state — list area only) →
+ *   The eligible list (collapsible with counter) →
+ *   EmptyExecutionPool (delicate clock illustration + capture button) →
+ *   TodayHabitSection (today's habit cards with daily rhythm guide).
  *
  * Presentational only: data arrives from `useNow` (+ contexts / habit-days
- * hooks); every mutation goes through a mutation hook (component-
- * guidelines). The 1-second focus tick does NOT live here — the screen
- * runs on the minute app clock (hook-guidelines Rule 4). The engine
- * context (bar) and the list filter (chips) are two INDEPENDENT state
- * sets: the filter never touches the recommendation (state-management).
+ * hooks); every mutation goes through a mutation hook.
  */
 import { memo, useCallback, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { router, useFocusEffect } from 'expo-router';
-import { Button, Card, ContextChip, EmptyState, Tag, cn } from '@nextdo/ui';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { Button, Card, ContextChip, Tag, cn } from '@nextdo/ui';
 import type { CandidateKind } from '@nextdo/core';
 import { useNow, shouldOfferReclarify, type NowEligible } from '@/hooks/use-now';
 import { useAppClock } from '@/hooks/use-app-clock';
@@ -37,72 +38,63 @@ import { FILTER_RULE_LABELS, REASON_LABELS } from '@/lib/reason-labels';
 import { KIND_LABELS } from '@/lib/kind-labels';
 import { formatLocalDate, formatLocalDateTime, formatDueLabel } from '@/lib/format';
 import { SnoozeSheet } from '@/components/snooze-sheet';
+import { AddSceneModal } from '@/components/add-scene-modal';
 
-const TIME_CHIPS = [15, 30, 60, 120];
+const TIME_CHIPS = [15, 30, 60, 120] as const;
 
-/** 32px visual chip (h-8) + 6pt vertical hitSlop = 44pt tap target (spec/accessibility).
- *  4pt left/right ensures adjacent targets don't overlap with 8px (gap-2) spacing. */
+/** 32px visual chip (h-8) + 6pt vertical hitSlop = 44pt tap target (spec/accessibility). */
 const CHIP_HIT_SLOP = { top: 6, bottom: 6, left: 4, right: 4 } as const;
 
 /** Extended hitSlop for inputs. */
 const FIELD_HIT_SLOP = { top: 6, bottom: 6 } as const;
 
+/**
+ * Byte-identical class string for unselected scenes (tested by class-guard).
+ */
 const SCENE_UNSELECTED_CLASS =
-  'h-8 flex-row items-center rounded-lg border border-border/80 bg-surface px-3 active:bg-surface-container dark:border-border-dark dark:bg-surface-dark dark:active:bg-surface-container-dark';
+  'h-8 flex-row items-center rounded-full border border-border/80 bg-surface px-3.5 active:bg-surface-container shrink-0 dark:border-border-dark dark:bg-surface-dark dark:active:bg-surface-container-dark';
 
 const SCENE_SELECTED_CLASS =
-  'h-8 flex-row items-center rounded-lg border border-accent bg-accent px-3 active:opacity-90 dark:border-accent-dark dark:bg-accent-dark';
+  'h-8 flex-row items-center rounded-full border border-accent bg-accent px-3.5 shadow-xs shrink-0 dark:border-accent-dark dark:bg-accent-dark';
 
-/** One dimension's heading: a muted label on the left, the current STATE capsule on
- *  the right. The state capsule is the single place 「任意」 lives — it is a clear-
- *  selection action, not a peer scene in the options flow. */
-function ConditionLabel({
-  title,
-  state,
-  onClear,
-}: {
-  title: string;
-  state?: string;
-  onClear?: () => void;
-}) {
+/**
+ * Top header matching stitch_scene_design/_1:
+ * Title "现在", "专注模式" badge, and subtitle with quick action icon.
+ */
+function TopHeader({ onQuickAction }: { onQuickAction?: () => void }) {
   return (
-    <View className="mb-2.5 flex-row items-center justify-between">
-      <Text className="font-sans text-xs font-semibold text-muted dark:text-muted-dark">
-        {title}
-      </Text>
-      {onClear !== undefined && state !== undefined ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="清除场景选择，回到任意"
-          accessibilityState={{ selected: false }}
-          hitSlop={CHIP_HIT_SLOP}
-          onPress={onClear}
-          className="h-6 flex-row items-center gap-1 rounded-full border border-border/80 bg-surface px-2.5 active:bg-surface-container dark:border-border-dark dark:bg-surface-dark dark:active:bg-surface-container-dark"
-        >
-          <Text className="font-sans text-[11px] font-medium text-accent dark:text-accent-dark">
-            {state}
+    <View className="mb-3 flex-row items-center justify-between">
+      <View>
+        <View className="flex-row items-center gap-2">
+          <Text className="font-display text-2xl font-bold tracking-tight text-ink dark:text-ink-dark">
+            现在
           </Text>
-          <Text className="font-sans text-[11px] text-muted dark:text-muted-dark">✕</Text>
-        </Pressable>
-      ) : state !== undefined ? (
-        <View className="h-6 items-center justify-center rounded-full bg-surface-container/70 px-2.5 dark:bg-surface-container-dark/70">
-          <Text className="font-sans text-[11px] font-medium text-muted dark:text-muted-dark">
-            {state}
-          </Text>
+          <View className="rounded-full border border-accent/25 bg-accent/10 px-2 py-0.5 dark:border-accent-dark/30 dark:bg-accent-dark/20">
+            <Text className="font-sans text-[11px] font-medium text-accent dark:text-accent-dark">
+              专注模式
+            </Text>
+          </View>
         </View>
-      ) : null}
+        <Text className="mt-0.5 font-sans text-xs font-medium tracking-wide text-muted dark:text-muted-dark">
+          根据情境匹配最佳下一步行动
+        </Text>
+      </View>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="管理场景快捷入口"
+        hitSlop={CHIP_HIT_SLOP}
+        onPress={onQuickAction ?? (() => router.push('/contexts'))}
+        className="h-8 w-8 items-center justify-center rounded-full border border-border/80 bg-surface shadow-2xs active:scale-95 dark:border-border-dark dark:bg-surface-dark"
+      >
+        <Ionicons name="options-outline" size={16} color="#716b64" />
+      </Pressable>
     </View>
   );
 }
 
 /**
- * Engine-bar scene option — the MULTI-SELECT (OR) vocabulary:
- * Clean, serene paper tile when idle; lights up in terracotta with a round
- * checkmark badge when selected.
- *
- * Appearance is a pure function of `selected`: every scene — seed or
- * user-created, `office` or `厨房` — renders through the exact same class string.
- * Nothing depends on the name (preventing false selection signals from hash tones).
+ * Engine-bar scene option (multi-select pill).
  */
 const SceneOption = memo(function SceneOption({
   label,
@@ -145,9 +137,7 @@ const SceneOption = memo(function SceneOption({
 });
 
 /**
- * Engine-bar minutes option — the SINGLE-SELECT vocabulary:
- * A subtle tinted terracotta tile with a radio dot indicator when selected,
- * clearly contrasting with the multi-select checkmark of the scene row.
+ * Engine-bar minutes option (5-col grid pill from stitch_scene_design/_1).
  */
 const MinutesOption = memo(function MinutesOption({
   label,
@@ -166,20 +156,20 @@ const MinutesOption = memo(function MinutesOption({
       hitSlop={CHIP_HIT_SLOP}
       onPress={onPress}
       className={cn(
-        'h-8 min-w-12 flex-row items-center justify-center rounded-lg px-2.5',
+        'h-8 flex-1 flex-row items-center justify-center rounded-xl px-1 active:scale-95',
         selected
-          ? 'border border-accent bg-accent/10 dark:border-accent-dark dark:bg-accent-dark/20'
+          ? 'border border-accent bg-accent shadow-xs dark:border-accent-dark dark:bg-accent-dark'
           : 'border border-border/80 bg-surface active:bg-surface-container dark:border-border-dark dark:bg-surface-dark dark:active:bg-surface-container-dark',
       )}
     >
       {selected ? (
-        <View className="mr-1.5 h-1.5 w-1.5 rounded-full bg-accent dark:bg-accent-dark" />
+        <View className="mr-1 h-1.5 w-1.5 rounded-full bg-on-accent dark:bg-on-accent-dark" />
       ) : null}
       <Text
         className={cn(
           'font-sans text-xs',
           selected
-            ? 'font-semibold text-accent dark:text-accent-dark'
+            ? 'font-semibold text-on-accent dark:text-on-accent-dark'
             : 'font-medium text-ink dark:text-ink-dark',
         )}
       >
@@ -189,7 +179,7 @@ const MinutesOption = memo(function MinutesOption({
   );
 });
 
-/** The free-form minutes field, styled at 32px (h-8) to share the row rhythm. */
+/** The free-form minutes input pill. */
 function CustomMinutesInput({
   value,
   onApply,
@@ -198,48 +188,74 @@ function CustomMinutesInput({
   onApply: (minutes: number) => void;
 }) {
   const [custom, setCustom] = useState('');
-  const isCustomActive = !TIME_CHIPS.includes(value);
+  const [isEditing, setIsEditing] = useState(false);
+  const isCustomActive = !TIME_CHIPS.includes(value as (typeof TIME_CHIPS)[number]);
 
   const applyCustom = () => {
     const parsed = Math.round(Number(custom));
     if (Number.isFinite(parsed) && parsed >= 1) onApply(parsed);
     setCustom('');
+    setIsEditing(false);
   };
 
+  if (isEditing) {
+    return (
+      <TextInput
+        className="h-8 flex-1 rounded-xl border-2 border-accent bg-accent/5 px-1 text-center font-sans text-xs font-semibold text-accent dark:border-accent-dark dark:bg-accent-dark/10 dark:text-accent-dark"
+        style={{
+          paddingTop: 0,
+          paddingBottom: 0,
+          paddingVertical: 0,
+          textAlignVertical: 'center',
+          fontSize: 12,
+        }}
+        hitSlop={FIELD_HIT_SLOP}
+        autoFocus
+        placeholder={`${value}`}
+        accessibilityLabel="自定义可用时间（分钟）"
+        keyboardType="number-pad"
+        value={custom}
+        onChangeText={setCustom}
+        onSubmitEditing={applyCustom}
+        onBlur={applyCustom}
+      />
+    );
+  }
+
   return (
-    <TextInput
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`自定义可用时间：当前 ${value} 分钟`}
+      hitSlop={CHIP_HIT_SLOP}
+      onPress={() => setIsEditing(true)}
       className={cn(
-        'min-w-20 rounded-lg px-2 text-center font-sans text-xs text-ink placeholder:text-muted dark:text-ink-dark dark:placeholder:text-muted-dark',
+        'h-8 flex-1 items-center justify-center rounded-xl px-1 active:scale-95',
         isCustomActive
-          ? 'border border-accent bg-accent/10 font-semibold text-accent dark:border-accent-dark dark:bg-accent-dark/20 dark:text-accent-dark'
-          : 'border border-border/80 bg-surface dark:border-border-dark dark:bg-surface-dark',
+          ? 'border border-accent bg-accent shadow-xs dark:border-accent-dark dark:bg-accent-dark'
+          : 'border border-dashed border-border/80 bg-surface active:bg-surface-container dark:border-border-dark dark:bg-surface-dark',
       )}
-      style={{
-        minWidth: 80,
-        height: Platform.OS === 'android' ? 34 : 32,
-        paddingTop: 0,
-        paddingBottom: 0,
-        paddingVertical: 0,
-        paddingHorizontal: 6,
-        textAlignVertical: 'center',
-        fontSize: 12,
-      }}
-      hitSlop={FIELD_HIT_SLOP}
-      placeholder={isCustomActive && !custom ? `${value}m` : '自定义'}
-      accessibilityLabel="自定义可用时间（分钟）"
-      keyboardType="number-pad"
-      value={custom}
-      onChangeText={setCustom}
-      onSubmitEditing={applyCustom}
-      onEndEditing={applyCustom}
-    />
+    >
+      <Text
+        numberOfLines={1}
+        className={cn(
+          'font-sans text-xs',
+          isCustomActive
+            ? 'font-semibold text-on-accent dark:text-on-accent-dark'
+            : 'font-medium text-muted dark:text-muted-dark',
+        )}
+      >
+        {isCustomActive ? `${value}m` : '自定义'}
+      </Text>
+    </Pressable>
   );
 }
 
-/** The engine-context bar (scene chips + time chips, design.md §4.1.1).
- *  The settings instance is OWNED by NowScreen (single source of truth —
- *  the pool in `useNow` must recompute on chip changes). */
-function EngineContextBar({
+/**
+ * FilterContextCard (stitch_scene_design/_1 & _2):
+ * Displays the current context pills with "+ 添加场景" button,
+ * and the 5-col available time selector.
+ */
+function FilterContextCard({
   settings,
   update,
 }: {
@@ -247,12 +263,8 @@ function EngineContextBar({
   update: (patch: Partial<EngineContextSettings>) => Promise<void>;
 }) {
   const { data: contexts, add, reload: reloadContexts } = useContexts();
-  const [adding, setAdding] = useState(false);
-  const [newName, setNewName] = useState('');
+  const [modalVisible, setModalVisible] = useState(false);
 
-  // The `/contexts` screen writes the same rows (删除 / 新建). This bar stays
-  // MOUNTED while that route is pushed on top, so without a focus re-read a
-  // scene deleted there lingers in the chips (hook-guidelines Rule 7).
   useFocusEffect(
     useCallback(() => {
       reloadContexts();
@@ -261,7 +273,6 @@ function EngineContextBar({
 
   const contextIds = settings?.contextIds ?? [];
   const availableMinutes = settings?.availableMinutes ?? 60;
-  // Empty selection = 「任意」 = runnable anywhere (engine contract).
   const anyScene = contextIds.length === 0;
 
   const toggleContext = (id: string) => {
@@ -271,25 +282,82 @@ function EngineContextBar({
     void update({ contextIds: next });
   };
 
-  const createContext = () => {
-    const name = newName.trim();
-    if (name === '') return;
-    void add(name).then(() => {
-      setNewName('');
-      setAdding(false);
-    });
+  const handleSaveAndActivate = async (name: string) => {
+    const createdId = await add(name);
+    if (createdId) {
+      void update({ contextIds: [...contextIds, createdId] });
+    }
   };
 
+  const timeEstimateText = useMemo(() => {
+    if (availableMinutes >= 120) return `预计当前空闲 ~${Math.round(availableMinutes / 60)}小时`;
+    if (availableMinutes === 60) return '预计当前空闲 ~1小时';
+    return `预计当前空闲 ~${availableMinutes}分钟`;
+  }, [availableMinutes]);
+
   return (
-    <Card className="gap-3.5 p-4">
-      {/* Dimension 1 — scenes, MULTI-select / OR. */}
-      <View>
-        <ConditionLabel
-          title="当前场景"
-          state={anyScene ? '任意' : `已选 ${contextIds.length} 个`}
-          {...(anyScene ? {} : { onClear: () => void update({ contextIds: [] }) })}
-        />
-        <View className="flex-row flex-wrap items-center gap-2">
+    <Card variant="outlined" className="gap-3.5 p-4">
+      {/* Dimension 1: Scene row */}
+      <View className="gap-2.5">
+        <View className="flex-row items-center justify-between">
+          <View className="flex-row items-center gap-1.5">
+            <View className="h-1.5 w-1.5 rounded-full bg-accent dark:bg-accent-dark" />
+            <Text className="font-sans text-xs font-semibold tracking-wider text-muted dark:text-muted-dark">
+              当前场景
+            </Text>
+          </View>
+
+          <View className="flex-row items-center gap-2">
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="管理场景"
+              hitSlop={CHIP_HIT_SLOP}
+              onPress={() => router.push('/contexts')}
+              className="flex-row items-center gap-1 py-0.5 active:opacity-75"
+            >
+              <Text className="font-sans text-[11px] font-medium text-muted dark:text-muted-dark">
+                管理场景
+              </Text>
+              <Ionicons name="chevron-forward" size={12} color="#9b948a" />
+            </Pressable>
+
+            {/* Any scene toggle pill */}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="清除场景选择，回到任意"
+              accessibilityState={{ selected: anyScene }}
+              hitSlop={CHIP_HIT_SLOP}
+              onPress={() => void update({ contextIds: [] })}
+              className={cn(
+                'flex-row items-center gap-1 rounded-full px-2.5 py-0.5 active:scale-95',
+                anyScene
+                  ? 'bg-surface-container dark:bg-surface-container-dark'
+                  : 'border border-border/80 bg-surface dark:border-border-dark dark:bg-surface-dark',
+              )}
+            >
+              <Text
+                className={cn(
+                  'font-sans text-xs font-medium',
+                  anyScene
+                    ? 'text-ink dark:text-ink-dark'
+                    : 'text-accent dark:text-accent-dark',
+                )}
+              >
+                {anyScene ? '任意' : `已选 ${contextIds.length} 个`}
+              </Text>
+              {!anyScene ? (
+                <Text className="font-sans text-xs text-muted dark:text-muted-dark">✕</Text>
+              ) : null}
+            </Pressable>
+          </View>
+        </View>
+
+        {/* Horizontal scroll of scene options */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 8, alignItems: 'center', paddingVertical: 2 }}
+        >
           {(contexts ?? []).map((context) => (
             <SceneOption
               key={context.id}
@@ -298,83 +366,43 @@ function EngineContextBar({
               onPress={() => toggleContext(context.id)}
             />
           ))}
-          {adding ? (
-            <View className="flex-row items-center gap-1.5">
-              <TextInput
-                className="h-8 w-24 rounded-lg border border-accent/80 bg-surface px-2.5 font-sans text-xs text-ink placeholder:text-muted dark:border-accent-dark/80 dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark"
-                hitSlop={FIELD_HIT_SLOP}
-                value={newName}
-                onChangeText={setNewName}
-                placeholder="新场景"
-                accessibilityLabel="新场景名称"
-                onSubmitEditing={createContext}
-                autoFocus
-              />
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="添加场景"
-                hitSlop={CHIP_HIT_SLOP}
-                onPress={createContext}
-                className="h-8 items-center justify-center rounded-lg bg-accent px-2.5 active:opacity-85 dark:bg-accent-dark"
-              >
-                <Text className="font-sans text-xs font-semibold text-on-accent dark:text-on-accent-dark">
-                  加
-                </Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="取消添加场景"
-                hitSlop={CHIP_HIT_SLOP}
-                onPress={() => {
-                  setAdding(false);
-                  setNewName('');
-                }}
-                className="h-8 items-center justify-center rounded-lg px-1.5 active:bg-surface-container dark:active:bg-surface-container-dark"
-              >
-                <Text className="font-sans text-xs text-muted dark:text-muted-dark">✕</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="新建场景"
-              accessibilityState={{ selected: false }}
-              hitSlop={CHIP_HIT_SLOP}
-              onPress={() => setAdding(true)}
-              className="h-8 flex-row items-center gap-1 rounded-lg border border-border/80 bg-surface px-2.5 active:bg-surface-container dark:border-border-dark dark:bg-surface-dark dark:active:bg-surface-container-dark"
-            >
-              <Text className="font-sans text-sm font-semibold leading-none text-accent dark:text-accent-dark">
-                +
-              </Text>
-              <Text className="font-sans text-xs font-medium text-muted dark:text-muted-dark">
-                场景
-              </Text>
-            </Pressable>
-          )}
-          {/* Deleting a scene lives on its own screen — the chips here are a
-              multi-select input, and a ✕ on each would collide with the
-              select/unselect tap target. */}
+
+          {/* "+ 添加场景" pill button */}
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="管理场景"
+            accessibilityLabel="新建场景"
             hitSlop={CHIP_HIT_SLOP}
-            onPress={() => router.push('/contexts')}
-            className="h-8 items-center justify-center rounded-lg px-2.5 active:bg-surface-container dark:active:bg-surface-container-dark"
+            onPress={() => setModalVisible(true)}
+            className="h-8 flex-row items-center gap-1 rounded-full border border-dashed border-border/80 bg-surface px-3 active:scale-95 dark:border-border-dark dark:bg-surface-dark"
           >
+            <Ionicons name="add" size={14} color="#716b64" />
             <Text className="font-sans text-xs font-medium text-muted dark:text-muted-dark">
-              管理场景
+              添加场景
             </Text>
           </Pressable>
-        </View>
+        </ScrollView>
       </View>
 
-      {/* Subtle divider between scene and time dimensions */}
+      {/* Subtle divider */}
       <View className="h-px bg-border/40 dark:bg-border-dark/40" />
 
-      {/* Dimension 2 — minutes, SINGLE-select. */}
-      <View>
-        <ConditionLabel title="可用时间（分钟）" />
-        <View className="flex-row flex-wrap items-center gap-2">
+      {/* Dimension 2: Available time row */}
+      <View className="gap-2">
+        <View className="flex-row items-center justify-between">
+          <View className="flex-row items-center gap-1.5">
+            <View className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            <Text className="font-sans text-xs font-semibold tracking-wider text-muted dark:text-muted-dark">
+              可用时间{' '}
+              <Text className="font-normal text-muted/70 dark:text-muted-dark/70">(分钟)</Text>
+            </Text>
+          </View>
+          <Text className="font-mono text-[11px] text-muted dark:text-muted-dark">
+            {timeEstimateText}
+          </Text>
+        </View>
+
+        {/* 5-column time capsule buttons */}
+        <View className="flex-row items-center gap-2 pt-0.5">
           {TIME_CHIPS.map((minutes) => (
             <MinutesOption
               key={minutes}
@@ -389,18 +417,18 @@ function EngineContextBar({
           />
         </View>
       </View>
+
+      <AddSceneModal
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        onSaveAndActivate={handleSaveAndActivate}
+      />
     </Card>
   );
 }
 
 /**
- * The LIST-AREA filter chip (the row under the hero card) — and nothing else.
- *
- * It stays a soft PILL precisely so it does NOT look like the engine bar's
- * inputs: the pills down here only trim the list, while the bar's rect tiles
- * and underlined numbers decide what the engine recommends. The engine bar
- * must not reuse this component (nor `ContextChip`, whose name-keyed earth
- * tones fake a "selected" look on an unselected scene).
+ * Filter chip for the list area.
  */
 function Chip({
   label,
@@ -416,7 +444,7 @@ function Chip({
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ selected: active }}
-      hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+      hitSlop={CHIP_HIT_SLOP}
       onPress={onPress}
       className={
         active
@@ -437,7 +465,7 @@ function Chip({
   );
 }
 
-/** One stats cell of the stats row (small muted label + value). */
+/** One stats cell of the stats row. */
 const StatsCell = memo(function StatsCell({ label, value }: { label: string; value: string }) {
   return (
     <View className="flex-1 items-center gap-0.5 px-1 py-2">
@@ -447,8 +475,7 @@ const StatsCell = memo(function StatsCell({ label, value }: { label: string; val
   );
 });
 
-/** One always-visible eligible row (design §5): title + project chip +
- *  read-only context chips + due label + 稍后/删除. */
+/** Action row in the eligible list. */
 const ActionRow = memo(function ActionRow({
   entry,
   now,
@@ -466,7 +493,7 @@ const ActionRow = memo(function ActionRow({
 }) {
   const action = entry.action;
   return (
-    <Card className="gap-2 p-3.5">
+    <Card variant="outlined" className="gap-2 p-3.5">
       <View className="flex-row items-start gap-2">
         <View className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-accent/60 dark:bg-accent-dark/60" />
         <Text className="flex-1 font-sans text-base font-medium text-ink dark:text-ink-dark">
@@ -498,11 +525,45 @@ const ActionRow = memo(function ActionRow({
   );
 });
 
-/** One habit in the Now screen's habit block: name + where it stands in
- *  the 21-day challenge + today's check-in. The check-in is a button only
- *  when today's HabitDay is still open — a done day (or a day the weekday
- *  mask excluded) renders as read-only state, so the block never offers a
- *  completion that `completeAction` would reject. */
+/**
+ * EmptyExecutionPool component (stitch_scene_design/_1 empty state):
+ * Serene illustration with glowing icon, helpful guidance, and capture CTA.
+ */
+function EmptyExecutionPool() {
+  return (
+    <View className="items-center justify-center rounded-3xl border border-dashed border-border/80 bg-surface/60 px-4 py-8 text-center dark:border-border-dark/80 dark:bg-surface-dark/60">
+      {/* Icon badge with pulsing ambiance */}
+      <View className="relative mb-4 h-16 w-16 items-center justify-center rounded-2xl border border-accent/20 bg-accent/10 shadow-sm dark:border-accent-dark/30 dark:bg-accent-dark/20">
+        <Ionicons name="time-outline" size={32} color="#c85a17" />
+        <View className="absolute -top-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-surface bg-emerald-400 dark:border-surface-dark" />
+      </View>
+
+      <Text className="font-display text-base font-bold tracking-tight text-ink dark:text-ink-dark">
+        执行池是空的
+      </Text>
+      <Text className="mt-1 max-w-[260px] text-center font-sans text-xs leading-relaxed text-muted dark:text-muted-dark">
+        去收件箱捕获一条待办，系统将根据情境排好你接下来该做的事。
+      </Text>
+
+      <View className="mt-5">
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="去收件箱捕获"
+          hitSlop={CHIP_HIT_SLOP}
+          onPress={() => router.push('/(tabs)/inbox')}
+          className="flex-row items-center gap-1.5 rounded-full bg-ink px-4 py-2 shadow-sm active:scale-95 dark:bg-ink-dark"
+        >
+          <Ionicons name="file-tray-outline" size={14} color="#faf9f6" />
+          <Text className="font-sans text-xs font-semibold text-canvas dark:text-canvas-dark">
+            去收件箱捕获
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+/** One habit row in the habit section. */
 const HabitBlockRow = memo(function HabitBlockRow({
   row,
   onComplete,
@@ -552,10 +613,92 @@ const HabitBlockRow = memo(function HabitBlockRow({
   );
 });
 
+/**
+ * TodayHabitSection (stitch_scene_design/_1):
+ * Shows habit count badge, habit items, or inspiring guidance to start habits.
+ */
+function TodayHabitSection({
+  habits,
+  todayDone,
+  todayRowsCount,
+  onCompleteHabit,
+}: {
+  habits: HabitWithProgress[];
+  todayDone: number;
+  todayRowsCount: number;
+  onCompleteHabit: (habitDayId: string) => void;
+}) {
+  return (
+    <Card className="gap-3 p-4 shadow-sm">
+      <View className="flex-row items-center justify-between">
+        <View className="flex-row items-center gap-2">
+          <View className="h-6 w-6 items-center justify-center rounded-lg bg-accent/10 dark:bg-accent-dark/20">
+            <Ionicons name="checkmark-circle-outline" size={14} color="#c85a17" />
+          </View>
+          <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+            今日习惯
+          </Text>
+        </View>
+
+        <View className="flex-row items-center gap-2">
+          {habits.length > 0 ? (
+            <Button
+              size="sm"
+              label="管理"
+              variant="ghost"
+              onPress={() => router.push('/habits')}
+            />
+          ) : null}
+          <View className="rounded-full bg-surface-container px-2 py-0.5 dark:bg-surface-container-dark">
+            <Text className="font-mono text-xs font-medium text-muted dark:text-muted-dark">
+              今天习惯 {todayDone}/{todayRowsCount}
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {habits.length > 0 ? (
+        habits.map((row) => (
+          <HabitBlockRow
+            key={row.habit.id}
+            row={row}
+            onComplete={() => {
+              if (row.today !== null) {
+                onCompleteHabit(row.today.id);
+              }
+            }}
+          />
+        ))
+      ) : (
+        <View className="gap-3">
+          <Text className="font-sans text-xs leading-relaxed text-muted dark:text-muted-dark">
+            还没有习惯 — 创建后每天会生成一条行动，准时出现在这里的执行池中。
+          </Text>
+          <View className="flex-row items-center justify-between border-t border-border/40 pt-3 dark:border-border-dark/40">
+            <Text className="font-sans text-[11px] text-muted/80 dark:text-muted-dark/80">
+              建立日常节奏，保持心流
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="去创建习惯"
+              hitSlop={CHIP_HIT_SLOP}
+              onPress={() => router.push('/habits')}
+              className="flex-row items-center gap-1 rounded-lg border border-border/80 bg-surface-container px-3 py-1.5 active:scale-95 dark:border-border-dark dark:bg-surface-container-dark"
+            >
+              <Ionicons name="add" size={14} color="#716b64" />
+              <Text className="font-sans text-xs font-medium text-ink dark:text-ink-dark">
+                去创建习惯
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+    </Card>
+  );
+}
+
 export default function NowScreen() {
   const now = useAppClock();
-  // ONE engine-context instance for the whole screen: the bar writes it,
-  // the pool reads it — both re-render from this single state.
   const { settings, update } = useEngineContextSettings();
   const { data, error } = useNow(settings);
   const { skip, error: skipError } = useSkipAction();
@@ -563,11 +706,7 @@ export default function NowScreen() {
   const { trash, error: trashError } = useTrashAction();
   const { complete, error: completeError } = useCompleteAction();
   const { data: habitRows, error: habitError, reload: reloadHabits } = useHabits(now);
-  // Habit rows are read through query-style hooks (no watch query), and
-  // the Now tab is NOT unmounted when /habits is pushed on top of it —
-  // so a habit created there would stay invisible. Re-read on subsequent
-  // focuses (design.md §3); the first focus is skipped since useHabits
-  // already loads on mount.
+
   const isFirstHabitFocusRef = useRef(true);
   useFocusEffect(
     useCallback(() => {
@@ -578,16 +717,11 @@ export default function NowScreen() {
       reloadHabits();
     }, [reloadHabits]),
   );
+
   const projectTitles = useProjectTitles();
   const { data: contexts } = useContexts();
   const [snoozeTarget, setSnoozeTarget] = useState<{ kind: CandidateKind; id: string } | null>(null);
-  // Rotation (spec: `eligible` backs "换一个"): the ONE displayed action is
-  // the first eligible entry not yet skipped in this view cycle. The skip
-  // counter is persisted by the skip transaction (banner at ≥ 3); the
-  // engine itself is a pure function and never re-ranks on skips.
   const [skippedViewIds, setSkippedViewIds] = useState<string[]>([]);
-  // The LIST-AREA context filter (design §5): independent from the engine
-  // context above — it only trims the list, never the hero recommendation.
   const [selectedContextIds, setSelectedContextIds] = useState<string[]>([]);
   const [isListExpanded, setIsListExpanded] = useState(true);
   const insets = useAppInsets();
@@ -603,15 +737,12 @@ export default function NowScreen() {
     [eligible, skippedViewIds],
   );
 
-  // Stats row: eligible vs total pool, Σ est minutes, the load band.
   const totalCount = eligible.length + (data?.filtered.length ?? 0);
   const totalEst = useMemo(
     () => eligible.reduce((sum, entry) => sum + entry.action.estMinutes, 0),
     [eligible],
   );
 
-  // Context-less actions are runnable ANYWHERE: they survive every filter
-  // selection.
   const visible = useMemo(
     () =>
       eligible.filter(
@@ -639,7 +770,6 @@ export default function NowScreen() {
   const handleSkip = useCallback(() => {
     if (displayed === null) return;
     void skip({ actionKind: displayed.action.kind, actionId: displayed.action.id });
-    // Already excluded (we wrapped around) → restart the cycle from here.
     setSkippedViewIds((prev) =>
       prev.includes(displayed.action.id)
         ? [displayed.action.id]
@@ -676,13 +806,19 @@ export default function NowScreen() {
   }, [displayed, projectTitles]);
 
   const habits = habitRows ?? [];
-  // The block counts only habits that generated a row TODAY (the weekday
-  // mask / cycle boundary can exclude one) — same set the old strip showed,
-  // so 「今天习惯 n/m」 keeps its meaning.
   const todayRows = useMemo(() => habits.filter((row) => row.today !== null), [habits]);
   const todayDone = useMemo(
     () => todayRows.filter((row) => row.today?.status === 'done').length,
     [todayRows],
+  );
+
+  const handleCompleteHabit = useCallback(
+    (habitDayId: string) => {
+      void complete({ actionKind: 'habit', actionId: habitDayId }).then((ok) => {
+        if (ok) reloadHabits();
+      });
+    },
+    [complete, reloadHabits],
   );
 
   return (
@@ -692,300 +828,260 @@ export default function NowScreen() {
         contentContainerStyle={{ paddingTop: topPadding, paddingHorizontal: 16, paddingBottom: 32 }}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Header */}
-        <Text className="font-display text-3xl font-bold tracking-tight text-ink dark:text-ink-dark">
-          现在
-        </Text>
-      <View className="mt-4">
-        <EngineContextBar settings={settings} update={update} />
-      </View>
+        {/* Top Header */}
+        <TopHeader />
 
-      {mutationError !== null ? (
-        <Text className="mt-2 font-sans text-sm text-danger">{errorMessage(mutationError)}</Text>
-      ) : null}
+        {mutationError !== null ? (
+          <Text className="mt-2 font-sans text-sm text-danger">{errorMessage(mutationError)}</Text>
+        ) : null}
 
-      <View className="mt-3 gap-3.5">
-        {error !== null ? (
-          <EmptyState title="加载执行池失败" hint={errorMessage(error)} />
-        ) : data === null ? (
-          <EmptyState title="加载中…" />
-        ) : data.poolEmpty ? (
-          <EmptyState title="执行池是空的" hint="去收件箱捕获一条，这里会排好你接下来该做的事。" />
-        ) : (
-          <>
-            {/* Habits are not re-clarifiable (db: reclarify.unsupported-kind —
-             * habits are edited on the habit itself) — the banner offers the
-             * re-clarify wizard only for next/calendar actions. */}
-            {displayed !== null &&
-            displayed.action.kind !== 'habit' &&
-            shouldOfferReclarify(displayed.action.consecutiveSkips) ? (
-              <Card className="border-warning bg-warning/10 p-3.5">
-                <Text className="font-sans text-sm font-medium text-ink dark:text-ink-dark">
-                  这个任务已连续跳过 {displayed.action.consecutiveSkips} 次 — 重新明确下一步？
-                </Text>
-                <View className="mt-2.5">
-                  <Button
-                    size="sm"
-                    label="重新明晰"
-                    variant="secondary"
-                    onPress={() =>
-                      router.push(`/reclarify/${displayed.action.id}?kind=${displayed.action.kind}`)
-                    }
-                  />
-                </View>
-              </Card>
-            ) : null}
-
-            {/* Stats row: Light quiet capsule row rather than stacked card */}
-            <View className="flex-row items-center rounded-2xl border border-border/50 bg-surface/60 py-1.5 px-2 backdrop-blur-sm dark:border-border-dark/50 dark:bg-surface-dark/60">
-              <StatsCell label="可执行" value={`${eligible.length}/${totalCount} 项`} />
-              <View className="h-6 w-px bg-border/40 dark:bg-border-dark/40" />
-              <StatsCell label="预计耗时" value={`${totalEst} 分钟`} />
-              <View className="h-6 w-px bg-border/40 dark:bg-border-dark/40" />
-              <StatsCell label="认知负荷" value={cognitiveLoadLabel(totalEst)} />
-            </View>
-
-            {displayed === null ? (
-              <EmptyState title="没有任何适合当前场景与时间的行动" hint="试试切换上面的场景或时间。">
-                {data.filtered.length > 0 ? (
-                  <View className="mt-4 w-full gap-1">
-                    <Text className="font-sans text-xs font-semibold text-muted dark:text-muted-dark">
-                      被过滤的事项：
-                    </Text>
-                    {data.filtered.map((entry) => (
-                      <Text
-                        key={entry.action.id}
-                        className="font-sans text-sm text-muted dark:text-muted-dark"
-                      >
-                        • {entry.action.title} — {FILTER_RULE_LABELS[entry.rule]}
-                      </Text>
-                    ))}
-                  </View>
-                ) : null}
-              </EmptyState>
-            ) : (
-              <>
-                {/* Recommendation Hero Card */}
-                <Card className="p-4 shadow-sm">
-                  <View className="mb-2.5 flex-row items-center gap-2">
-                    <Tag label={KIND_LABELS[displayed.action.kind]} tone="accent" />
-                    {displayed.action.estMinutes > 0 ? (
-                      <Tag label={`${displayed.action.estMinutes} 分钟`} tone="neutral" />
-                    ) : null}
-                  </View>
-                  <Text className="font-display text-xl font-bold tracking-tight text-ink dark:text-ink-dark">
-                    {displayed.action.title}
+        <View className="mt-3 gap-3.5">
+          {error !== null ? (
+            <Card className="items-center p-6 text-center">
+              <Text className="font-sans text-sm font-semibold text-danger">加载执行池失败</Text>
+              <Text className="mt-1 font-sans text-xs text-muted">{errorMessage(error)}</Text>
+            </Card>
+          ) : data === null ? (
+            <Card className="items-center p-6 text-center">
+              <Text className="font-sans text-sm font-medium text-muted">加载中…</Text>
+            </Card>
+          ) : data.poolEmpty ? (
+            <>
+              <EmptyExecutionPool />
+              <FilterContextCard settings={settings} update={update} />
+            </>
+          ) : (
+            <>
+              {displayed !== null &&
+              displayed.action.kind !== 'habit' &&
+              shouldOfferReclarify(displayed.action.consecutiveSkips) ? (
+                <Card className="border-warning bg-warning/10 p-3.5">
+                  <Text className="font-sans text-sm font-medium text-ink dark:text-ink-dark">
+                    这个任务已连续跳过 {displayed.action.consecutiveSkips} 次 — 重新明确下一步？
                   </Text>
-                  {subtitleParts.length > 0 ? (
-                    <Text className="mt-1.5 font-sans text-xs text-muted dark:text-muted-dark">
-                      {subtitleParts.join(' · ')}
-                    </Text>
-                  ) : null}
+                  <View className="mt-2.5">
+                    <Button
+                      size="sm"
+                      label="重新明晰"
+                      variant="secondary"
+                      onPress={() =>
+                        router.push(`/reclarify/${displayed.action.id}?kind=${displayed.action.kind}`)
+                      }
+                    />
+                  </View>
+                </Card>
+              ) : null}
 
-                  {displayed.reasons.length > 0 ? (
-                    <View className="mt-3.5 rounded-xl border border-border/40 bg-canvas/70 p-3 dark:border-border-dark/40 dark:bg-canvas-dark/70">
-                      <Text className="mb-1.5 font-sans text-xs font-semibold text-muted dark:text-muted-dark">
-                        为什么是它？
+              {displayed !== null ? (
+                <>
+                  {/* Recommendation Hero Card — prioritized first */}
+                  <Card variant="elevated" className="p-4 shadow-sm">
+                    <View className="mb-2.5 flex-row items-center gap-2">
+                      <Tag label={KIND_LABELS[displayed.action.kind]} tone="accent" />
+                      {displayed.action.estMinutes > 0 ? (
+                        <Tag label={`${displayed.action.estMinutes} 分钟`} tone="neutral" />
+                      ) : null}
+                    </View>
+                    <Text className="font-display text-xl font-bold tracking-tight text-ink dark:text-ink-dark">
+                      {displayed.action.title}
+                    </Text>
+                    {subtitleParts.length > 0 ? (
+                      <Text className="mt-1.5 font-sans text-xs text-muted dark:text-muted-dark">
+                        {subtitleParts.join(' · ')}
                       </Text>
-                      <View className="flex-row flex-wrap gap-1.5">
-                        {displayed.reasons.slice(0, 3).map((reason, idx) => (
-                          <View
-                            key={`${reason.type}-${reason.code}`}
-                            className={cn(
-                              'flex-row items-center rounded-lg px-2.5 py-1',
-                              idx === 0
-                                ? 'bg-accent/10 border border-accent/25 dark:bg-accent-dark/20 dark:border-accent-dark/30'
-                                : 'bg-surface/80 border border-border/60 dark:bg-surface-dark/80 dark:border-border-dark/60',
-                            )}
-                          >
-                            <Text
+                    ) : null}
+
+                    {displayed.reasons.length > 0 ? (
+                      <View className="mt-3.5 rounded-xl border border-border/40 bg-canvas/70 p-3 dark:border-border-dark/40 dark:bg-canvas-dark/70">
+                        <Text className="mb-1.5 font-sans text-xs font-semibold text-muted dark:text-muted-dark">
+                          为什么是它？
+                        </Text>
+                        <View className="flex-row flex-wrap gap-1.5">
+                          {displayed.reasons.slice(0, 3).map((reason, idx) => (
+                            <View
+                              key={`${reason.type}-${reason.code}`}
                               className={cn(
-                                'font-sans text-xs',
+                                'flex-row items-center rounded-lg px-2.5 py-1',
                                 idx === 0
-                                  ? 'font-medium text-accent dark:text-accent-dark'
-                                  : 'text-ink/80 dark:text-ink-dark/80',
+                                  ? 'border border-accent/25 bg-accent/10 dark:border-accent-dark/30 dark:bg-accent-dark/20'
+                                  : 'border border-border/60 bg-surface/80 dark:border-border-dark/60 dark:bg-surface-dark/80',
                               )}
                             >
-                              {idx === 0 ? '★ ' : ''}
-                              {REASON_LABELS[reason.code]}
-                            </Text>
-                          </View>
-                        ))}
+                              <Text
+                                className={cn(
+                                  'font-sans text-xs',
+                                  idx === 0
+                                    ? 'font-medium text-accent dark:text-accent-dark'
+                                    : 'text-ink/80 dark:text-ink-dark/80',
+                                )}
+                              >
+                                {idx === 0 ? '★ ' : ''}
+                                {REASON_LABELS[reason.code]}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
                       </View>
+                    ) : null}
+                  </Card>
+
+                  {/* Primary & Secondary Action Button Toolbar */}
+                  <View className="gap-2.5">
+                    <Button
+                      size="lg"
+                      label="开始"
+                      className="w-full shadow-sm"
+                      onPress={() =>
+                        router.push(`/focus/${displayed.action.id}?kind=${displayed.action.kind}`)
+                      }
+                    />
+                    <View className="flex-row gap-3">
+                      <View className="flex-1">
+                        <Button
+                          label="换一个"
+                          variant="secondary"
+                          className="w-full"
+                          onPress={handleSkip}
+                        />
+                      </View>
+                      <View className="flex-1">
+                        <Button
+                          label="稍后"
+                          variant="secondary"
+                          className="w-full"
+                          onPress={() =>
+                            setSnoozeTarget({ kind: displayed.action.kind, id: displayed.action.id })
+                          }
+                        />
+                      </View>
+                    </View>
+                  </View>
+                </>
+              ) : (
+                <Card className="items-center p-6 text-center">
+                  <Text className="font-sans text-base font-semibold text-ink dark:text-ink-dark">
+                    没有任何适合当前场景与时间的行动
+                  </Text>
+                  <Text className="mt-1 font-sans text-xs text-muted dark:text-muted-dark">
+                    试试切换下方的场景或时间。
+                  </Text>
+                  {data.filtered.length > 0 ? (
+                    <View className="mt-4 w-full gap-1 border-t border-border/40 pt-3 dark:border-border-dark/40">
+                      <Text className="text-left font-sans text-xs font-semibold text-muted dark:text-muted-dark">
+                        被过滤的事项：
+                      </Text>
+                      {data.filtered.map((entry) => (
+                        <Text
+                          key={entry.action.id}
+                          className="text-left font-sans text-sm text-muted dark:text-muted-dark"
+                        >
+                          • {entry.action.title} — {FILTER_RULE_LABELS[entry.rule]}
+                        </Text>
+                      ))}
                     </View>
                   ) : null}
                 </Card>
+              )}
 
-                {/* Restructured Action Button Hierarchy: Prominent Primary + Spacious Secondary Toolbar */}
-                <View className="gap-2.5">
-                  <Button
-                    size="lg"
-                    label="开始"
-                    className="w-full shadow-sm"
-                    onPress={() =>
-                      router.push(`/focus/${displayed.action.id}?kind=${displayed.action.kind}`)
-                    }
-                  />
-                  <View className="flex-row gap-3">
-                    <View className="flex-1">
-                      <Button
-                        label="换一个"
-                        variant="secondary"
-                        className="w-full"
-                        onPress={handleSkip}
-                      />
-                    </View>
-                    <View className="flex-1">
-                      <Button
-                        label="稍后"
-                        variant="secondary"
-                        className="w-full"
-                        onPress={() =>
-                          setSnoozeTarget({ kind: displayed.action.kind, id: displayed.action.id })
-                        }
-                      />
-                    </View>
-                  </View>
-                </View>
+              {/* Filter and Context Card — contextual fine-tuning after hero card */}
+              <FilterContextCard settings={settings} update={update} />
 
-                {/* Context filter chips (design §5 — list area only, the
-                 *  hero recommendation above is never filtered). */}
-                <View className="flex-row flex-wrap gap-2">
-                  <Chip
-                    label="全部"
-                    active={selectedContextIds.length === 0}
-                    onPress={() => setSelectedContextIds([])}
-                  />
-                  {(contexts ?? []).map((context) => (
+              {/* Stats row — pool overview */}
+              <View className="flex-row items-center rounded-2xl border border-border/50 bg-surface/60 px-2 py-1.5 shadow-2xs backdrop-blur-sm dark:border-border-dark/50 dark:bg-surface-dark/60">
+                <StatsCell label="可执行" value={`${eligible.length}/${totalCount} 项`} />
+                <View className="h-6 w-px bg-border/40 dark:bg-border-dark/40" />
+                <StatsCell label="预计耗时" value={`${totalEst} 分钟`} />
+                <View className="h-6 w-px bg-border/40 dark:bg-border-dark/40" />
+                <StatsCell label="认知负荷" value={cognitiveLoadLabel(totalEst)} />
+              </View>
+
+              {displayed !== null ? (
+                <>
+                  {/* Context filter chips for list area */}
+                  <View className="flex-row flex-wrap gap-2">
                     <Chip
-                      key={context.id}
-                      label={context.name}
-                      active={selectedContextIds.includes(context.id)}
-                      onPress={() => toggleFilterContext(context.id)}
+                      label="全部"
+                      active={selectedContextIds.length === 0}
+                      onPress={() => setSelectedContextIds([])}
                     />
-                  ))}
-                </View>
-
-                {/* Eligible list header & collapsible body */}
-                {visible.length === 0 ? (
-                  <EmptyState
-                    title="没有匹配当前情境的可执行事项"
-                    hint="换一批情境 chip，或点「全部」看所有可执行事项。"
-                  />
-                ) : (
-                  <View className="gap-2.5">
-                    <View className="flex-row items-center justify-between px-1">
-                      <Text className="font-sans text-xs font-semibold text-muted dark:text-muted-dark">
-                        可执行备选事项 ({visible.length})
-                      </Text>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        label={isListExpanded ? '收起清单' : '展开清单'}
-                        onPress={() => setIsListExpanded((prev) => !prev)}
+                    {(contexts ?? []).map((context) => (
+                      <Chip
+                        key={context.id}
+                        label={context.name}
+                        active={selectedContextIds.includes(context.id)}
+                        onPress={() => toggleFilterContext(context.id)}
                       />
-                    </View>
-                    {isListExpanded ? (
-                      visible.map((entry) => (
-                        <ActionRow
-                          key={entry.action.id}
-                          entry={entry}
-                          now={now}
-                          projectName={
-                            entry.action.projectId !== undefined
-                              ? projectTitles[entry.action.projectId]
-                              : undefined
-                          }
-                          contextName={contextName}
-                          onSnooze={handleSnooze}
-                          onTrash={handleTrash}
-                        />
-                      ))
-                    ) : (
-                      <Pressable
-                        onPress={() => setIsListExpanded(true)}
-                        accessibilityRole="button"
-                        accessibilityLabel="展开备选事项清单"
-                        className="rounded-xl border border-border/50 bg-surface/40 p-3.5 dark:border-border-dark/50 dark:bg-surface-dark/40"
-                      >
-                        <Text className="text-center font-sans text-xs text-muted dark:text-muted-dark">
-                          已折叠 {visible.length} 项备选事项 · 点击展开查看完整列表
-                        </Text>
-                      </Pressable>
-                    )}
+                    ))}
                   </View>
-                )}
-              </>
-            )}
-          </>
-        )}
 
-        {/* Habit block. Renders in BOTH states (task 10-02): with no habit
-         *  it used to render nothing at all, so the feature was
-         *  undiscoverable — the empty state now carries the entry point,
-         *  and a non-empty block carries a 「管理」 shortcut to /habits.
-         *  `reload` runs on focus (useFocusEffect) because the Now tab
-         *  stays mounted under the habits route (design.md §3).
-         *
-         *  Habits stay in the engine pool (they compete for the ONE hero
-         *  recommendation); this block is the batch path — every habit at
-         *  once, with the challenge context the ranked list cannot show. */}
-        {habits.length > 0 ? (
-          <Card className="gap-3 p-3.5">
-            <View className="flex-row items-center justify-between">
-              <Text className="font-sans text-xs font-semibold text-muted dark:text-muted-dark">
-                今天习惯 {todayDone}/{todayRows.length}
-              </Text>
-              <Button
-                size="sm"
-                label="管理"
-                variant="ghost"
-                onPress={() => router.push('/habits')}
-              />
-            </View>
-            {habits.map((row) => (
-              <HabitBlockRow
-                key={row.habit.id}
-                row={row}
-                onComplete={() => {
-                  if (row.today !== null) {
-                    void complete({ actionKind: 'habit', actionId: row.today.id }).then((ok) => {
-                      // Habit rows are read through a query-style hook (no
-                      // watch query), so the block keeps showing the
-                      // pre-write counters until it is re-read.
-                      //
-                      // Reload only on success: after a rejected write the
-                      // re-read returns the same rows (a wasted read) and
-                      // would also clear `useHabits`' own error state, which
-                      // is the one place a read failure could still surface.
-                      // The write's own error is unaffected — `completeError`
-                      // lives in `useCompleteAction`.
-                      if (ok) reloadHabits();
-                    });
-                  }
-                }}
-              />
-            ))}
-          </Card>
-        ) : habitRows !== null ? (
-          <Card className="gap-2 p-3.5">
-            <Text className="font-sans text-xs font-semibold text-muted dark:text-muted-dark">
-              今天习惯 0/0
-            </Text>
-            <Text className="font-sans text-sm text-muted dark:text-muted-dark">
-              还没有习惯 — 创建后每天会生成一条行动，出现在这里的执行池中。
-            </Text>
-            <View className="flex-row">
-              <Button
-                size="sm"
-                label="去创建习惯"
-                variant="secondary"
-                onPress={() => router.push('/habits')}
-              />
-            </View>
-          </Card>
-        ) : null}
-      </View>
+                  {/* Eligible list header & collapsible body */}
+                  {visible.length === 0 ? (
+                    <Card className="items-center p-6 text-center">
+                      <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+                        没有匹配当前情境的可执行事项
+                      </Text>
+                      <Text className="mt-1 font-sans text-xs text-muted dark:text-muted-dark">
+                        换一批情境 chip，或点「全部」看所有可执行事项。
+                      </Text>
+                    </Card>
+                  ) : (
+                    <View className="gap-2.5">
+                      <View className="flex-row items-center justify-between px-1">
+                        <Text className="font-sans text-xs font-semibold text-muted dark:text-muted-dark">
+                          可执行备选事项 ({visible.length})
+                        </Text>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          label={isListExpanded ? '收起清单' : '展开清单'}
+                          onPress={() => setIsListExpanded((prev) => !prev)}
+                        />
+                      </View>
+                      {isListExpanded ? (
+                        visible.map((entry) => (
+                          <ActionRow
+                            key={entry.action.id}
+                            entry={entry}
+                            now={now}
+                            projectName={
+                              entry.action.projectId !== undefined
+                                ? projectTitles[entry.action.projectId]
+                                : undefined
+                            }
+                            contextName={contextName}
+                            onSnooze={handleSnooze}
+                            onTrash={handleTrash}
+                          />
+                        ))
+                      ) : (
+                        <Pressable
+                          onPress={() => setIsListExpanded(true)}
+                          accessibilityRole="button"
+                          accessibilityLabel="展开备选事项清单"
+                          className="rounded-xl border border-border/50 bg-surface/40 p-3.5 dark:border-border-dark/50 dark:bg-surface-dark/40"
+                        >
+                          <Text className="text-center font-sans text-xs text-muted dark:text-muted-dark">
+                            已折叠 {visible.length} 项备选事项 · 点击展开查看完整列表
+                          </Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  )}
+                </>
+              ) : null}
+            </>
+          )}
+
+          {/* Habit Section */}
+          {habitRows !== null ? (
+            <TodayHabitSection
+              habits={habits}
+              todayDone={todayDone}
+              todayRowsCount={todayRows.length}
+              onCompleteHabit={handleCompleteHabit}
+            />
+          ) : null}
+        </View>
       </ScrollView>
 
       <SnoozeSheet

@@ -59,7 +59,7 @@ function InboxRow({
     now.getTime() - new Date(item.capturedAt).getTime() > PRIORITY_AFTER_MS;
 
   return (
-    <Card className="p-3.5">
+    <Card variant="outlined" className="p-3.5">
       <View className="flex-row items-center gap-3">
         <Pressable
           className="flex-1"
@@ -110,15 +110,28 @@ function InboxRow({
   );
 }
 
-function GtdTipCard() {
+function GtdTipCard({ defaultExpanded = false }: { defaultExpanded?: boolean }) {
+  const [open, setOpen] = useState(defaultExpanded);
   return (
-    <Card className="mt-3.5 p-3.5">
-      <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
-        GTD 澄清心法
-      </Text>
-      <Text className="mt-1.5 font-sans text-xs leading-5 text-muted dark:text-muted-dark">
-        收集箱不是待办清单，它是大脑的缓冲区。两分钟内能完成的事立即去做，复杂的转化为项目与下一步。
-      </Text>
+    <Card variant="subtle" className="mt-3.5 p-3">
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="展开或收起GTD澄清心法"
+        onPress={() => setOpen((prev) => !prev)}
+        className="flex-row items-center justify-between"
+      >
+        <Text className="font-sans text-xs font-semibold text-muted dark:text-muted-dark">
+          GTD 澄清心法
+        </Text>
+        <Text className="font-sans text-[11px] text-muted/70 dark:text-muted-dark/70">
+          {open ? '收起' : '展开提示'}
+        </Text>
+      </Pressable>
+      {open ? (
+        <Text className="mt-1.5 font-sans text-xs leading-5 text-muted dark:text-muted-dark">
+          收集箱不是待办清单，它是大脑的缓冲区。两分钟内能完成的事立即去做，复杂的转化为项目与下一步。
+        </Text>
+      ) : null}
     </Card>
   );
 }
@@ -235,7 +248,7 @@ export default function InboxScreen() {
                 title="收件箱是空的"
                 hint="在上方输入并保存，这里会按捕获时间列出你记下的一切。"
               />
-              <GtdTipCard />
+              <GtdTipCard defaultExpanded />
             </>
           ) : (
             <FlatList
