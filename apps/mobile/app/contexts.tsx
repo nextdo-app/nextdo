@@ -98,7 +98,7 @@ export default function ContextsScreen() {
       keyboardShouldPersistTaps="handled"
     >
       <View className="mb-2 flex-row items-center justify-between">
-        <Button label="← 现在" variant="ghost" onPress={() => goBack('/(tabs)/now')} />
+        <Button label="← 返回" variant="ghost" onPress={() => goBack('/(tabs)/now')} />
       </View>
       <Text className="font-display text-3xl font-bold tracking-tight text-ink dark:text-ink-dark">
         场景

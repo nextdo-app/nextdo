@@ -35,8 +35,8 @@
  * Presentational otherwise: no engine logic, no stored engine output
  * (component-guidelines).
  */
-import { useMemo, useReducer, useState, type Dispatch, type ReactNode } from 'react';
-import { router } from 'expo-router';
+import { useCallback, useMemo, useReducer, useState, type Dispatch, type ReactNode } from 'react';
+import { router, useFocusEffect } from 'expo-router';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Button, Card, ContextChip, ProgressBar, SceneOption, Tag, cn } from '@nextdo/ui';
@@ -155,13 +155,26 @@ function Chip({ label, active, onPress }: { label: string; active: boolean; onPr
   );
 }
 
-function Field({ label, optional, children }: { label: string; optional?: boolean; children: ReactNode }) {
+function Field({
+  label,
+  optional,
+  rightAction,
+  children,
+}: {
+  label: string;
+  optional?: boolean;
+  rightAction?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <View className="gap-1">
-      <Text className="font-sans text-sm font-medium text-ink dark:text-ink-dark">
-        {label}
-        {optional ? <Text className="text-muted dark:text-muted-dark">（可选）</Text> : null}
-      </Text>
+      <View className="flex-row items-center justify-between">
+        <Text className="font-sans text-sm font-medium text-ink dark:text-ink-dark">
+          {label}
+          {optional ? <Text className="text-muted dark:text-muted-dark">（可选）</Text> : null}
+        </Text>
+        {rightAction}
+      </View>
       {children}
     </View>
   );
@@ -280,15 +293,14 @@ export function WizardBody({
   const { data: allProjects } = useProjects();
   const activeProjects = allProjects.filter((project) => project.status === 'active');
 
-  // The context multi-select's data (seeded contexts + user-created), plus
-  // the quick-create the Now screen's scene bar has.
-  //
-  // The create entry is NOT optional here: the five default contexts are
-  // seeded SERVER-side (domain-model.md "Context" — single-writer), so a
-  // client that has not connected to the sync backend yet has an EMPTY
-  // contexts table. Without an inline create the multi-select would render
-  // a bare label over nothing — a dead end with no way forward.
-  const { data: contexts, add: addContextName } = useContexts();
+  // The context multi-select's data (seeded contexts + user-created).
+  // Re-read on focus so returning from /contexts immediately reflects newly created scenes.
+  const { data: contexts, reload: reloadContexts } = useContexts();
+  useFocusEffect(
+    useCallback(() => {
+      reloadContexts();
+    }, [reloadContexts]),
+  );
   const contextNames = useMemo(
     () => new Map((contexts ?? []).map((context) => [context.id, context.name] as const)),
     [contexts],
@@ -496,7 +508,6 @@ export function WizardBody({
                 now={now}
                 onField={setField}
                 onContextIds={setContextIds}
-                onCreateContext={(name) => void addContextName(name)}
                 canGoBack={canGoBack}
                 onBack={handleBack}
                 onSubmit={() => handleFormSubmit(state.form, state.fields, state.twoMinute, state.projectId)}
@@ -796,9 +807,6 @@ interface FormCardProps {
    *  `field: 'contextIds'` string[] action via `onContextIds`. */
   onField: (field: Exclude<keyof FormFields, 'contextIds'>, value: string | number | null) => void;
   onContextIds: (value: string[]) => void;
-  /** Quick-create a context from inside the multi-select (offline /
-   *  not-yet-synced clients have no seeded contexts). */
-  onCreateContext: (name: string) => void;
   canGoBack: boolean;
   onBack: () => void;
   onSubmit: () => void;
@@ -814,29 +822,18 @@ function FormCard({
   now,
   onField,
   onContextIds,
-  onCreateContext,
   canGoBack,
   onBack,
   onSubmit,
   disabled,
 }: FormCardProps) {
   const { form, fields } = state;
-  const [addingContext, setAddingContext] = useState(false);
-  const [newContextName, setNewContextName] = useState('');
 
   function toggleContext(contextId: string) {
     const next = fields.contextIds.includes(contextId)
       ? fields.contextIds.filter((entry) => entry !== contextId)
       : [...fields.contextIds, contextId];
     onContextIds(next);
-  }
-
-  function createContext() {
-    const name = newContextName.trim();
-    if (name === '') return;
-    onCreateContext(name);
-    setNewContextName('');
-    setAddingContext(false);
   }
 
   const body = (() => {
@@ -1024,77 +1021,40 @@ function FormCard({
     <View className="gap-4">
       {body}
       {CONTEXT_FORMS.includes(form) ? (
-        <Field label="在哪里做？（可多选，不选 = 随处可执行）">
+        <Field
+          label="在哪里做？（可多选，不选 = 随处可执行）"
+          rightAction={
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="管理场景"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              onPress={() => router.push('/contexts')}
+              className="flex-row items-center gap-1 py-0.5 active:opacity-75"
+            >
+              <Text className="font-sans text-[11px] font-medium text-muted dark:text-muted-dark">
+                管理场景
+              </Text>
+              <Ionicons name="chevron-forward" size={12} color="#9b948a" />
+            </Pressable>
+          }
+        >
           {contexts.length === 0 ? (
-            // An empty list is the NORMAL state before the first sync
-            // (defaults are seeded server-side), so say what it means
-            // instead of showing a bare label over nothing.
             <Text className="font-sans text-xs text-muted dark:text-muted-dark">
-              还没有场景 —— 不选即随处可执行。也可以现在建一个。
+              还没有场景 —— 不选即随处可执行。
             </Text>
-          ) : null}
-          <View className="flex-row flex-wrap items-center gap-2">
-            {contexts.map((context) => (
-              <SceneOption
-                key={context.id}
-                label={context.name}
-                selected={fields.contextIds.includes(context.id)}
-                onPress={() => toggleContext(context.id)}
-                accessibilityLabel={`选择情境：${context.name}`}
-              />
-            ))}
-            {addingContext ? (
-              <View className="flex-row items-center gap-1.5">
-                <TextInput
-                  className="h-8 w-24 rounded-full border border-accent bg-surface px-3 font-sans text-xs text-ink placeholder:text-muted dark:border-accent-dark dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark"
-                  style={{
-                    paddingVertical: 0,
-                    textAlignVertical: 'center',
-                  }}
-                  value={newContextName}
-                  onChangeText={setNewContextName}
-                  placeholder="新场景"
-                  accessibilityLabel="新场景名称"
-                  onSubmitEditing={createContext}
-                  autoFocus
+          ) : (
+            <View className="flex-row flex-wrap items-center gap-2">
+              {contexts.map((context) => (
+                <SceneOption
+                  key={context.id}
+                  label={context.name}
+                  selected={fields.contextIds.includes(context.id)}
+                  onPress={() => toggleContext(context.id)}
+                  accessibilityLabel={`选择情境：${context.name}`}
                 />
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="添加场景"
-                  onPress={createContext}
-                  className="h-8 w-8 items-center justify-center rounded-full border border-accent/80 bg-accent/10 active:bg-accent/25 dark:border-accent-dark/80 dark:bg-accent-dark/20"
-                >
-                  <Text className="font-sans text-sm font-semibold leading-none text-accent dark:text-accent-dark">
-                    +
-                  </Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="取消添加场景"
-                  onPress={() => {
-                    setAddingContext(false);
-                    setNewContextName('');
-                  }}
-                  className="h-8 w-8 items-center justify-center rounded-full border border-border/80 bg-surface active:bg-surface-container dark:border-border-dark dark:bg-surface-dark dark:active:bg-surface-container-dark"
-                >
-                  <Text className="font-sans text-xs text-muted dark:text-muted-dark">✕</Text>
-                </Pressable>
-              </View>
-            ) : (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="新建场景"
-                accessibilityState={{ selected: false }}
-                onPress={() => setAddingContext(true)}
-                className="h-8 flex-row items-center gap-1 rounded-full border border-dashed border-border/80 bg-surface px-3 active:scale-95 dark:border-border-dark dark:bg-surface-dark"
-              >
-                <Ionicons name="add" size={14} color="#716b64" />
-                <Text className="font-sans text-xs font-medium text-muted dark:text-muted-dark">
-                  场景
-                </Text>
-              </Pressable>
-            )}
-          </View>
+              ))}
+            </View>
+          )}
         </Field>
       ) : null}
       <View className="flex-row gap-2.5">

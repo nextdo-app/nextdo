@@ -668,7 +668,7 @@ describe('Now screen', () => {
           screen.getByText('场景是行动的运行环境 —— Now 屏按当前场景筛选待办。不选即随处可执行。'),
         ).toBeTruthy(),
       );
-      expect(screen.getByRole('button', { name: '← 现在' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: '← 返回' })).toBeTruthy();
     });
 
     it('re-reads the scenes when the tab regains focus (Rule 7 refresh path)', async () => {

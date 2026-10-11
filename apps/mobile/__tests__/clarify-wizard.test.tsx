@@ -65,6 +65,7 @@ jest.mock('expo-router', () => ({
     replace: jest.fn(),
   },
   useLocalSearchParams: () => ({}),
+  useFocusEffect: jest.fn((cb: () => void) => cb()),
 }));
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
@@ -144,7 +145,7 @@ const CONTEXTS = [
 beforeEach(() => {
   jest.clearAllMocks();
   mockedUseProjects.mockReturnValue({ data: [ACTIVE_PROJECT, ON_HOLD_PROJECT], error: null });
-  mockedUseContexts.mockReturnValue({ data: CONTEXTS, error: null, add: jest.fn(async () => undefined) });
+  mockedUseContexts.mockReturnValue({ data: CONTEXTS, error: null, add: jest.fn(async () => undefined), reload: jest.fn() });
   mockedListInboxItems.mockResolvedValue([INBOX_ITEM]);
   mockedListNextActions.mockResolvedValue([NEXT_ACTION]);
   mockedApplyClarify.mockResolvedValue({ inboxId: 'inbox-1', outcome: { kind: 'next-action', source: 'clarified' }, createdIds: ['a1'] });
@@ -567,11 +568,10 @@ describe('WizardBody — context multi-select (design §3.4)', () => {
   // rendered a bare 「在哪里做？」label over nothing — no chips, no empty
   // state, and no way to create one from inside the wizard (only the Now
   // screen's scene bar had that). A dead end.
-  //
-  // What this pins: with no contexts the form explains the state AND
-  // still offers the quick-create, so the user is never stranded.
-  it('no contexts: the multi-select explains the state and still offers quick-create', async () => {
-    mockedUseContexts.mockReturnValue({ data: [], error: null, add: jest.fn(async () => undefined) });
+  // Context multi-select: scene management is centralized via /contexts
+  // route — inline quick-create is removed from the form to keep it clean.
+  it('no contexts: the multi-select explains the state and provides scene management entry', async () => {
+    mockedUseContexts.mockReturnValue({ data: [], error: null, add: jest.fn(async () => undefined), reload: jest.fn() });
     renderWizard();
     fireEvent.press(screen.getByText('可以，是行动'));
     walkToActionForm();
@@ -580,46 +580,44 @@ describe('WizardBody — context multi-select (design §3.4)', () => {
     expect(screen.getByText(/还没有场景/)).toBeTruthy();
     expect(screen.getByText(/不选即随处可执行/)).toBeTruthy();
 
-    // …and the create entry is reachable, so the form is not a dead end.
-    fireEvent.press(screen.getByLabelText('新建场景'));
-    expect(screen.getByLabelText('新场景名称')).toBeTruthy();
-  });
-
-  // The quick-create must actually reach `useContexts().add` — otherwise the
-  // button above is decorative. Kept separate so a failure names which half
-  // broke (rendering vs. wiring).
-  it('the in-form 新建场景 writes through to useContexts().add', async () => {
-    const add = jest.fn(async () => undefined);
-    mockedUseContexts.mockReturnValue({ data: [], error: null, add });
-    renderWizard();
-    fireEvent.press(screen.getByText('可以，是行动'));
-    walkToActionForm();
-
-    fireEvent.press(screen.getByLabelText('新建场景'));
-    fireEvent.changeText(screen.getByLabelText('新场景名称'), '书房');
-    fireEvent.press(screen.getByLabelText('添加场景'));
-
-    expect(add).toHaveBeenCalledWith('书房');
-    // The input closes after a successful create (mirrors the Now screen).
+    // The management entry is reachable via header action.
+    expect(screen.getByLabelText('管理场景')).toBeTruthy();
+    expect(screen.queryByLabelText('新建场景')).toBeNull();
     expect(screen.queryByLabelText('新场景名称')).toBeNull();
   });
 
-  // A blank name must not create a whitespace row — `useContexts().add`
-  // would no-op, so the wizard closes its own input and says nothing.
-  it('an empty name does not create a context', async () => {
-    const add = jest.fn(async () => undefined);
-    mockedUseContexts.mockReturnValue({ data: [], error: null, add });
+  it('the 管理场景 button navigates to /contexts', async () => {
     renderWizard();
     fireEvent.press(screen.getByText('可以，是行动'));
     walkToActionForm();
 
-    fireEvent.press(screen.getByLabelText('新建场景'));
-    fireEvent.changeText(screen.getByLabelText('新场景名称'), '   ');
-    fireEvent.press(screen.getByLabelText('添加场景'));
+    fireEvent.press(screen.getByLabelText('管理场景'));
+    expect(router.push).toHaveBeenCalledWith('/contexts');
+  });
 
-    expect(add).not.toHaveBeenCalled();
-    // The input stays open so the name can be corrected.
-    expect(screen.getByLabelText('新场景名称')).toBeTruthy();
+  it('does not render inline quick-create in the form', async () => {
+    renderWizard();
+    fireEvent.press(screen.getByText('可以，是行动'));
+    walkToActionForm();
+
+    expect(screen.queryByLabelText('新建场景')).toBeNull();
+    expect(screen.queryByLabelText('新场景名称')).toBeNull();
+  });
+
+  it('triggers reload on focus so returning from /contexts reflects newly created scenes', async () => {
+    const reload = jest.fn();
+    mockedUseContexts.mockReturnValue({
+      data: [{ id: 'ctx-1', name: '办公室' }],
+      error: null,
+      add: jest.fn(async () => undefined),
+      reload,
+    });
+    renderWizard();
+    fireEvent.press(screen.getByText('可以，是行动'));
+    walkToActionForm();
+
+    expect(screen.getByText('办公室')).toBeTruthy();
+    expect(reload).toHaveBeenCalled();
   });
 });
 
