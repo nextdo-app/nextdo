@@ -1,6 +1,6 @@
 {
   "name": "@nextdo/mobile",
-  "version": "0.1.5-beta.2",
+  "version": "0.1.5-beta.3",
   "private": true,
   "packageManager": "pnpm@12.5.1",
   "engines": {
