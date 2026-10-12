@@ -376,6 +376,7 @@ export default function SettingsScreen() {
         contentContainerStyle={{ paddingTop: topPadding, paddingHorizontal: 16, paddingBottom: 32 }}
         keyboardShouldPersistTaps="handled"
       >
+        <View className="w-full max-w-3xl mx-auto">
         {/* Header block (matches the other tabs) */}
         <Text className="font-display text-3xl font-bold tracking-tight text-ink dark:text-ink-dark">
           设置
@@ -1211,6 +1212,7 @@ export default function SettingsScreen() {
             </View>
           ) : null}
         </Card>
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );

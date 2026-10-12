@@ -20,6 +20,7 @@ import {
 } from 'react-native';
 import { Button } from '@nextdo/ui';
 import { errorMessage } from '@/lib/error-messages';
+import { useAppInsets } from '@/lib/use-app-insets';
 import type { InboxItem } from '@nextdo/core';
 
 export interface QuickCaptureModalProps {
@@ -41,6 +42,8 @@ export function QuickCaptureModal({
 }: QuickCaptureModalProps) {
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
+  const insets = useAppInsets();
+  const bottomPadding = Math.max(insets.bottom, 16);
 
   const handleCapture = async () => {
     const title = draft.trim();
@@ -68,12 +71,12 @@ export function QuickCaptureModal({
     <Modal
       visible={visible}
       transparent
-      animationType="fade"
+      animationType="slide"
       onRequestClose={handleClose}
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        className="flex-1 items-center justify-center bg-black/40 px-4"
+        className="flex-1 justify-end bg-black/40 md:items-center md:justify-center md:px-4"
       >
         {/* Backdrop dismiss */}
         <Pressable
@@ -83,11 +86,17 @@ export function QuickCaptureModal({
           onPress={handleClose}
         />
 
-        {/* Modal Card */}
-        <View className="relative z-10 w-full max-w-md rounded-2xl border border-border bg-surface p-6 shadow-2xl dark:border-border-dark dark:bg-surface-dark">
-          <View className="mb-4 flex-row items-center justify-between">
+        {/* Modal Card: Bottom sheet on mobile (ergonomic thumb zone), compact centered dialog on desktop */}
+        <View
+          style={{ paddingBottom: bottomPadding }}
+          className="relative z-10 w-full rounded-t-3xl border-t border-border/80 bg-surface p-5 pt-3 shadow-2xl dark:border-border-dark dark:bg-surface-dark md:max-w-md md:rounded-2xl md:border md:p-6"
+        >
+          {/* Mobile top drag handle indicator */}
+          <View className="mx-auto mb-3 h-1 w-10 rounded-full bg-border dark:bg-border-dark md:hidden" />
+
+          <View className="mb-3.5 flex-row items-center justify-between">
             <View>
-              <Text className="text-xl font-bold tracking-tight text-ink dark:text-ink-dark">
+              <Text className="text-lg font-bold tracking-tight text-ink dark:text-ink-dark md:text-xl">
                 有什么想记下的？
               </Text>
               <Text className="mt-0.5 text-xs text-muted dark:text-muted-dark">
@@ -99,7 +108,7 @@ export function QuickCaptureModal({
           <TextInput
             autoFocus
             multiline
-            className="mb-4 min-h-[96px] rounded-2xl border border-border/80 bg-canvas p-3.5 text-base text-ink placeholder:text-muted focus:border-accent dark:border-border-dark dark:bg-canvas-dark dark:text-ink-dark dark:placeholder:text-muted-dark"
+            className="mb-3.5 min-h-[88px] rounded-xl border border-border/80 bg-canvas p-3 text-base text-ink placeholder:text-muted focus:border-accent dark:border-border-dark dark:bg-canvas-dark dark:text-ink-dark dark:placeholder:text-muted-dark md:min-h-[96px] md:rounded-2xl md:p-3.5"
             placeholder="记下任何事…（Enter 快速保存）"
             value={draft}
             onChangeText={setDraft}
@@ -127,11 +136,13 @@ export function QuickCaptureModal({
             <Button
               label="稍后再说"
               variant="ghost"
+              size="sm"
               onPress={handleClose}
             />
             <Button
               label={saving ? '记录中…' : '记录'}
               variant="primary"
+              size="sm"
               disabled={draft.trim() === '' || saving}
               onPress={() => void handleCapture()}
             />

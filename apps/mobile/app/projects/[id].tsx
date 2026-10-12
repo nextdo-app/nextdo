@@ -15,8 +15,9 @@
  * via inline forms. Action rows carry the read-only context chips
  * (design §4.2 — the PRD acceptance "项目详情行内 chips").
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Button, Card, ContextChip, EmptyState, Tag, ValueChips, cn, type TagTone } from '@nextdo/ui';
@@ -689,16 +690,20 @@ export default function ProjectDetailScreen() {
   const contextName = (id: string) =>
     contexts?.find((entry) => entry.id === id)?.name ?? id;
 
+  const scrollViewRef = useRef<ScrollView>(null);
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      className="flex-1 bg-canvas dark:bg-canvas-dark"
+      className="flex-1 bg-canvas dark:bg-canvas-dark relative"
     >
       <ScrollView
+        ref={scrollViewRef}
         className="flex-1"
-        contentContainerStyle={{ paddingTop: topPadding, paddingHorizontal: 16, paddingBottom: 40 }}
+        contentContainerStyle={{ paddingTop: topPadding, paddingHorizontal: 16, paddingBottom: 80 }}
         keyboardShouldPersistTaps="handled"
       >
+        <View className="w-full max-w-3xl mx-auto">
         <View className="mb-4 flex-row items-center justify-between">
           <Button label="← 项目" variant="ghost" onPress={() => goBack('/(tabs)/projects')} />
         </View>
@@ -915,8 +920,32 @@ export default function ProjectDetailScreen() {
           </View>
         </>
       )}
-
+        </View>
       </ScrollView>
+
+      {/* Mobile Ergonomic Floating Add Action Button (Thumb Zone) */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="添加行动"
+        onPress={() => {
+          setShowForm(true);
+          scrollViewRef.current?.scrollTo({ y: 180, animated: true });
+        }}
+        className="absolute bottom-6 right-5 h-13 w-13 items-center justify-center rounded-full bg-accent shadow-xl active:scale-95 dark:bg-accent-dark md:hidden z-10"
+        style={{
+          width: 52,
+          height: 52,
+          borderRadius: 26,
+          elevation: 6,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.25,
+          shadowRadius: 6,
+        }}
+      >
+        <Ionicons name="add" size={28} color="#ffffff" />
+      </Pressable>
+
       <SnoozeSheet
         open={snoozeTarget !== null}
         now={now}

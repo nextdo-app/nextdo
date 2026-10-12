@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { cn } from '@nextdo/ui';
+import { useAppInsets } from '@/lib/use-app-insets';
 
 export interface AddSceneModalProps {
   visible: boolean;
@@ -76,6 +77,9 @@ export const AddSceneModal = memo(function AddSceneModal({
     onClose();
   }, [onClose]);
 
+  const insets = useAppInsets();
+  const bottomPadding = Math.max(insets.bottom, 12);
+
   if (!visible) return null;
 
   return (
@@ -85,7 +89,7 @@ export const AddSceneModal = memo(function AddSceneModal({
       animationType="slide"
       onRequestClose={handleClose}
     >
-      <View className="flex-1 justify-end bg-black/40">
+      <View className="flex-1 justify-end bg-black/40 md:items-center md:justify-center md:p-6">
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="关闭弹窗"
@@ -93,9 +97,12 @@ export const AddSceneModal = memo(function AddSceneModal({
           className="flex-1"
         />
 
-        <View className="rounded-t-3xl border-t border-border/80 bg-surface p-5 pt-3 shadow-2xl dark:border-border-dark dark:bg-surface-dark">
-          {/* Top drag handle indicator */}
-          <View className="mx-auto mb-3.5 h-1 w-10 rounded-full bg-border dark:bg-border-dark" />
+        <View
+          style={{ paddingBottom: bottomPadding }}
+          className="w-full rounded-t-3xl border-t border-border/80 bg-surface p-5 pt-3 shadow-2xl dark:border-border-dark dark:bg-surface-dark md:max-w-md md:rounded-2xl md:border md:p-6"
+        >
+          {/* Top drag handle indicator (mobile only) */}
+          <View className="mx-auto mb-3.5 h-1 w-10 rounded-full bg-border dark:bg-border-dark md:hidden" />
 
           {/* Modal Header */}
           <View className="mb-4 flex-row items-center justify-between">

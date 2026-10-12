@@ -854,6 +854,7 @@ export default function NowScreen() {
         contentContainerStyle={{ paddingTop: topPadding, paddingHorizontal: 16, paddingBottom: 32 }}
         keyboardShouldPersistTaps="handled"
       >
+        <View className="w-full max-w-3xl mx-auto">
         {/* Top Header */}
         <TopHeader />
 
@@ -1119,6 +1120,7 @@ export default function NowScreen() {
               onCompleteHabit={handleCompleteHabit}
             />
           ) : null}
+        </View>
         </View>
       </ScrollView>
 

@@ -410,7 +410,7 @@ export function WizardBody({
   return (
     <View
       style={{ paddingTop: topPadding }}
-      className="flex-1 bg-canvas px-4 pb-4 dark:bg-canvas-dark"
+      className="flex-1 w-full max-w-3xl mx-auto bg-canvas px-4 pb-4 dark:bg-canvas-dark"
     >
       {/* The form steps can exceed the viewport (project / calendar forms
        * on a 800px-tall desktop window, or the keyboard on phone) — the
