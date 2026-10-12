@@ -21,7 +21,11 @@ const habitListRef: { current: unknown[] } = { current: [] };
 // Counts `completeAction` calls and lets a test flip it to a FAILURE, so
 // the block's post-write re-read can be pinned both ways (re-read on
 // success, NO re-read on failure).
-const completeCalls: { count: number; shouldFail: boolean } = { count: 0, shouldFail: false };
+const completeCalls: { count: number; shouldFail: boolean; args: unknown[] } = {
+  count: 0,
+  shouldFail: false,
+  args: [],
+};
 // Counts the habit READS (`useHabits` re-reads on mount, on focus and on
 // `reload()`). The success-path test can assert the rendered counters
 // changed, but the FAILURE path renders identically whether or not a
@@ -84,8 +88,9 @@ jest.mock('@nextdo/db', () => {
     queryEnginePool: async () => poolRef.current,
     poolTriggerWatchQuery: compilable,
     skipAction: async () => undefined,
-    completeAction: async () => {
+    completeAction: async (_db: unknown, args: unknown) => {
       completeCalls.count += 1;
+      completeCalls.args.push(args);
       if (completeCalls.shouldFail) throw new Error('complete rejected');
     },
     snoozeAction: async () => undefined,
@@ -243,6 +248,7 @@ beforeEach(() => {
   habitListRef.current = [];
   completeCalls.count = 0;
   completeCalls.shouldFail = false;
+  completeCalls.args = [];
   habitReads.habits = 0;
   habitReads.days = 0;
   contextReads.count = 0;
@@ -282,7 +288,9 @@ describe('Now screen', () => {
     // The three main buttons.
     expect(screen.getByText('开始')).toBeTruthy();
     expect(screen.getByText('换一个')).toBeTruthy();
-    expect(screen.getByText('今天')).toBeTruthy();
+    // …and the deadline chip on both the hero and its list row, which core
+    // words by urgency rather than by calendar date (issue #16).
+    expect(screen.getAllByText('今天截止')).toHaveLength(2);
     // Stats row: 2 eligible of 2 total · 30+25 = 55 分钟 · <60 → 轻.
     expect(screen.getByText('2/2 项')).toBeTruthy();
     expect(screen.getByText('55 分钟')).toBeTruthy();
@@ -438,9 +446,28 @@ describe('Now screen', () => {
     expect(screen.getByText('周报项目')).toBeTruthy();
     // Read-only context chip — in the engine bar, the filter chips AND the row.
     expect(screen.getAllByText('电脑')).toHaveLength(3);
-    // Due labels: tomorrow's deadline → 明天; the deadline-less row → 随时.
-    expect(screen.getByText('明天')).toBeTruthy();
+    // Due chips: tomorrow's deadline → 明天截止 (inside the 48h 「临近」
+    // window); the deadline-less row → 随时.
+    expect(screen.getByText('明天截止')).toBeTruthy();
     expect(screen.getByText('随时')).toBeTruthy();
+  });
+
+  it('each list row carries 完成 (the swipe gesture\'s button twin) plus the swipe hint', async () => {
+    setPool([nextAction({ id: 'a-1', title: '整理桌面', value: 2, contextIds: [] })]);
+    renderRouter('app', { initialUrl: '/(tabs)/now' });
+    await waitFor(() => expect(screen.getAllByText('整理桌面')).toHaveLength(2));
+
+    // The swipe reveals this hint from under the row (issue #17); it is
+    // rendered up front, hidden behind the card, so the gesture is not a
+    // secret.
+    expect(screen.getByText('✓ 完成')).toBeTruthy();
+
+    // …and the same action is reachable by tap, so the gesture is an
+    // accelerator rather than the only path (the row's 完成 is the only
+    // button with that label on this screen).
+    fireEvent.press(screen.getByText('完成'));
+    await waitFor(() => expect(completeCalls.count).toBe(1));
+    expect(completeCalls.args[0]).toMatchObject({ actionKind: 'next', actionId: 'a-1' });
   });
 
   it('the empty pool shows the capture hint', async () => {    setPool([]);

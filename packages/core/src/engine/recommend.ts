@@ -6,6 +6,7 @@
  */
 import { hardFilter } from './filters';
 import { scoreCandidate } from './rank';
+import { QUADRANT_ORDER, quadrantOf } from './quadrant';
 import { RECLARIFY_THRESHOLD } from './weights';
 import type {
   CandidateAction,
@@ -18,6 +19,8 @@ import type {
 interface Entry {
   candidate: CandidateAction;
   scored: ScoredAction;
+  /** Index into `QUADRANT_ORDER` — the primary sort key (issue #16). */
+  quadrantRank: number;
 }
 
 export function recommend(input: EngineInput): EngineOutput {
@@ -46,7 +49,11 @@ export function recommend(input: EngineInput): EngineOutput {
 function toEntry(candidate: CandidateAction, input: EngineInput, preempted: boolean): Entry {
   const s = scoreCandidate(candidate, input);
   const reasons: Reason[] = [...s.reasons, ...eligibilityReasons(candidate, preempted)];
-  return { candidate, scored: { actionId: candidate.id, score: s.score, reasons } };
+  return {
+    candidate,
+    scored: { actionId: candidate.id, score: s.score, reasons },
+    quadrantRank: QUADRANT_ORDER.indexOf(quadrantOf(candidate, input)),
+  };
 }
 
 /**
@@ -78,10 +85,19 @@ function eligibilityReasons(candidate: CandidateAction, preempted: boolean): Rea
 }
 
 /**
- * Tie-break: (score desc, deadline asc [nulls last], estMinutes asc,
- * id asc). ISO datetime strings compare chronologically.
+ * Sort key order (issue #16):
+ *   1. Eisenhower quadrant — 重要且紧急 → 不重要但紧急 → 重要但不紧急 → 都不
+ *   2. score desc — within a quadrant, the existing weighted score decides
+ *   3. deadline asc [nulls last], estMinutes asc, id asc — unchanged
+ *
+ * The quadrant outranks the score on purpose. `deadline-urgency` is one
+ * weighted term, so on its own a high-value action that has been waiting
+ * two weeks can still outrank something due today; the quadrant is what
+ * makes the matrix's priority order actually hold. ISO datetime strings
+ * compare chronologically.
  */
 function compareEntries(a: Entry, b: Entry): number {
+  if (a.quadrantRank !== b.quadrantRank) return a.quadrantRank - b.quadrantRank;
   if (b.scored.score !== a.scored.score) return b.scored.score - a.scored.score;
 
   const aDeadline = a.candidate.deadline;

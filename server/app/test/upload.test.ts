@@ -355,7 +355,7 @@ describe('upload apply — the 2xx-on-rejection protocol', () => {
  */
 const EXPECTED_CLIENT_SCHEMA: Record<string, readonly string[]> = {
   inbox_items: ['created_at', 'updated_at', 'deleted_at', 'title', 'captured_at'],
-  projects: ['created_at', 'updated_at', 'deleted_at', 'title', 'outcome', 'value', 'status'],
+  projects: ['created_at', 'updated_at', 'deleted_at', 'title', 'outcome', 'value', 'status', 'deadline'],
   next_actions: [
     'created_at',
     'updated_at',

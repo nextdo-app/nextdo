@@ -36,6 +36,12 @@ export type Project = EntityBase & {
   outcome: string;
   value: Value;
   status: ProjectStatus;
+  /**
+   * ISO datetime — issue #16. Optional: a project may carry no deadline.
+   * Same shape as `NextAction.deadline` so one status/wording function
+   * (`deadlineStatus`) reads both without special-casing.
+   */
+  deadline?: string;
 };
 
 export type ActionStatus = 'open' | 'done';

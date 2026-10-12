@@ -19,6 +19,13 @@ export interface UpdateProjectPatch {
   value?: Value;
   /** active ↔ on-hold quick switch (归档 / 恢复). */
   status?: ProjectStatus;
+  /**
+   * ISO datetime, or `undefined` to CLEAR (issue #16). The key must be
+   * present in the patch for a clear to reach the row — `{ ...project,
+   * ...patch }` copies an explicitly-set `undefined` over the old value,
+   * and `projectToRow` maps that to SQL NULL.
+   */
+  deadline?: string;
 }
 
 export interface UpdateProjectArgs {

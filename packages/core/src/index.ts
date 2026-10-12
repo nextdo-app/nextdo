@@ -20,6 +20,7 @@ export type { LogLevel } from './lib/logger';
 export {
   SNOOZE_PRESETS,
   daysBetween,
+  daysBetweenDateKeys,
   hhmmToMinutes,
   hoursBetween,
   isWithinDayWindow,
@@ -106,6 +107,10 @@ export {
   snoozeReminderSpec,
 } from './domain/invariants';
 export type { ReminderSpec } from './domain/invariants';
+export { checkHabitStartDate, habitStartDateAt, habitStartFloor } from './domain/habit-start';
+export type { HabitStartDateCheck, HabitStartDateProblem } from './domain/habit-start';
+export { DEADLINE_SOON_HOURS, deadlineStatus, formatDeadline } from './domain/deadline';
+export type { DeadlineStatus } from './domain/deadline';
 
 // engine
 export type {
@@ -134,3 +139,5 @@ export type { FilterResult } from './engine/filters';
 export { SCORE_CODES, scoreCandidate } from './engine/rank';
 export type { CandidateScore } from './engine/rank';
 export { recommend } from './engine/recommend';
+export { IMPORTANT_VALUE_THRESHOLD, QUADRANT_ORDER, quadrantOf } from './engine/quadrant';
+export type { Quadrant } from './engine/quadrant';

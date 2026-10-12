@@ -1,6 +1,7 @@
 import { ValidationNextdoError } from './errors';
 import {
   daysBetween,
+  daysBetweenDateKeys,
   hoursBetween,
   isWithinDayWindow,
   localDateKey,
@@ -45,6 +46,16 @@ describe('device-local helpers (TZ pinned to UTC)', () => {
   it('localDateKey is YYYYMMDD device-local', () => {
     expect(localDateKey(new Date('2026-09-21T23:59:59.000Z'))).toBe('20260921');
     expect(localDateKey(new Date('2026-09-21T00:00:00.000Z'))).toBe('20260921');
+  });
+
+  it('daysBetweenDateKeys counts whole calendar days, signed', () => {
+    expect(daysBetweenDateKeys('20260921', '20260921')).toBe(0);
+    expect(daysBetweenDateKeys('20260921', '20260922')).toBe(1);
+    expect(daysBetweenDateKeys('20260922', '20260921')).toBe(-1);
+    // Month and year boundaries are calendar steps, not 86,400,000 ms ones.
+    expect(daysBetweenDateKeys('20260930', '20261001')).toBe(1);
+    expect(daysBetweenDateKeys('20261231', '20270101')).toBe(1);
+    expect(daysBetweenDateKeys('20260228', '20260301')).toBe(1);
   });
 
   it('parseHhmm accepts valid times and rejects malformed ones', () => {

@@ -57,6 +57,7 @@ export function projectsWatchQuery(db: NextdoDb): CompilableQuery<ProjectWithCov
       'outcome',
       'value',
       'status',
+      'deadline',
       sql<number>`(SELECT COUNT(*) FROM next_actions na
         WHERE na.project_id = projects.id
           AND na.status = 'open'
@@ -131,6 +132,7 @@ export function projectCardsWatchQuery(db: NextdoDb): CompilableQuery<ProjectCar
       'outcome',
       'value',
       'status',
+      'deadline',
       sql<number> `(SELECT COUNT(*) FROM next_actions na WHERE ${sql.raw(NA_OPEN)})`.as('open_count'),
       sql<number> `(SELECT COUNT(*) FROM next_actions na
         WHERE ${sql.raw(NA_PROJECT)} AND na.status = 'done')`.as('completed_count'),
