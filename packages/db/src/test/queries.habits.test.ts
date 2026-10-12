@@ -6,6 +6,7 @@
  */
 import {
   localDateKey,
+  parseIso,
   toIso,
   ulid,
   type Habit,
@@ -215,7 +216,10 @@ describe('startHabit (the start-challenge transaction)', () => {
       const { today } = await startHabit(db, habit, FIXTURE_NOW);
       expect(today).toBeNull();
       expect(await listHabits(db)).toHaveLength(1);
-      expect(await listHabitDays(db)).toEqual([]);
+      // The cycle is still seeded — only the masked days are skipped, so
+      // today has no row while the weekends inside the cycle do.
+      expect(await listHabitDays(db, { habitId: habit.id, localDate: TODAY_KEY })).toEqual([]);
+      expect((await listHabitDays(db, { habitId: habit.id })).length).toBeGreaterThan(0);
     } finally {
       await close();
     }
@@ -231,6 +235,110 @@ describe('startHabit (the start-challenge transaction)', () => {
       await updateHabit(db, { ...habit, status: 'active', updatedAt: toIso(FIXTURE_NOW) });
       const days = await listHabitDays(db, { habitId: habit.id, localDate: TODAY_KEY });
       expect(days).toHaveLength(1);
+    } finally {
+      await close();
+    }
+  });
+});
+
+describe('startHabit with a future start date', () => {
+  /** Local midnight of `FIXTURE_NOW` plus `days` days — the shape the app
+   *  writes after `checkHabitStartDate` accepts a picked start date. */
+  function startDaysAhead(days: number): string {
+    const anchor = new Date(FIXTURE_NOW);
+    anchor.setDate(anchor.getDate() + days);
+    anchor.setHours(0, 0, 0, 0);
+    return toIso(anchor);
+  }
+
+  it('seeds the WHOLE cycle up front, so the days are waiting when it begins', async () => {
+    const { db, close } = await open();
+    try {
+      const habit = makeHabit({ startedAt: startDaysAhead(3) });
+      const { today } = await startHabit(db, habit, FIXTURE_NOW);
+
+      // Nothing for today — the challenge has not begun, which is an
+      // ordinary outcome, not a failure.
+      expect(today).toBeNull();
+
+      const days = await listHabitDays(db, { habitId: habit.id });
+      expect(days).toHaveLength(21);
+      expect(days[0]?.localDate).toBe(localDateKey(parseIso(habit.startedAt)));
+      expect(days.every((day) => day.status === 'open')).toBe(true);
+      // Every row is dated on or after the picked start date — nothing is
+      // invented for the days before the challenge begins.
+      expect(days.every((day) => day.localDate >= days[0]!.localDate)).toBe(true);
+    } finally {
+      await close();
+    }
+  });
+
+  it('reports today when the challenge starts today', async () => {
+    const { db, close } = await open();
+    try {
+      const habit = makeHabit({ startedAt: startDaysAhead(0) });
+      const { today } = await startHabit(db, habit, FIXTURE_NOW);
+
+      expect(today?.localDate).toBe(TODAY_KEY);
+      expect(habitCycleDay(habit.startedAt, habit.cycleDays, TODAY_KEY)).toBe(1);
+      // The rest of the cycle is laid down too, not just today.
+      expect(await listHabitDays(db, { habitId: habit.id })).toHaveLength(21);
+    } finally {
+      await close();
+    }
+  });
+
+  it('seeds nothing when the cycle is entirely in the past', async () => {
+    const { db, close } = await open();
+    try {
+      // The start-date rule (today or later) makes this unreachable from
+      // the app, but a habit synced in from another client can still be in
+      // this state — and every row it would create only reads as missed.
+      const startedAt = startDaysAhead(0);
+      const anchor = new Date(startedAt);
+      anchor.setDate(anchor.getDate() - 25);
+      const habit = makeHabit({ startedAt: toIso(anchor), cycleDays: 21 });
+      const { today } = await startHabit(db, habit, FIXTURE_NOW);
+
+      expect(today).toBeNull();
+      expect(await listHabitDays(db, { habitId: habit.id })).toEqual([]);
+    } finally {
+      await close();
+    }
+  });
+
+  it('re-seeding is idempotent — a restart never duplicates days', async () => {
+    const { db, close } = await open();
+    try {
+      const habit = makeHabit({ startedAt: startDaysAhead(3) });
+      await startHabit(db, habit, FIXTURE_NOW);
+      // broken → active re-runs the seed over the same cycle.
+      await updateHabit(db, { ...habit, status: 'broken', updatedAt: toIso(FIXTURE_NOW) });
+      await updateHabit(db, { ...habit, status: 'active', updatedAt: toIso(FIXTURE_NOW) });
+      expect(await listHabitDays(db, { habitId: habit.id })).toHaveLength(21);
+    } finally {
+      await close();
+    }
+  });
+
+  it('applies the weekday mask across the whole cycle, future days included', async () => {
+    const { db, close } = await open();
+    try {
+      // weekend-only mask, starting Thu 2026-09-24 → the six weekend days
+      // inside the 21-day cycle are the only rows written.
+      const habit = makeHabit({ startedAt: startDaysAhead(3), windowDays: [0, 6] });
+      const { today } = await startHabit(db, habit, FIXTURE_NOW);
+
+      expect(today).toBeNull();
+      const days = await listHabitDays(db, { habitId: habit.id });
+      expect(days.map((day) => day.localDate).sort()).toEqual([
+        localDateKey(new Date(2026, 8, 26)), // Sat
+        localDateKey(new Date(2026, 8, 27)), // Sun
+        localDateKey(new Date(2026, 9, 3)), // Sat
+        localDateKey(new Date(2026, 9, 4)), // Sun
+        localDateKey(new Date(2026, 9, 10)), // Sat
+        localDateKey(new Date(2026, 9, 11)), // Sun
+      ]);
     } finally {
       await close();
     }

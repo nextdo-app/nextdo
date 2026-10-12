@@ -37,7 +37,10 @@ import {
 } from 'react-native';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { Button, Card, EmptyState, Tag, ValueChips, cn } from '@nextdo/ui';
-import { hhmmToMinutes, parseHhmm, type Value } from '@nextdo/core';
+import { checkHabitStartDate, hhmmToMinutes, parseHhmm, type Value } from '@nextdo/core';
+import { DateTimePicker } from '@/components/datetime-picker';
+import { PickerField } from '@/components/picker-field';
+import { localDateKey } from '@/lib/review-dates';
 import { useAppClock } from '@/hooks/use-app-clock';
 import { useHabits, type HabitWithProgress } from '@/hooks/use-habits';
 import { useStartHabit, HABIT_CYCLE_DAYS } from '@/hooks/use-start-habit';
@@ -60,6 +63,34 @@ function hhmmMinutes(value: string): number | null {
   }
 }
 
+/**
+ * A start date as the user reads it: "今天 · 挑战第 1 天", or "10月20日 ·
+ * 9 天后开始" for a challenge booked ahead. The countdown is what makes a
+ * future start comprehensible — the challenge has not begun yet, so there
+ * is no cycle day to show.
+ *
+ * Whether the pick is legal at all is `checkHabitStartDate`'s job, not
+ * this formatter's; an unparseable key falls through as-is.
+ */
+function formatStartDate(dateKey: string, now: Date): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  if (match === null) return dateKey;
+  const picked = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0, 0);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0);
+  // Noon anchors on both sides, so a DST shift inside the gap cannot round
+  // an off-by-one into the readout.
+  const offsetDays = Math.round((picked.getTime() - today.getTime()) / 86_400_000);
+  if (offsetDays === 0) return '今天 · 挑战第 1 天';
+  const day = `${Number(match[2])}月${Number(match[3])}日`;
+  return offsetDays > 0 ? `${day} · ${offsetDays} 天后开始` : day;
+}
+
+/** One hint line per rejected start date — the user picks the fix. */
+const START_HINTS: Record<'invalid' | 'past', string> = {
+  invalid: '起始日期无效。',
+  past: '起始日期不能早于今天 —— 挑战周期在创建时一次生成，不能补记已经过去的日子。',
+};
+
 /** One active habit: name, daily action, 第 N/21 天, window (全天 when
  *  none), estimate, value + 删除. */
 function HabitRow({
@@ -69,7 +100,7 @@ function HabitRow({
   entry: HabitWithProgress;
   onTrash: () => void;
 }) {
-  const { habit, cycleDay, doneCount } = entry;
+  const { habit, cycleDay, doneCount, startsInDays } = entry;
   const hasWindow = habit.windowStart !== undefined && habit.windowEnd !== undefined;
 
   return (
@@ -80,7 +111,11 @@ function HabitRow({
         </Text>
         <Tag
           label={
-            cycleDay === null ? `本期 ${habit.cycleDays} 天` : `第 ${cycleDay}/${habit.cycleDays} 天`
+            cycleDay !== null
+              ? `第 ${cycleDay}/${habit.cycleDays} 天`
+              : startsInDays !== null
+                ? `${startsInDays} 天后开始`
+                : `本期 ${habit.cycleDays} 天`
           }
           tone="accent"
         />
@@ -122,11 +157,16 @@ function HabitForm({ onStarted }: { onStarted: () => void }) {
   const [windowOn, setWindowOn] = useState(false);
   const [windowStart, setWindowStart] = useState('');
   const [windowEnd, setWindowEnd] = useState('');
+  const now = useAppClock();
+  const [startDate, setStartDate] = useState(() => localDateKey(now));
+  const [openPicker, setOpenPicker] = useState<'start' | 'windowStart' | 'windowEnd' | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   // Pure validation in render (design.md §6) — nothing is stored twice.
   const parsedEst = Number(estMinutes.trim());
   const estOk = estMinutes.trim() !== '' && Number.isInteger(parsedEst) && parsedEst >= 1;
+  const startCheck = checkHabitStartDate(startDate, now);
+  const startHint = startCheck.ok ? null : START_HINTS[startCheck.problem];
   const startMin = windowOn ? hhmmMinutes(windowStart.trim()) : null;
   const endMin = windowOn ? hhmmMinutes(windowEnd.trim()) : null;
   const windowValid =
@@ -134,7 +174,8 @@ function HabitForm({ onStarted }: { onStarted: () => void }) {
   // The ONE hint the user needs: an enabled window that can't submit.
   const windowHint =
     windowOn && !windowValid ? '时间窗口需要填写完整的起止时间，且开始早于结束。' : null;
-  const canSubmit = title.trim() !== '' && estOk && windowValid && !submitting;
+  const canSubmit =
+    title.trim() !== '' && estOk && startCheck.ok && windowValid && !submitting;
 
   const reset = () => {
     setTitle('');
@@ -144,6 +185,8 @@ function HabitForm({ onStarted }: { onStarted: () => void }) {
     setWindowOn(false);
     setWindowStart('');
     setWindowEnd('');
+    setStartDate(localDateKey(now));
+    setOpenPicker(null);
   };
 
   // Stay on the screen after a successful create (design.md §5): the
@@ -156,6 +199,7 @@ function HabitForm({ onStarted }: { onStarted: () => void }) {
       actionTitle,
       estMinutes: parsedEst,
       value,
+      startDate,
       ...(windowOn && startMin !== null && endMin !== null
         ? { windowStart: windowStart.trim(), windowEnd: windowEnd.trim() }
         : {}),
@@ -196,8 +240,24 @@ function HabitForm({ onStarted }: { onStarted: () => void }) {
       />
       <ValueChips value={value} onChange={setValue} />
 
-      {/* Optional time window — plain HH:mm text inputs (cross-platform,
-          incl. web): no native date wheel. */}
+      {/* Challenge start date — the app never hand-types a date
+          (component-guidelines §Forms): the picker owns the value, and the
+          readout spells out which cycle day the pick lands on. */}
+      <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+        起始日期（第 1 天）
+      </Text>
+      <PickerField
+        label="起始日期"
+        value={formatStartDate(startDate, now)}
+        placeholder="选择起始日期"
+        onPress={() => setOpenPicker('start')}
+      />
+      {startHint !== null ? (
+        <Text className="font-sans text-xs text-danger dark:text-danger-dark">{startHint}</Text>
+      ) : null}
+
+      {/* Optional time window — two HH:mm pickers, never typed by hand
+          (issue #13). */}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={windowOn ? '关闭时间窗口' : '开启时间窗口'}
@@ -227,21 +287,17 @@ function HabitForm({ onStarted }: { onStarted: () => void }) {
 
       {windowOn ? (
         <View className="flex-row items-center gap-2">
-          <TextInput
-            className={cn(INPUT_CLASS, 'flex-1')}
-            placeholder="开始 HH:mm"
-            autoCapitalize="none"
+          <PickerField
+            label="时间窗口开始"
             value={windowStart}
-            onChangeText={setWindowStart}
-            accessibilityLabel="时间窗口开始"
+            placeholder="开始时间"
+            onPress={() => setOpenPicker('windowStart')}
           />
-          <TextInput
-            className={cn(INPUT_CLASS, 'flex-1')}
-            placeholder="结束 HH:mm"
-            autoCapitalize="none"
+          <PickerField
+            label="时间窗口结束"
             value={windowEnd}
-            onChangeText={setWindowEnd}
-            accessibilityLabel="时间窗口结束"
+            placeholder="结束时间"
+            onPress={() => setOpenPicker('windowEnd')}
           />
         </View>
       ) : null}
@@ -261,6 +317,36 @@ function HabitForm({ onStarted }: { onStarted: () => void }) {
         disabled={!canSubmit}
         onPress={submit}
       />
+
+      {/* One modal, three targets — only the field that was tapped mounts
+          the picker, so the value it receives is the one being edited. */}
+      {openPicker !== null ? (
+        <DateTimePicker
+          mode={openPicker === 'start' ? 'date' : 'time'}
+          title={
+            openPicker === 'start'
+              ? '选择起始日期'
+              : openPicker === 'windowStart'
+                ? '选择开始时间'
+                : '选择结束时间'
+          }
+          value={
+            openPicker === 'start'
+              ? startDate
+              : openPicker === 'windowStart'
+                ? windowStart
+                : windowEnd
+          }
+          now={now}
+          onConfirm={(val) => {
+            if (openPicker === 'start') setStartDate(val);
+            else if (openPicker === 'windowStart') setWindowStart(val);
+            else setWindowEnd(val);
+            setOpenPicker(null);
+          }}
+          onClose={() => setOpenPicker(null)}
+        />
+      ) : null}
     </Card>
   );
 }

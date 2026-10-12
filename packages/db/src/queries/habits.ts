@@ -3,18 +3,9 @@
  * HabitDay)").
  *
  * `startHabit` is the start-challenge transaction: insert the Habit and
- * seed today's HabitDay in ONE transaction. Seeding follows the
- * cycle/window rules:
- *
- * - weekday mask first — no row when `windowDays` is set and today's
- *   device-local weekday is not in it (the HH:mm window only gates
- *   eligibility at recommendation time, never row generation);
- * - the day must fall inside the challenge cycle
- *   (`habitCycleDay(startedAt, cycleDays, today)`, shared with the pool
- *   query — not duplicated here);
- * - generation is idempotent: the deterministic id `hd-<habitId>-<YYYYMMDD>`
- *   (domain-model.md invariant 5) makes a re-run a no-op, so offline
- *   multi-device generation never creates duplicates (Proposal §10).
+ * seed its HabitDays in ONE transaction. Seeding lays down the WHOLE cycle
+ * from the habit's start date, so a challenge booked to start in the future
+ * has its days waiting when it arrives (see `seedHabitDays` for the rules).
  *
  * `missed` is never written — a past `localDate` whose row is not done is
  * derived at query time.
@@ -36,7 +27,6 @@ import {
 } from '@nextdo/core';
 import type { Transaction } from 'kysely';
 import { habitDayFromRow, habitDayToRow, habitFromRow, habitToRow, type Database } from '../schema';
-import { habitCycleDay } from './pool';
 import type { NextdoDb } from '../types';
 
 async function loadHabitRow(db: NextdoDb, habitId: string) {
@@ -48,45 +38,87 @@ async function loadHabitRow(db: NextdoDb, habitId: string) {
 }
 
 /**
- * Seed today's HabitDay for a habit (idempotent — returns the existing row
- * when the deterministic id is already present). Returns null when today
- * is outside the weekday mask or the challenge cycle.
+ * Seed the habit's challenge days from its start date through the END of the
+ * cycle (idempotent — returns the existing row when the deterministic id is
+ * already present, and skips days the rules exclude).
+ *
+ * The whole cycle is laid down up front, which is what makes a FUTURE start
+ * date work: there is no daily backfill job, so a day that was not written at
+ * creation time would never appear. Days before the start date simply do not
+ * exist, and days after it stay inert until the pool query reaches them (it
+ * only reads `local_date = today`). The cycle length — not today — is the
+ * loop bound.
+ *
+ * The weekday mask is the one per-day rule the seed still applies: no row
+ * when `windowDays` is set and that day's device-local weekday is not in it
+ * (the HH:mm window only gates eligibility at recommendation time, never row
+ * generation). Cycle membership needs no check here — every offset in
+ * `0 … cycleDays − 1` from `startedAt` is inside the cycle by construction,
+ * which is what `habitCycleDay` (shared with the pool query) answers for the
+ * pool's side of the same question.
+ *
+ * Generation is idempotent: the deterministic id `hd-<habitId>-<YYYYMMDD>`
+ * (domain-model.md invariant 5) makes a re-run a no-op, so offline
+ * multi-device generation never creates duplicates (Proposal §10).
+ *
+ * `missed` is never written — a past `localDate` whose row is not done is
+ * derived at query time.
+ *
+ * Returns TODAY's row, or null when today itself is outside the cycle —
+ * which is the NORMAL case for a challenge booked to start in the future.
+ * Callers must not treat that null as a failure.
  */
-async function seedTodayHabitDay(
+async function seedHabitDays(
   tx: Transaction<Database>,
   habit: Habit,
   now: Date,
 ): Promise<HabitDay | null> {
   const nowIso = toIso(now);
   const todayKey = localDateKey(now);
-  if (habit.windowDays !== undefined && !habit.windowDays.includes(now.getDay())) {
-    return null;
+  const start = parseIso(habit.startedAt);
+  const year = start.getFullYear();
+  const month = start.getMonth();
+  const date = start.getDate();
+
+  // A habit whose cycle is entirely in the past has nothing worth seeding:
+  // every row it would create only ever reads as missed. The start-date rule
+  // (today or later) prevents the app from creating one, but a habit synced
+  // in from another client, or one whose cycle simply ran out before this
+  // seed ran, can still be in that state.
+  const cycleEnd = new Date(year, month, date + habit.cycleDays - 1, 12, 0, 0, 0);
+  if (todayKey > localDateKey(cycleEnd)) return null;
+
+  let today: HabitDay | null = null;
+  for (let offset = 0; offset < habit.cycleDays; offset++) {
+    const current = new Date(year, month, date + offset, 12, 0, 0, 0);
+    const key = localDateKey(current);
+    if (habit.windowDays !== undefined && !habit.windowDays.includes(current.getDay())) continue;
+
+    const id = habitDayId(habit.id, key);
+    const existing = await tx
+      .selectFrom('habit_days')
+      .selectAll()
+      .where('id', '=', id)
+      .executeTakeFirst();
+    if (existing !== undefined) {
+      if (key === todayKey) today = habitDayFromRow(existing);
+      continue;
+    }
+    const day: HabitDay = {
+      id,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      deletedAt: null,
+      habitId: habit.id,
+      localDate: key,
+      status: 'open',
+      consecutiveSkips: 0,
+    };
+    assertValidHabitDay(day);
+    await tx.insertInto('habit_days').values({ id: day.id, ...habitDayToRow(day) }).execute();
+    if (key === todayKey) today = day;
   }
-  if (habitCycleDay(habit.startedAt, habit.cycleDays, todayKey) === null) {
-    return null;
-  }
-  const id = habitDayId(habit.id, todayKey);
-  const existing = await tx
-    .selectFrom('habit_days')
-    .selectAll()
-    .where('id', '=', id)
-    .executeTakeFirst();
-  if (existing !== undefined) {
-    return habitDayFromRow(existing);
-  }
-  const day: HabitDay = {
-    id,
-    createdAt: nowIso,
-    updatedAt: nowIso,
-    deletedAt: null,
-    habitId: habit.id,
-    localDate: todayKey,
-    status: 'open',
-    consecutiveSkips: 0,
-  };
-  assertValidHabitDay(day);
-  await tx.insertInto('habit_days').values({ id: day.id, ...habitDayToRow(day) }).execute();
-  return day;
+  return today;
 }
 
 // ---------------------------------------------------------------------------
@@ -155,7 +187,7 @@ export async function updateHabit(db: NextdoDb, habit: Habit): Promise<Habit> {
       .where('id', '=', habit.id)
       .execute();
     if (restarted) {
-      await seedTodayHabitDay(tx, habit, parseIso(habit.updatedAt));
+      await seedHabitDays(tx, habit, parseIso(habit.updatedAt));
     }
   });
   return habit;
@@ -174,9 +206,14 @@ export async function trashHabit(db: NextdoDb, args: { id: string; now: Date }):
 }
 
 /**
- * Start the challenge: insert the Habit and seed today's HabitDay in ONE
- * transaction (all-or-nothing). Returns the seeded day, or null when today
- * is outside the weekday mask / challenge cycle.
+ * Start the challenge: insert the Habit and seed its whole cycle of
+ * HabitDays in ONE transaction (all-or-nothing).
+ *
+ * Returns TODAY's seeded day. That is null whenever the challenge is not
+ * live yet — a habit booked to start in the future, or one whose weekday
+ * mask excludes today. Null is an ordinary outcome here, NOT a failure: the
+ * habit exists and its days are waiting. Callers must not report it as an
+ * error.
  */
 export async function startHabit(
   db: NextdoDb,
@@ -193,7 +230,7 @@ export async function startHabit(
   let today: HabitDay | null = null;
   await db.transaction().execute(async (tx) => {
     await tx.insertInto('habits').values({ id: habit.id, ...habitToRow(habit) }).execute();
-    today = await seedTodayHabitDay(tx, habit, now);
+    today = await seedHabitDays(tx, habit, now);
   });
   return { habit, today };
 }

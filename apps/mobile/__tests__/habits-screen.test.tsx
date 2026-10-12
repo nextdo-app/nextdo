@@ -80,10 +80,19 @@ jest.mock('@nextdo/db', () => {
     // --- the habits surface under test ---
     listHabits: async () => mockHabitsRef.current,
     listHabitDays: async () => mockDaysRef.current,
-    startHabit: async (db: unknown, habit: { id: string }, now: unknown) => {
+    startHabit: async (db: unknown, habit: { id: string; startedAt: string }, now: unknown) => {
       mockStartArgsRef.current = { db, habit, now };
       mockHabitsRef.current = [...mockHabitsRef.current, habit];
-      return { habit, today: { id: 'hd-seeded', habitId: habit.id, localDate: '20260101' } };
+      // Mirror the real transaction: a challenge booked to start ahead has
+      // no day for today yet, and that null is not a failure.
+      const pad = (n: number): string => (n < 10 ? `0${n}` : `${n}`);
+      const dayKeyOf = (d: Date): string =>
+        `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+      const startsToday = dayKeyOf(new Date(habit.startedAt)) === dayKeyOf(now as Date);
+      return {
+        habit,
+        today: startsToday ? { id: 'hd-seeded', habitId: habit.id, localDate: '20260101' } : null,
+      };
     },
     trashHabit: async (_db: unknown, args: { id: string }) => {
       mockHabitsRef.current = mockHabitsRef.current.filter(
@@ -122,6 +131,7 @@ jest.mock('expo-notifications', () => mockExpoNotifications);
 import { act, fireEvent, renderRouter, screen, testRouter, waitFor } from 'expo-router/testing-library';
 import { mockExpoNotifications } from './mocks/expo-notifications';
 import { habitDayId, localDateKey, toIso } from '@nextdo/core';
+import { localDateKey as pickerDateKey } from '../lib/review-dates';
 
 /** A live Habit row as `listHabits` returns it (started today → day 1). */
 function habit(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -188,13 +198,48 @@ async function fillRequiredFields(): Promise<void> {
   await flush();
 }
 
-/** Turn the window switch on and type the two halves. */
+/**
+ * Open one window half's picker, choose `hhmm`, confirm.
+ *
+ * The half is a read-only field (issue #13), so there is nothing to
+ * `changeText` — the value arrives through the picker modal.
+ */
+async function pickWindowHalf(label: string, hhmm: string): Promise<void> {
+  fireEvent.press(screen.getByRole('button', { name: new RegExp(`^${label}`) }));
+  await flush();
+  const [hour, minute] = hhmm.split(':');
+  fireEvent.press(screen.getByLabelText(`小时 ${hour}`));
+  fireEvent.press(screen.getByLabelText(`分钟 ${minute}`));
+  fireEvent.press(screen.getByRole('button', { name: '确定' }));
+  await flush();
+}
+
+/** Turn the window switch on and pick both halves. */
 async function fillWindow(start: string, end: string): Promise<void> {
   fireEvent.press(screen.getByRole('button', { name: '开启时间窗口' }));
   await flush();
-  fireEvent.changeText(screen.getByLabelText('时间窗口开始'), start);
-  fireEvent.changeText(screen.getByLabelText('时间窗口结束'), end);
+  await pickWindowHalf('时间窗口开始', start);
+  await pickWindowHalf('时间窗口结束', end);
+}
+
+/** Open the start-date picker and confirm a `YYYY-MM-DD` pick. */
+async function pickStartDate(dateKey: string): Promise<void> {
+  fireEvent.press(screen.getByRole('button', { name: /^起始日期/ }));
   await flush();
+  const [year, month, day] = dateKey.split('-');
+  fireEvent.press(screen.getByLabelText(`年 ${year}`));
+  fireEvent.press(screen.getByLabelText(`月 ${Number(month)}`));
+  fireEvent.press(screen.getByLabelText(`日 ${Number(day)}`));
+  fireEvent.press(screen.getByRole('button', { name: '确定' }));
+  await flush();
+}
+
+/** `YYYY-MM-DD` for a day relative to today. */
+function dayKey(offset: number): string {
+  const day = new Date();
+  day.setDate(day.getDate() + offset);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
 }
 
 beforeEach(() => {
@@ -264,25 +309,83 @@ describe('habits screen', () => {
     expect(args!.habit['windowEnd']).toBeUndefined();
   });
 
+  it('defaults the start date to today and writes it as local midnight', async () => {
+    await openHabits();
+
+    await fillRequiredFields();
+    expect(screen.getByText('今天 · 挑战第 1 天')).toBeTruthy();
+
+    fireEvent.press(screen.getByRole('button', { name: '开始 21 天挑战' }));
+    await flush();
+
+    const args = mockStartArgsRef.current as { habit: Record<string, unknown> } | null;
+    const startedAt = new Date(String(args!.habit['startedAt']));
+    expect(startedAt.getHours()).toBe(0);
+    expect(startedAt.getMinutes()).toBe(0);
+    expect(pickerDateKey(startedAt)).toBe(dayKey(0));
+  });
+
+  it('a future start date is written verbatim, not as the creation instant', async () => {
+    await openHabits();
+
+    await fillRequiredFields();
+    await pickStartDate(dayKey(3));
+    // Booked ahead: the challenge has no cycle day yet, so the readout is a
+    // countdown rather than 「挑战第 N 天」.
+    expect(screen.getByText(/3 天后开始/)).toBeTruthy();
+    expect(submitDisabled()).toBe(false);
+
+    fireEvent.press(screen.getByRole('button', { name: '开始 21 天挑战' }));
+    await flush();
+
+    const args = mockStartArgsRef.current as { habit: Record<string, unknown> } | null;
+    const startedAt = new Date(String(args!.habit['startedAt']));
+    expect(pickerDateKey(startedAt)).toBe(dayKey(3));
+    expect(startedAt.getHours()).toBe(0);
+    // Creating a habit that is not live yet is a SUCCESS, not an error: the
+    // form resets and the row lands in the list carrying the countdown.
+    expect(screen.getByText('阅读')).toBeTruthy();
+    expect(screen.getByText('3 天后开始')).toBeTruthy();
+    expect(screen.queryByText(/今天的挑战日没有生成/)).toBeNull();
+  });
+
+  it('a past start date keeps the submit disabled and explains why', async () => {
+    await openHabits();
+
+    await fillRequiredFields();
+    await pickStartDate(dayKey(-1));
+    expect(submitDisabled()).toBe(true);
+    expect(screen.getByText(/起始日期不能早于今天/)).toBeTruthy();
+    expect(mockStartArgsRef.current).toBeNull();
+  });
+
+  it('there is no backfill window — a long-past start date is rejected the same way', async () => {
+    await openHabits();
+
+    await fillRequiredFields();
+    await pickStartDate(dayKey(-21));
+    expect(submitDisabled()).toBe(true);
+    expect(screen.getByText(/起始日期不能早于今天/)).toBeTruthy();
+    expect(mockStartArgsRef.current).toBeNull();
+  });
+
   it('a half-filled window keeps the submit disabled', async () => {
     await openHabits();
 
     await fillRequiredFields();
-    // Only the start half typed — a window must have BOTH ends.
+    // Only the start half picked — a window must have BOTH ends.
     fireEvent.press(screen.getByRole('button', { name: '开启时间窗口' }));
     await flush();
-    fireEvent.changeText(screen.getByLabelText('时间窗口开始'), '19:00');
-    await flush();
+    await pickWindowHalf('时间窗口开始', '19:00');
     expect(submitDisabled()).toBe(true);
     expect(mockStartArgsRef.current).toBeNull();
 
     // Completing the pair enables it.
-    fireEvent.changeText(screen.getByLabelText('时间窗口结束'), '23:00');
-    await flush();
+    await pickWindowHalf('时间窗口结束', '23:00');
     expect(submitDisabled()).toBe(false);
   });
 
-  it('start >= end (and a malformed time) keeps the submit disabled', async () => {
+  it('start >= end keeps the submit disabled', async () => {
     await openHabits();
 
     await fillRequiredFields();
@@ -291,16 +394,22 @@ describe('habits screen', () => {
     expect(mockStartArgsRef.current).toBeNull();
 
     // start === end is equally invalid (the window is half-open).
-    fireEvent.changeText(screen.getByLabelText('时间窗口开始'), '20:00');
-    fireEvent.changeText(screen.getByLabelText('时间窗口结束'), '20:00');
-    await flush();
+    await pickWindowHalf('时间窗口开始', '20:00');
+    await pickWindowHalf('时间窗口结束', '20:00');
     expect(submitDisabled()).toBe(true);
+  });
 
-    // A malformed HH:mm is refused too.
-    fireEvent.changeText(screen.getByLabelText('时间窗口开始'), '25:00');
-    fireEvent.changeText(screen.getByLabelText('时间窗口结束'), '23:00');
+  it('the window halves are read-only fields, never typed inputs', async () => {
+    await openHabits();
+
+    await fillRequiredFields();
+    fireEvent.press(screen.getByRole('button', { name: '开启时间窗口' }));
     await flush();
-    expect(submitDisabled()).toBe(true);
+
+    // A malformed HH:mm used to be typeable; the picker makes it unreachable.
+    expect(screen.queryByLabelText('时间窗口开始')).toBeNull();
+    expect(screen.getByRole('button', { name: /^时间窗口开始/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^时间窗口结束/ })).toBeTruthy();
   });
 
   it('a non-positive or fractional 预计分钟 keeps the submit disabled', async () => {
