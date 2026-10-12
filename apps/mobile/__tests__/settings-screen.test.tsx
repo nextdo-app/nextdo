@@ -363,6 +363,10 @@ function redirectedTo(tag: string): { ok: true; url: string } {
   return { ok: true, url: `${PROXY}${GITHUB_RELEASES}/tag/${tag}` };
 }
 
+function atomFeedResponse(xml: string): { ok: true; text: () => Promise<string> } {
+  return { ok: true, text: async () => xml };
+}
+
 /** The fetch stub the update check drives (mutable per case). */
 let mockUpdateFetch: jest.Mock;
 /** Every URL handed to Linking.openURL by the update block. */
@@ -483,7 +487,7 @@ describe('settings update-check block', () => {
 
     expect(mockUpdateFetch).toHaveBeenCalledTimes(1);
     const requested = mockUpdateFetch.mock.calls[0][0] as string;
-    expect(requested).toBe(`${PROXY}${GITHUB_RELEASES}/latest`);
+    expect(requested).toBe(`${PROXY}${GITHUB_RELEASES}.atom`);
     // The GitHub API is rate-limited per IP and the accelerator's IP is
     // shared — going through it would 403 for most users.
     expect(requested).not.toContain('api.github.com');
@@ -514,7 +518,7 @@ describe('settings update-check block', () => {
     fireEvent.press(screen.getByRole('link', { name: '查看全部安装包' }));
     await flush();
 
-    expect(openedUrls).toEqual([`${PROXY}https://github.com/nextdo-app/nextdo/releases/latest`]);
+    expect(openedUrls).toEqual([`${PROXY}https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4`]);
   });
 
   it('newer version on macOS desktop → ONLY the installer matching the detected chip, and pressing it triggers in-app download', async () => {
@@ -577,7 +581,7 @@ describe('settings update-check block', () => {
     fireEvent.press(screen.getByRole('link', { name: '查看全部安装包' }));
     await flush();
 
-    expect(openedUrls).toEqual([`${PROXY}https://github.com/nextdo-app/nextdo/releases/latest`]);
+    expect(openedUrls).toEqual([`${PROXY}https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4`]);
   });
 
   it.each([
@@ -595,9 +599,11 @@ describe('settings update-check block', () => {
     expect(screen.queryByText(/发现新版本/)).toBeNull();
 
     // A retry re-issues the (proxied) request rather than dead-ending.
+    // In failure modes, fetchDualChannelReleases attempts atom then falls back to /latest,
+    // so the initial failed check makes 2 requests and the retry makes 1 (total 3).
     mockUpdateFetch.mockResolvedValue(redirectedTo('v0.1.3'));
     await pressCheckForUpdate();
-    expect(mockUpdateFetch).toHaveBeenCalledTimes(2);
+    expect(mockUpdateFetch).toHaveBeenCalledTimes(3);
     expect(screen.getByText(/已是最新版本/)).toBeTruthy();
   });
 
@@ -609,6 +615,78 @@ describe('settings update-check block', () => {
     await pressCheckForUpdate();
 
     expect(screen.getByText('发现新版本 v0.1.10')).toBeTruthy();
+  });
+
+  it('allows switching update channel preference between stable and beta', async () => {
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+
+    expect(screen.getByText('更新渠道偏好')).toBeTruthy();
+    const betaButton = screen.getByRole('button', { name: '偏好测试版渠道' });
+    const stableButton = screen.getByRole('button', { name: '偏好正式版渠道' });
+
+    expect(betaButton).toBeTruthy();
+    expect(stableButton).toBeTruthy();
+
+    fireEvent.press(betaButton);
+    await flush();
+
+    expect(betaButton.props.accessibilityState?.selected).toBe(true);
+
+    fireEvent.press(stableButton);
+    await flush();
+
+    expect(stableButton.props.accessibilityState?.selected).toBe(true);
+  });
+
+  it('when both stable and beta updates are available, displays options and allows selecting between them', async () => {
+    const atomXml = `
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <entry>
+          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.5-beta.1"/>
+          <updated>2026-10-12T08:00:00Z</updated>
+        </entry>
+        <entry>
+          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4"/>
+          <updated>2026-10-10T12:00:00Z</updated>
+        </entry>
+      </feed>
+    `;
+    mockUpdateFetch.mockResolvedValue(atomFeedResponse(atomXml));
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+
+    await pressCheckForUpdate();
+
+    expect(screen.getByText('发现可用新版本，请选择要更新的目标：')).toBeTruthy();
+    const betaOption = screen.getByRole('button', { name: /选择更新至 测试版 v0\.1\.5-beta\.1/ });
+    const stableOption = screen.getByRole('button', { name: /选择更新至 正式版 v0\.1\.4/ });
+    expect(betaOption).toBeTruthy();
+    expect(stableOption).toBeTruthy();
+
+    // Default preference is stable, so v0.1.4 is selected initially
+    expect(stableOption.props.accessibilityState?.selected).toBe(true);
+    expect(betaOption.props.accessibilityState?.selected).toBe(false);
+
+    // Opening release page directs to the initially selected version's tag (v0.1.4)
+    fireEvent.press(screen.getByRole('link', { name: '查看全部安装包' }));
+    await flush();
+    expect(openedUrls).toEqual([`${PROXY}https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4`]);
+
+    // Switch to beta option
+    fireEvent.press(betaOption);
+    await flush();
+
+    expect(betaOption.props.accessibilityState?.selected).toBe(true);
+    expect(stableOption.props.accessibilityState?.selected).toBe(false);
+
+    // Opening release page directs to the newly selected version's tag (v0.1.5-beta.1)
+    fireEvent.press(screen.getByRole('link', { name: '查看全部安装包' }));
+    await flush();
+    expect(openedUrls).toEqual([
+      `${PROXY}https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4`,
+      `${PROXY}https://github.com/nextdo-app/nextdo/releases/tag/v0.1.5-beta.1`,
+    ]);
   });
 });
 
