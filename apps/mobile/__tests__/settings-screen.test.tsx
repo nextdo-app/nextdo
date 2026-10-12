@@ -636,6 +636,29 @@ describe('settings cloud-sync block', () => {
     expect(connectButtonDisabled()).toBe(true);
   });
 
+  it('disconnected: 「同步是怎么工作的？」 explains trigger, frequency, configurability and retries (issue #15)', async () => {
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+
+    // Collapsed by default — the card stays a card.
+    expect(screen.getByRole('button', { name: '同步是怎么工作的？' })).toBeTruthy();
+    expect(screen.queryByText('什么时候同步？')).toBeNull();
+
+    fireEvent.press(screen.getByRole('button', { name: '同步是怎么工作的？' }));
+    // The four questions a user actually asks, each answered.
+    expect(screen.getByText('什么时候同步？')).toBeTruthy();
+    expect(screen.getByText(/每一次改动都会立刻排队上传/)).toBeTruthy();
+    expect(screen.getByText('多久一次？')).toBeTruthy();
+    expect(screen.getByText(/没有固定间隔/)).toBeTruthy();
+    expect(screen.getByText('能自己设置频率吗？')).toBeTruthy();
+    expect(screen.getByText(/不能。只能配置服务器地址/)).toBeTruthy();
+    expect(screen.getByText('失败了怎么办？')).toBeTruthy();
+    expect(screen.getByText(/自动重试，数据不会丢/)).toBeTruthy();
+
+    fireEvent.press(screen.getByRole('button', { name: '收起同步说明' }));
+    expect(screen.queryByText('什么时候同步？')).toBeNull();
+  });
+
   it('连接 enables on a server address alone (token may be empty — the requirement is enforced by connect() inline); no address stays disabled', async () => {
     renderRouter('app', { initialUrl: '/(tabs)/settings' });
     await flush();

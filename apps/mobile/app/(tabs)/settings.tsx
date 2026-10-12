@@ -123,7 +123,58 @@ const INPUT_CLASS =
 /** Placeholders / accessibility labels — the single definitions the tests
  *  match on (a duplicated literal in the JSX is how copy drifts). */
 const SERVER_ADDRESS_PLACEHOLDER = '自建服务器地址（例如：https://my-sync.workers.dev）';
+/**
+ * The "同步是怎么工作的？" toggle and its body (issue #15).
+ *
+ * Rendered in BOTH the connected and the disconnected states on purpose: the
+ * person who has not connected yet is exactly the one asking "when does it
+ * sync, and can I change that?" — hiding the answer behind having already
+ * connected would leave the question unanswered.
+ */
+function SyncExplainer({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  return (
+    <View className="gap-1.5">
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={open ? '收起同步说明' : '同步是怎么工作的？'}
+        accessibilityState={{ expanded: open }}
+        onPress={onToggle}
+      >
+        <Text className="font-sans text-xs font-semibold text-accent dark:text-accent-dark">
+          {open ? '收起同步说明 ▴' : '同步是怎么工作的？ ▾'}
+        </Text>
+      </Pressable>
+      {open ? (
+        <View className="gap-1.5 rounded-lg border border-border/80 bg-surface p-3 dark:border-border-dark dark:bg-surface-dark">
+          {SYNC_EXPLAINER.map((line) => (
+            <Text
+              key={line.q}
+              className="font-sans text-xs leading-relaxed text-muted dark:text-muted-dark"
+            >
+              <Text className="font-semibold text-ink dark:text-ink-dark">{line.q}</Text>
+              {'  '}
+              {line.a}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 const TOKEN_PLACEHOLDER = '云同步连接串（例如 https://...|token）';
+
+/**
+ * The four things users ask about sync (issue #15), stated as the code
+ * actually behaves — 详见 `docs/sync.md`. Kept as data so the card renders
+ * them as a list instead of four hand-written paragraphs that can drift.
+ */
+const SYNC_EXPLAINER: readonly { q: string; a: string }[] = [
+  { q: '什么时候同步？', a: '连上之后一直在跑。你在这台设备上的每一次改动都会立刻排队上传，没有定时任务。' },
+  { q: '多久一次？', a: '没有固定间隔——写入即触发上传；别的设备的改动通过长连接推过来。' },
+  { q: '能自己设置频率吗？', a: '不能。只能配置服务器地址和连接凭据。' },
+  { q: '失败了怎么办？', a: '网络问题由系统自动重试，数据不会丢。数据本身不合法时，服务端会拒收并在下方列出原因。' },
+];
 const ADVANCED_BACKEND_PLACEHOLDER = 'https://nextdo.example.com/api';
 const ADVANCED_ENDPOINT_PLACEHOLDER = 'https://nextdo.example.com/sync';
 const TOKEN_ACCESSIBILITY_LABEL = '云同步连接串';
@@ -163,6 +214,8 @@ export default function SettingsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [showQrCode, setShowQrCode] = useState(false);
+  /** The "同步是怎么工作的？" explainer inside the cloud-sync card (#15). */
+  const [showSyncHelp, setShowSyncHelp] = useState(false);
   const [rejections, setRejections] = useState<UploadRejectedOp[]>([]);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -472,6 +525,13 @@ export default function SettingsScreen() {
             <Text className="font-sans text-sm text-muted dark:text-muted-dark">
               已连接 — 数据在这台设备与服务器之间自动同步。
             </Text>
+            {/* The four questions users actually ask about sync (issue #15).
+                Answered from the code's real behaviour, not a design doc —
+                see docs/sync.md, which is the long version. */}
+            <SyncExplainer
+              open={showSyncHelp}
+              onToggle={() => setShowSyncHelp((prev) => !prev)}
+            />
             {storedConfig !== null ? (
               <View className="gap-1">
                 <Text className="font-sans text-xs text-muted dark:text-muted-dark">
@@ -547,6 +607,13 @@ export default function SettingsScreen() {
             <Text className="font-sans text-sm text-muted dark:text-muted-dark">
               未连接 — 数据仅保存在这台设备上。粘贴来自其他设备或服务器的云同步连接串，或填写自建服务器地址开启同步。
             </Text>
+
+            {/* Same explainer as the connected state — the unconnected reader
+                is the one who most needs to know what connecting would do. */}
+            <SyncExplainer
+              open={showSyncHelp}
+              onToggle={() => setShowSyncHelp((prev) => !prev)}
+            />
 
             <Pressable
               accessibilityRole="link"
