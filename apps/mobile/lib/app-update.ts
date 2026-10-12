@@ -882,3 +882,22 @@ export async function openDownloadedInstaller(filePath: string): Promise<void> {
   }
   await bridge.invoke('open_downloaded_file', { filePath });
 }
+
+/**
+ * 桌面端应用内自动安装更新并重启。
+ *
+ * 在 macOS 上：静默挂载 DMG，提取新版应用，启动独立的后台更新辅助脚本并优雅退出主应用，
+ * 由脚本完成 Applications 目录下的文件覆盖、清除隔离属性、卸载 DMG 并重启新版应用。
+ * 彻底解决用户手动拖动覆盖时因「应用正在运行」而失败的问题。
+ * 在 Windows 上：启动 NSIS 安装程序并优雅退出主应用。
+ */
+export async function installDesktopUpdateAndRestart(filePath: string): Promise<void> {
+  const host = globalThis as {
+    window?: { __TAURI_INTERNALS__?: TauriInternals };
+  };
+  const bridge = host.window?.__TAURI_INTERNALS__;
+  if (bridge?.invoke === undefined) {
+    throw new Error('Not running in Tauri desktop shell');
+  }
+  await bridge.invoke('install_update_and_restart', { filePath });
+}

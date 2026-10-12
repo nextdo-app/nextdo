@@ -15,6 +15,7 @@ import {
   getChannelLabel,
   getReleaseChannel,
   getUpdateChannelPreference,
+  installDesktopUpdateAndRestart,
   isTauriDesktop,
   openDownloadedInstaller,
   pickDownloads,
@@ -103,6 +104,12 @@ export interface UseAppUpdateResult {
   startDownload: (url: string) => void;
   /** 桌面端打开已下载的安装包。 */
   openInstaller: () => void;
+  /** 桌面端一键自动安装并重启。 */
+  installUpdate: () => void;
+  /** 正在执行安装重启。 */
+  installing: boolean;
+  /** 自动安装失败的错误信息。 */
+  installError: string | null;
 }
 
 export function useAppUpdate(): UseAppUpdateResult {
@@ -123,6 +130,8 @@ export function useAppUpdate(): UseAppUpdateResult {
   const [outcome, setOutcome] = useState<UpdateOutcome | null>(null);
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
   const [download, setDownload] = useState<DownloadState>({ kind: 'idle' });
+  const [installing, setInstalling] = useState(false);
+  const [installError, setInstallError] = useState<string | null>(null);
 
   const mountedRef = useRef(true);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -283,14 +292,11 @@ export function useAppUpdate(): UseAppUpdateResult {
             });
           } else if (p.state === 'done') {
             setDownload({ kind: 'done', filePath: p.file_path });
+            setInstallError(null);
             if (pollTimerRef.current !== null) {
               clearInterval(pollTimerRef.current);
               pollTimerRef.current = null;
             }
-            // 下载完成后自动打开安装程序
-            void openDownloadedInstaller(p.file_path).catch(() => {
-              // 打开失败不影响 done 状态，用户可以手动点「打开安装包」
-            });
           } else if (p.state === 'error') {
             setDownload({ kind: 'error', error: p.error });
             if (pollTimerRef.current !== null) {
@@ -308,6 +314,19 @@ export function useAppUpdate(): UseAppUpdateResult {
   const openInstaller = useCallback(() => {
     if (download.kind !== 'done') return;
     void openDownloadedInstaller(download.filePath);
+  }, [download]);
+
+  /** 桌面端一键自动安装并重启。 */
+  const installUpdate = useCallback(() => {
+    if (download.kind !== 'done') return;
+    setInstalling(true);
+    setInstallError(null);
+    void installDesktopUpdateAndRestart(download.filePath).catch((err) => {
+      if (mountedRef.current) {
+        setInstalling(false);
+        setInstallError(err instanceof Error ? err.message : String(err));
+      }
+    });
   }, [download]);
 
   // 计算 Release 详情链接
@@ -332,5 +351,8 @@ export function useAppUpdate(): UseAppUpdateResult {
     download,
     startDownload,
     openInstaller,
+    installUpdate,
+    installing,
+    installError,
   };
 }

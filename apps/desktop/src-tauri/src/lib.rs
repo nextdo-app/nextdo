@@ -492,6 +492,243 @@ fn open_downloaded_file(file_path: String) -> Result<(), String> {
     res.map(|_| ()).map_err(|e| format!("打开安装包失败: {e}"))
 }
 
+#[cfg(target_os = "macos")]
+fn mount_dmg(dmg_path: &std::path::Path, mount_dir: &std::path::Path) -> Result<(), String> {
+    // 优先尝试 diskutil image attach（macOS 最新推荐方式）
+    let diskutil_status = std::process::Command::new("diskutil")
+        .args([
+            "image",
+            "attach",
+            &dmg_path.to_string_lossy(),
+            "--mountOptions",
+            "nobrowse,readOnly",
+            "--mountPoint",
+            &mount_dir.to_string_lossy(),
+        ])
+        .status();
+
+    if let Ok(status) = diskutil_status {
+        if status.success() {
+            return Ok(());
+        }
+    }
+
+    // 回退到 hdiutil attach（广泛兼容各版本 macOS）
+    let hdiutil_status = std::process::Command::new("hdiutil")
+        .args([
+            "attach",
+            &dmg_path.to_string_lossy(),
+            "-nobrowse",
+            "-readonly",
+            "-mountpoint",
+            &mount_dir.to_string_lossy(),
+        ])
+        .status()
+        .map_err(|e| format!("无法执行 hdiutil attach: {e}"))?;
+
+    if hdiutil_status.success() {
+        Ok(())
+    } else {
+        Err(format!("挂载 DMG 失败，退出码: {:?}", hdiutil_status.code()))
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn find_app_in_dir(dir: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let entries = std::fs::read_dir(dir).map_err(|e| format!("无法读取挂载目录: {e}"))?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) == Some("app") {
+            return Ok(path);
+        }
+    }
+    Err("在 DMG 镜像中未找到 .app 应用程序包".into())
+}
+
+#[cfg(target_os = "macos")]
+fn resolve_target_app_path() -> std::path::PathBuf {
+    if let Ok(exe_path) = std::env::current_exe() {
+        for ancestor in exe_path.ancestors() {
+            if ancestor.extension().and_then(|ext| ext.to_str()) == Some("app") {
+                return ancestor.to_path_buf();
+            }
+        }
+    }
+    std::path::PathBuf::from("/Applications/Nextdo.app")
+}
+
+/// 自动安装已下载的更新包并重启应用。
+///
+/// 在 macOS 上：
+/// 若安装包为 `.dmg`，则在后台静默挂载，提取出新的 `.app` bundle，
+/// 启动一个独立的后台辅助更新脚本，然后主应用优雅退出（`app.exit(0)`）。
+/// 后台脚本等待原进程退出释放文件锁后，使用 `ditto` 覆盖目标路径（默认 `/Applications/Nextdo.app`
+/// 或当前运行的应用位置），清除隔离属性，卸载 DMG，并使用 `open -n` 重新启动新版应用。
+/// 这避免了用户手动拖拽时因主应用运行而提示「项目正在使用中，无法替换」的问题。
+///
+/// 在 Windows 上：
+/// 启动 NSIS 安装程序（`.exe`），并退出当前应用，使安装向导顺利进行。
+///
+/// 在 Linux 上：
+/// 用系统安装器打开包（`xdg-open`）。
+#[tauri::command]
+fn install_update_and_restart(app: tauri::AppHandle, file_path: String) -> Result<(), String> {
+    let dmg_path = std::path::PathBuf::from(&file_path);
+    if !dmg_path.is_file() {
+        return Err("安装包文件不存在".into());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if file_path.to_lowercase().ends_with(".dmg") {
+            let unique_id = format!(
+                "{}_{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis())
+                    .unwrap_or(0)
+            );
+            let mount_dir = std::env::temp_dir().join(format!("nextdo_mount_{unique_id}"));
+            std::fs::create_dir_all(&mount_dir)
+                .map_err(|e| format!("创建临时挂载点目录失败: {e}"))?;
+
+            // 挂载 DMG 镜像
+            if let Err(e) = mount_dmg(&dmg_path, &mount_dir) {
+                let _ = std::fs::remove_dir(&mount_dir);
+                return Err(e);
+            }
+
+            // 在挂载卷内查找新版 .app
+            let source_app = match find_app_in_dir(&mount_dir) {
+                Ok(path) => path,
+                Err(e) => {
+                    let _ = std::process::Command::new("diskutil")
+                        .args(["eject", "force", &mount_dir.to_string_lossy()])
+                        .status();
+                    let _ = std::fs::remove_dir(&mount_dir);
+                    return Err(e);
+                }
+            };
+
+            let target_app = resolve_target_app_path();
+            let script_path = std::env::temp_dir().join(format!("nextdo_updater_{unique_id}.sh"));
+
+            let script_content = r#"#!/bin/bash
+set -u
+
+TARGET_PID="$1"
+SOURCE_APP="$2"
+TARGET_APP="$3"
+MOUNT_DIR="$4"
+DMG_PATH="$5"
+SCRIPT_PATH="$0"
+
+# 1. 等待主应用进程完全退出，最多等待 20 秒
+COUNT=0
+while kill -0 "$TARGET_PID" 2>/dev/null; do
+    sleep 0.2
+    COUNT=$((COUNT + 1))
+    if [ "$COUNT" -ge 100 ]; then
+        kill -9 "$TARGET_PID" 2>/dev/null || true
+        break
+    fi
+done
+
+# 2. 确保目标安装目录的父目录存在
+TARGET_DIR="$(dirname "$TARGET_APP")"
+mkdir -p "$TARGET_DIR"
+
+# 3. 替换目标应用
+if [ -d "$TARGET_APP" ]; then
+    rm -rf "$TARGET_APP"
+fi
+ditto "$SOURCE_APP" "$TARGET_APP"
+
+# 4. 移除隔离属性，避免 Gatekeeper 拦截
+xattr -dr com.apple.quarantine "$TARGET_APP" 2>/dev/null || true
+
+# 5. 卸载临时挂载点
+diskutil eject force "$MOUNT_DIR" 2>/dev/null || hdiutil detach "$MOUNT_DIR" -force 2>/dev/null || true
+rmdir "$MOUNT_DIR" 2>/dev/null || true
+
+# 6. 清理下载的临时 DMG 文件与辅助脚本
+rm -f "$DMG_PATH" 2>/dev/null || true
+rm -f "$SCRIPT_PATH" 2>/dev/null || true
+
+# 7. 启动新版应用
+open -n "$TARGET_APP"
+"#;
+
+            std::fs::write(&script_path, script_content)
+                .map_err(|e| format!("写入更新辅助脚本失败: {e}"))?;
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(
+                    &script_path,
+                    std::fs::Permissions::from_mode(0o755),
+                );
+            }
+
+            let pid = std::process::id();
+            let spawn_res = std::process::Command::new("/bin/bash")
+                .arg(&script_path)
+                .arg(pid.to_string())
+                .arg(&source_app)
+                .arg(&target_app)
+                .arg(&mount_dir)
+                .arg(&file_path)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+
+            match spawn_res {
+                Ok(_) => {
+                    // 脚本已脱离启动，优雅退出当前主应用以释放锁
+                    app.exit(0);
+                    return Ok(());
+                }
+                Err(e) => {
+                    // 清理挂载点
+                    let _ = std::process::Command::new("diskutil")
+                        .args(["eject", "force", &mount_dir.to_string_lossy()])
+                        .status();
+                    let _ = std::fs::remove_dir(&mount_dir);
+                    let _ = std::fs::remove_file(&script_path);
+                    return Err(format!("启动更新脚本失败: {e}"));
+                }
+            }
+        } else {
+            // 非 DMG 安装包，回退到 open 打开
+            let res = std::process::Command::new("open").arg(&file_path).spawn();
+            return res.map(|_| ()).map_err(|e| format!("打开安装包失败: {e}"));
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let res = std::process::Command::new("cmd")
+            .args(["/c", "start", "", &file_path])
+            .spawn();
+        match res {
+            Ok(_) => {
+                app.exit(0);
+                Ok(())
+            }
+            Err(e) => Err(format!("启动安装程序失败: {e}")),
+        }
+    }
+
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        let res = std::process::Command::new("xdg-open").arg(&file_path).spawn();
+        res.map(|_| ()).map_err(|e| format!("打开安装包失败: {e}"))
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -595,7 +832,8 @@ pub fn run() {
             open_url,
             download_update,
             get_download_progress,
-            open_downloaded_file
+            open_downloaded_file,
+            install_update_and_restart
         ])
         .run(tauri::generate_context!())
         .expect("error while running Nextdo desktop");

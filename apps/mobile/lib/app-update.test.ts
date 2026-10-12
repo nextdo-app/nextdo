@@ -20,9 +20,11 @@ import {
   getChannelLabel,
   getReleaseChannel,
   getUpdateChannelPreference,
+  installDesktopUpdateAndRestart,
   isPrerelease,
   isTauriDesktop,
   latestReleaseUrl,
+  openDownloadedInstaller,
   openExternalUrl,
   parseAtomFeedEntries,
   parseAtomFeedTags,
@@ -475,6 +477,64 @@ describe('pollDesktopDownloadProgress', () => {
     setWindow(undefined);
     const result = await pollDesktopDownloadProgress();
     expect(result.state).toBe('idle');
+  });
+});
+
+describe('openDownloadedInstaller', () => {
+  const originalWindow = (globalThis as { window?: unknown }).window;
+
+  afterEach(() => {
+    (globalThis as { window?: unknown }).window = originalWindow;
+  });
+
+  function setWindow(value: unknown): void {
+    (globalThis as { window?: unknown }).window = value;
+  }
+
+  it('calls Tauri open_downloaded_file with the filePath', async () => {
+    const invokeMock = jest.fn().mockResolvedValue(undefined);
+    setWindow({ __TAURI_INTERNALS__: { invoke: invokeMock } });
+
+    await openDownloadedInstaller('/tmp/Nextdo.dmg');
+    expect(invokeMock).toHaveBeenCalledWith('open_downloaded_file', {
+      filePath: '/tmp/Nextdo.dmg',
+    });
+  });
+
+  it('throws when not in Tauri shell', async () => {
+    setWindow(undefined);
+    await expect(openDownloadedInstaller('/tmp/Nextdo.dmg')).rejects.toThrow(
+      'Not running in Tauri desktop shell',
+    );
+  });
+});
+
+describe('installDesktopUpdateAndRestart', () => {
+  const originalWindow = (globalThis as { window?: unknown }).window;
+
+  afterEach(() => {
+    (globalThis as { window?: unknown }).window = originalWindow;
+  });
+
+  function setWindow(value: unknown): void {
+    (globalThis as { window?: unknown }).window = value;
+  }
+
+  it('calls Tauri install_update_and_restart with the filePath', async () => {
+    const invokeMock = jest.fn().mockResolvedValue(undefined);
+    setWindow({ __TAURI_INTERNALS__: { invoke: invokeMock } });
+
+    await installDesktopUpdateAndRestart('/tmp/Nextdo.dmg');
+    expect(invokeMock).toHaveBeenCalledWith('install_update_and_restart', {
+      filePath: '/tmp/Nextdo.dmg',
+    });
+  });
+
+  it('throws when not in Tauri shell', async () => {
+    setWindow(undefined);
+    await expect(installDesktopUpdateAndRestart('/tmp/Nextdo.dmg')).rejects.toThrow(
+      'Not running in Tauri desktop shell',
+    );
   });
 });
 
