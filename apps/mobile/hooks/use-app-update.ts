@@ -112,6 +112,18 @@ export interface UseAppUpdateResult {
   installError: string | null;
 }
 
+let activePollTimer: ReturnType<typeof setInterval> | null = null;
+let currentPollId = 0;
+
+/** 停止当前的桌面端下载进度轮询（跨测试/跨组件实例清理用）。 */
+export function stopDesktopUpdatePolling(): void {
+  if (activePollTimer !== null) {
+    clearInterval(activePollTimer);
+    activePollTimer = null;
+  }
+  currentPollId++;
+}
+
 export function useAppUpdate(): UseAppUpdateResult {
   // 版本号 / 平台在一次会话里不变，所以不是 state——避免无谓的重渲染。
   const currentVersion = currentAppVersion();
@@ -134,7 +146,6 @@ export function useAppUpdate(): UseAppUpdateResult {
   const [installError, setInstallError] = useState<string | null>(null);
 
   const mountedRef = useRef(true);
-  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -143,10 +154,7 @@ export function useAppUpdate(): UseAppUpdateResult {
     });
     return () => {
       mountedRef.current = false;
-      if (pollTimerRef.current !== null) {
-        clearInterval(pollTimerRef.current);
-        pollTimerRef.current = null;
-      }
+      stopDesktopUpdatePolling();
     };
   }, []);
 
@@ -279,11 +287,19 @@ export function useAppUpdate(): UseAppUpdateResult {
         }
       });
 
+      // 停止任何先前的轮询，分配新的 pollId
+      stopDesktopUpdatePolling();
+      const pollId = currentPollId;
+
       // 开始轮询进度
-      if (pollTimerRef.current !== null) clearInterval(pollTimerRef.current);
-      pollTimerRef.current = setInterval(() => {
+      const checkProgress = () => {
+        if (!isTauriDesktop() || currentPollId !== pollId) {
+          stopDesktopUpdatePolling();
+          return;
+        }
+
         void pollDesktopDownloadProgress().then((p: DesktopDownloadProgress) => {
-          if (!mountedRef.current) return;
+          if (!mountedRef.current || currentPollId !== pollId) return;
           if (p.state === 'downloading') {
             setDownload({
               kind: 'downloading',
@@ -293,19 +309,16 @@ export function useAppUpdate(): UseAppUpdateResult {
           } else if (p.state === 'done') {
             setDownload({ kind: 'done', filePath: p.file_path });
             setInstallError(null);
-            if (pollTimerRef.current !== null) {
-              clearInterval(pollTimerRef.current);
-              pollTimerRef.current = null;
-            }
+            stopDesktopUpdatePolling();
           } else if (p.state === 'error') {
             setDownload({ kind: 'error', error: p.error });
-            if (pollTimerRef.current !== null) {
-              clearInterval(pollTimerRef.current);
-              pollTimerRef.current = null;
-            }
+            stopDesktopUpdatePolling();
           }
         });
-      }, 400);
+      };
+
+      activePollTimer = setInterval(checkProgress, 400);
+      checkProgress();
     },
     [isDesktop, download.kind],
   );

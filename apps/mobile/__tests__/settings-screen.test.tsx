@@ -249,6 +249,7 @@ import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-librar
 import { useCloudSync } from '@/hooks/use-cloud-sync';
 import { Linking, Platform } from 'react-native';
 import { UPDATE_PROXY_PREFIX, UPDATE_REPO } from '@/lib/app-update';
+import { stopDesktopUpdatePolling } from '@/hooks/use-app-update';
 
 /** A tiny harness that drives the REAL `useCloudSync` hook directly. The
  *  button's canSubmit (two addresses non-empty) blocks empty-address
@@ -349,6 +350,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  stopDesktopUpdatePolling();
   Object.defineProperty(Platform, 'OS', { value: 'ios', configurable: true });
   delete (globalThis as { window?: unknown }).window;
 });
@@ -719,47 +721,37 @@ describe('settings update-check block', () => {
   });
 
   it('macOS desktop update download completion renders install-and-restart and manual open buttons', async () => {
-    jest.useFakeTimers();
-    try {
-      mockDownloadProgress = {
-        state: 'done',
-        downloaded_bytes: 50 * 1024 * 1024,
-        total_bytes: 50 * 1024 * 1024,
-        file_path: '/tmp/Nextdo_0.1.4_aarch64.dmg',
-        error: '',
-      };
-      pretendDesktopMac('aarch64');
-      mockUpdateFetch.mockResolvedValue(redirectedTo('v0.1.4'));
-      renderRouter('app', { initialUrl: '/(tabs)/settings' });
-      await flush();
+    mockDownloadProgress = {
+      state: 'done',
+      downloaded_bytes: 50 * 1024 * 1024,
+      total_bytes: 50 * 1024 * 1024,
+      file_path: '/tmp/Nextdo_0.1.4_aarch64.dmg',
+      error: '',
+    };
+    pretendDesktopMac('aarch64');
+    mockUpdateFetch.mockResolvedValue(redirectedTo('v0.1.4'));
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
 
-      await pressCheckForUpdate();
+    await pressCheckForUpdate();
 
-      const installer = screen.getByRole('button', { name: '下载并安装 macOS 安装包（Apple 芯片）' });
-      fireEvent.press(installer);
+    const installer = screen.getByRole('button', { name: '下载并安装 macOS 安装包（Apple 芯片）' });
+    fireEvent.press(installer);
+    await flush();
 
-      // 前进计时器以触发轮询
-      await act(async () => {
-        jest.advanceTimersByTime(500);
-      });
-      await flush();
+    expect(screen.getByText(/新版本已下载完成，可立即安装更新/)).toBeTruthy();
+    const restartBtn = screen.getByRole('button', { name: '立即安装并重启' });
+    const manualBtn = screen.getByRole('button', { name: '手动打开安装包' });
+    expect(restartBtn).toBeTruthy();
+    expect(manualBtn).toBeTruthy();
 
-      expect(screen.getByText(/新版本已下载完成，可立即安装更新/)).toBeTruthy();
-      const restartBtn = screen.getByRole('button', { name: '立即安装并重启' });
-      const manualBtn = screen.getByRole('button', { name: '手动打开安装包' });
-      expect(restartBtn).toBeTruthy();
-      expect(manualBtn).toBeTruthy();
+    fireEvent.press(restartBtn);
+    await flush();
+    expect(installedFilePaths).toEqual(['/tmp/Nextdo_0.1.4_aarch64.dmg']);
 
-      fireEvent.press(restartBtn);
-      await flush();
-      expect(installedFilePaths).toEqual(['/tmp/Nextdo_0.1.4_aarch64.dmg']);
-
-      fireEvent.press(manualBtn);
-      await flush();
-      expect(openedFilePaths).toEqual(['/tmp/Nextdo_0.1.4_aarch64.dmg']);
-    } finally {
-      jest.useRealTimers();
-    }
+    fireEvent.press(manualBtn);
+    await flush();
+    expect(openedFilePaths).toEqual(['/tmp/Nextdo_0.1.4_aarch64.dmg']);
   });
 });
 
