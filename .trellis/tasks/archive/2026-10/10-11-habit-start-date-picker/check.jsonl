@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "评审门禁：测试要求、确定性、依赖边界"}
+{"file": ".trellis/spec/app/index.md", "reason": "apps/mobile 质量检查清单"}
+{"file": ".trellis/spec/domain/index.md", "reason": "packages/core 质量检查清单（穷尽分支、纯函数）"}
+{"file": ".trellis/spec/app/component-guidelines.md", "reason": "核对是否真的换成了 DateTimePicker 且保留无障碍标签"}

@@ -1,0 +1,33 @@
+{
+  "id": "keyboard-nav-desktop-gestures",
+  "name": "keyboard-nav-desktop-gestures",
+  "title": "Keyboard navigation on desktop and gestures on mobile (GitHub issue #17)",
+  "description": "收集箱等交互流程支持电脑端上下键 + Enter 键盘导航与清晰焦点态，手机端在适合场景支持手势操作（对应 GitHub issue #17）",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "printsdfu",
+  "assignee": "printsdfu",
+  "createdAt": "2026-10-11",
+  "completedAt": "2026-10-12",
+  "branch": "main",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "apps/mobile/hooks/use-option-keyboard-nav.ts",
+    "apps/mobile/components/clarify-wizard.tsx",
+    "apps/mobile/hooks/use-swipe-right.ts",
+    "docs/keyboard-and-gestures.md"
+  ],
+  "notes": "验证截图见 .verify/keyboard-nav-desktop-gestures/",
+  "meta": {
+    "github_issue": "https://github.com/nextdo-app/nextdo/issues/17"
+  }
+}

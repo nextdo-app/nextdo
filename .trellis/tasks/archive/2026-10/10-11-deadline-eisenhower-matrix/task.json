@@ -1,0 +1,35 @@
+{
+  "id": "deadline-eisenhower-matrix",
+  "name": "deadline-eisenhower-matrix",
+  "title": "Deadlines for projects and actions with Eisenhower matrix ordering (GitHub issue #16)",
+  "description": "为项目和行动增加截止时间，列表识别临近/逾期，并按四象限原则调整行动排序（对应 GitHub issue #16）",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "printsdfu",
+  "assignee": "printsdfu",
+  "createdAt": "2026-10-11",
+  "completedAt": "2026-10-12",
+  "branch": "main",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/core/src/domain/deadline.ts",
+    "packages/core/src/engine/quadrant.ts",
+    "packages/db/src/schema.ts",
+    "apps/mobile/components/deadline-chip.tsx",
+    "apps/mobile/app/(tabs)/projects.tsx",
+    "apps/mobile/app/(tabs)/now.tsx"
+  ],
+  "notes": "验证截图见 .verify/deadline-eisenhower-matrix/",
+  "meta": {
+    "github_issue": "https://github.com/nextdo-app/nextdo/issues/16"
+  }
+}
