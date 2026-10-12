@@ -1042,3 +1042,43 @@ Released v0.1.2 with all 4 Android ABIs after fixing three consecutive blockers 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 34: 完成四项积压任务、现代化重构时间选择器并归档
+<!-- trellis-session: v=2 fp=467d273ed01de3da -->
+
+**Date**: 2026-10-12
+**Task**: 完成四项积压任务、现代化重构时间选择器并归档
+**Branch**: `main`
+
+### Summary
+
+完成项目/行动截止时间与艾森豪威尔矩阵排序(#16)、桌面端键盘导航与移动端手势(#17)、数据同步触发时机文档(#15)，以及习惯起始日期选择与全新现代化 DateTimePicker 重构(#13)，快捷预设升级为今天/明天/下周一/下月一日，经浏览器实机测试全绿并完成任务归档
+
+### Main Changes
+
+- feat(core,db,mobile): 增加项目与行动截止时间支持，并按四象限矩阵优先推荐紧急且重要行动 (issue #16)
+- feat(mobile): 全面现代化重构 DateTimePicker，支持卡片式快捷选项（今天、明天、下周一、下月一日）、高质感日历网格及数字时钟时分透镜滚轮 (issue #13)
+- feat(mobile): 桌面端支持上下键焦点与 Enter 快速确认，移动端支持右滑手势操作 (issue #17)
+- docs(sync): 新增 docs/sync.md 详细阐明同步触发时机与默认频率，并在设置页提供状态提示 (issue #15)
+- docs(spec): 固化组件指引、领域模型与交付前验证流程规范
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fb0fe07` | feat(core,db,mobile): add deadlines and Eisenhower matrix ordering (fixes #16) |
+| `5087c77` | feat(mobile): modern datetime picker with presets and habit start date selection (fixes #13) |
+| `f3529c4` | feat(mobile): keyboard navigation and mobile swipe gestures (fixes #17) |
+| `a649643` | docs(sync): document sync trigger frequency and add settings hint (fixes #15) |
+| `ebc8f47` | docs(spec): record guidelines for datetime picker, deadlines, and verification process |
+| `158bff1` | chore(task): archive completed tasks for issues #13, #15, #16, #17 |
+
+### Testing
+
+- [OK] pnpm verify:web 全流程验证（lint、typecheck、37个测试套件534个测试全绿、Expo Web 构建通过）
+- [OK] 在 http://localhost:4180 真实浏览器中打开习惯与项目时间选择弹窗并截图验证 (.verify/modern-datetime-picker/)
+
+### Status
+
+[OK] **Completed**
