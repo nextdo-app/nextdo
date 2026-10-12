@@ -375,5 +375,52 @@ describe('habitCycleDay', () => {
     expect(habitCycleDay(startedAt, 3, localDateKey(new Date(2026, 9, 3)))).toBe(3);
     expect(habitCycleDay(startedAt, 3, localDateKey(new Date(2026, 9, 4)))).toBeNull();
   });
+
+  it('updates habit fields and re-seeds days when startedAt or windowDays change', async () => {
+    const { db, close } = await open();
+    try {
+      // Habit initially starts today, weekend only
+      const habit = makeHabit({
+        title: '原始习惯',
+        actionTitle: '原始行动',
+        estMinutes: 20,
+        value: 2 as Value,
+        startedAt: toIso(FIXTURE_NOW),
+        windowDays: [0, 6],
+      });
+      await startHabit(db, habit, FIXTURE_NOW);
+      const initialDays = await listHabitDays(db, { habitId: habit.id });
+
+      // Update title, actionTitle, estMinutes, value, and expand windowDays to every day (undefined)
+      const updated = await updateHabit(db, {
+        ...habit,
+        title: '新习惯名称',
+        actionTitle: '新每日行动',
+        estMinutes: 45,
+        value: 5 as Value,
+        windowDays: undefined,
+        updatedAt: toIso(FIXTURE_NOW),
+      });
+
+      expect(updated.title).toBe('新习惯名称');
+      expect(updated.estMinutes).toBe(45);
+      expect(updated.value).toBe(5);
+
+      // Verify db persistence
+      const [fetched] = await listHabits(db);
+      expect(fetched?.title).toBe('新习惯名称');
+      expect(fetched?.actionTitle).toBe('新每日行动');
+      expect(fetched?.estMinutes).toBe(45);
+      expect(fetched?.value).toBe(5);
+
+      // Since windowDays was removed (now every day), days count should expand to full 21 days
+      const expandedDays = await listHabitDays(db, { habitId: habit.id });
+      expect(expandedDays.length).toBe(21);
+      expect(expandedDays.length).toBeGreaterThan(initialDays.length);
+    } finally {
+      await close();
+    }
+  });
 });
+
 

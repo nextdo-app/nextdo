@@ -1116,3 +1116,42 @@ Released v0.1.2 with all 4 Android ABIs after fixing three consecutive blockers 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 36: 支持编辑行动、项目与习惯 (Issue #19)
+<!-- trellis-session: v=2 fp=67daa12b31b8fcb0 -->
+
+**Date**: 2026-10-12
+**Task**: 支持编辑行动、项目与习惯 (Issue #19)
+**Branch**: `feat/edit-action-project-habit`
+
+### Summary
+
+支持行动、项目与习惯的直接编辑修改并即时保存同步，闭环 Issue #19
+
+### Main Changes
+
+- DB 层 updateHabit 支持周期/频率/起始日变更并自动重置种子天
+- Mobile 新增 EditActionModal 与 EditHabitForm 组件
+- Now 界面与项目详情支持直接编辑行动（含场景情境 chips）
+- 习惯页与项目详情支持展开编辑习惯
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5b06f6c` | feat(mobile,db): support editing actions, projects, and habits (fixes #19) |
+| `c3642f5` | chore(task): archive 10-12-edit-action-project-habit |
+
+### Testing
+
+- [OK] pnpm verify:web 全部门禁通过（lint, typecheck, 37 test suites / 545 tests, build:web）
+- [OK] 浏览器验证各编辑入口与数据持久化，截图存档于 .verify/issue-19-edit-items/
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 提交 PR 并发布 0.1.6-beta.1 版本

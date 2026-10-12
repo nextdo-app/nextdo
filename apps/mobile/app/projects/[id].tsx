@@ -43,6 +43,7 @@ import { PROJECT_STATUS_LABELS } from '@/lib/status-labels';
 import { endOfLocalDayIso } from '@/lib/clarify-flow';
 import { goBack } from '@/lib/go-back';
 import { SnoozeSheet } from '@/components/snooze-sheet';
+import { EditHabitForm } from '@/components/edit-habit-form';
 
 const STATUS_TONES: Record<ProjectStatus, TagTone> = {
   active: 'accent',
@@ -245,9 +246,11 @@ function EditProjectForm({ project, now, onDone, onSaved }: { project: Project; 
  *  that local day's 23:59:59; empty clears the deadline). */
 function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; now: Date; onDone: () => void; onSaved: () => void }) {
   const { update, error } = useUpdateNextAction();
+  const { data: contexts } = useContexts();
   const [title, setTitle] = useState(action.title);
   const [estMinutes, setEstMinutes] = useState<number | null>(action.estMinutes);
   const [value, setValue] = useState<Value>(action.value);
+  const [selectedContextIds, setSelectedContextIds] = useState<string[]>(action.contextIds ?? []);
   const [deadline, setDeadline] = useState(
     action.deadline === undefined || action.deadline === null
       ? ''
@@ -256,6 +259,12 @@ function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; 
   const [showPicker, setShowPicker] = useState(false);
   const [customEst, setCustomEst] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const toggleContext = (ctxId: string) => {
+    setSelectedContextIds((prev) =>
+      prev.includes(ctxId) ? prev.filter((id) => id !== ctxId) : [...prev, ctxId],
+    );
+  };
 
   const canSubmit = title.trim() !== '' && estMinutes !== null && !submitting;
 
@@ -272,7 +281,16 @@ function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; 
     // day's 23:59:59. `undefined` CLEARS an existing deadline.
     const deadlineIso = deadline === '' ? undefined : (endOfLocalDayIso(deadline) ?? undefined);
     setSubmitting(true);
-    const ok = await update({ action, patch: { title: title.trim(), estMinutes, value, deadline: deadlineIso } });
+    const ok = await update({
+      action,
+      patch: {
+        title: title.trim(),
+        estMinutes,
+        value,
+        deadline: deadlineIso,
+        contextIds: selectedContextIds,
+      },
+    });
     setSubmitting(false);
     if (ok) onSaved();
   };
@@ -304,6 +322,42 @@ function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; 
         />
       </View>
       <ValueChips value={value} onChange={setValue} />
+      {contexts && contexts.length > 0 ? (
+        <View className="gap-1.5">
+          <Text className="text-sm font-medium text-ink dark:text-ink-dark">场景（可选）</Text>
+          <View className="flex-row flex-wrap gap-1.5">
+            {contexts.map((ctx) => {
+              const active = selectedContextIds.includes(ctx.id);
+              return (
+                <Pressable
+                  key={ctx.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={ctx.name}
+                  accessibilityState={{ selected: active }}
+                  onPress={() => toggleContext(ctx.id)}
+                  className={cn(
+                    'rounded-full border px-3 py-1',
+                    active
+                      ? 'border-accent bg-accent/15 dark:border-accent-dark dark:bg-accent-dark/25'
+                      : 'border-border bg-surface dark:border-border-dark dark:bg-surface-dark',
+                  )}
+                >
+                  <Text
+                    className={cn(
+                      'text-xs font-medium',
+                      active
+                        ? 'font-semibold text-accent dark:text-accent-dark'
+                        : 'text-ink dark:text-ink-dark',
+                    )}
+                  >
+                    {ctx.name}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
       <PickerField
         label="截止"
         value={deadline}
@@ -425,19 +479,35 @@ function AddProjectHabitForm({
   );
 }
 
-/** One project habit row: title, 第 N/21 天, 21-cell grid, today's check-in button. */
+/** One project habit row: title, 第 N/21 天, 21-cell grid, today's check-in button + 编辑 + 删除. */
 function ProjectHabitRow({
   entry,
   onComplete,
   onTrash,
+  onReload,
 }: {
   entry: ProjectHabitEntry;
   onComplete: (dayId: string) => void;
   onTrash?: (habitId: string) => void;
+  onReload?: () => void;
 }) {
+  const [isEditing, setIsEditing] = useState(false);
   const { habit, cycleDay, doneCount, startsInDays, todayDay, grid } = entry;
   const cycleDays = habit.cycleDays ?? 21;
   const [armedTrash, setArmedTrash] = useState(false);
+
+  if (isEditing) {
+    return (
+      <EditHabitForm
+        habit={habit}
+        onDone={() => setIsEditing(false)}
+        onSaved={() => {
+          setIsEditing(false);
+          onReload?.();
+        }}
+      />
+    );
+  }
 
   return (
     <Card className="gap-2.5">
@@ -521,28 +591,34 @@ function ProjectHabitRow({
       </View>
 
       <View className="mt-1 flex-row items-center justify-between">
-        {onTrash !== undefined ? (
-          armedTrash ? (
-            <Button
-              size="sm"
-              label="确认删除习惯？"
-              variant="secondary"
-              onPress={() => {
-                setArmedTrash(false);
-                onTrash(habit.id);
-              }}
-            />
-          ) : (
-            <Button
-              size="sm"
-              label="删除习惯"
-              variant="ghost"
-              onPress={() => setArmedTrash(true)}
-            />
-          )
-        ) : (
-          <View />
-        )}
+        <View className="flex-row items-center gap-2">
+          <Button
+            size="sm"
+            label="编辑"
+            variant="ghost"
+            onPress={() => setIsEditing(true)}
+          />
+          {onTrash !== undefined ? (
+            armedTrash ? (
+              <Button
+                size="sm"
+                label="确认删除习惯？"
+                variant="secondary"
+                onPress={() => {
+                  setArmedTrash(false);
+                  onTrash(habit.id);
+                }}
+              />
+            ) : (
+              <Button
+                size="sm"
+                label="删除习惯"
+                variant="ghost"
+                onPress={() => setArmedTrash(true)}
+              />
+            )
+          ) : null}
+        </View>
         {todayDay !== null ? (
           <Button
             size="sm"
@@ -817,6 +893,7 @@ export default function ProjectDetailScreen() {
                 <ProjectHabitRow
                   key={entry.habit.id}
                   entry={entry}
+                  onReload={reloadHabits}
                   onTrash={(habitId) => {
                     void trashHabit(habitId).then((ok) => {
                       if (ok) reloadHabits();

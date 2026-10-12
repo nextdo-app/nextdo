@@ -180,13 +180,18 @@ export async function updateHabit(db: NextdoDb, habit: Habit): Promise<Habit> {
     assertTransition(HABIT_TRANSITIONS, previousStatus as HabitStatus, habit.status, parseIso(habit.updatedAt));
   }
   const restarted = previousStatus === 'broken' && habit.status === 'active';
+  const cycleChanged =
+    previous.started_at !== habit.startedAt ||
+    previous.cycle_days !== habit.cycleDays ||
+    previous.window_days !==
+      (habit.windowDays !== undefined ? JSON.stringify(habit.windowDays) : null);
   await db.transaction().execute(async (tx) => {
     await tx
       .updateTable('habits')
       .set({ ...habitToRow(habit) })
       .where('id', '=', habit.id)
       .execute();
-    if (restarted) {
+    if (restarted || cycleChanged) {
       await seedHabitDays(tx, habit, parseIso(habit.updatedAt));
     }
   });

@@ -75,9 +75,9 @@ export { listCalendarActions } from './queries/calendar';
 // `trashContext` sets deleted_at (Trash, domain-model.md) — the scene chips
 // keep reading `listContexts`, which filters the soft-deleted rows out.
 export { addContext, listContexts, seedDefaultContexts, trashContext } from './queries/contexts';
-// Habit reads (Now screen habit strip) + the start-challenge / trash
-// transactions (the habits screen, task 10-02).
-export { listHabits, listHabitDays, startHabit, trashHabit } from './queries/habits';
+// Habit reads (Now screen habit strip) + the start-challenge / trash / update
+// transactions (the habits screen, task 10-02, issue #19).
+export { addHabit, listHabits, listHabitDays, startHabit, trashHabit, updateHabit } from './queries/habits';
 // Focus-session transactions + read (focus screen, re-entry recovery).
 export {
   abandonFocusSession,

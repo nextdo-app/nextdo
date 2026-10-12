@@ -99,6 +99,12 @@ jest.mock('@nextdo/db', () => {
         (row) => (row as { id: string }).id !== args.id,
       );
     },
+    updateHabit: async (_db: unknown, habit: { id: string }) => {
+      mockHabitsRef.current = mockHabitsRef.current.map((row) =>
+        (row as { id: string }).id === habit.id ? { ...(row as Record<string, unknown>), ...habit } : row,
+      );
+      return habit;
+    },
   };
 });
 
@@ -485,5 +491,33 @@ describe('habits screen', () => {
     expect(screen.getByText(/不是「一定能养成」的保证/)).toBeTruthy();
     // The form is visible even with no habits (one tap to create the first).
     expect(screen.getByLabelText('习惯名')).toBeTruthy();
+  });
+
+  it('edits an existing habit and updates its fields', async () => {
+    mockHabitsRef.current = [habit({ id: 'h-edit', title: '旧习惯', actionTitle: '旧行动', estMinutes: 20 })];
+    await openHabits();
+
+    await waitFor(() => expect(screen.getByText('旧习惯')).toBeTruthy());
+
+    // Tap 编辑
+    fireEvent.press(screen.getByRole('button', { name: '编辑' }));
+    await flush();
+
+    // The inline form shows prefilled values
+    expect(screen.getByText('编辑习惯')).toBeTruthy();
+    expect(screen.getByLabelText('编辑习惯名').props.value).toBe('旧习惯');
+
+    // Modify title and estMinutes
+    fireEvent.changeText(screen.getByLabelText('编辑习惯名'), '深度阅读');
+    fireEvent.changeText(screen.getByLabelText('编辑预计分钟'), '45');
+    await flush();
+
+    // Tap 保存
+    fireEvent.press(screen.getByRole('button', { name: '保存' }));
+    await flush();
+
+    // Verify row displays updated title and estMinutes
+    await waitFor(() => expect(screen.getByText('深度阅读')).toBeTruthy());
+    expect(screen.getByText('45 分钟')).toBeTruthy();
   });
 });

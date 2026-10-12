@@ -47,6 +47,7 @@ import { useStartHabit, HABIT_CYCLE_DAYS } from '@/hooks/use-start-habit';
 import { useTrashHabit } from '@/hooks/use-trash-habit';
 import { errorMessage } from '@/lib/error-messages';
 import { goBack } from '@/lib/go-back';
+import { EditHabitForm } from '@/components/edit-habit-form';
 
 /** 32px visual chip (h-8) + hitSlop → a 44pt tap target (accessibility). */
 const CHIP_HIT_SLOP = { top: 6, bottom: 6, left: 6, right: 6 } as const;
@@ -92,16 +93,32 @@ const START_HINTS: Record<'invalid' | 'past', string> = {
 };
 
 /** One active habit: name, daily action, 第 N/21 天, window (全天 when
- *  none), estimate, value + 删除. */
+ *  none), estimate, value + 编辑 + 删除. */
 function HabitRow({
   entry,
   onTrash,
+  onReload,
 }: {
   entry: HabitWithProgress;
   onTrash: () => void;
+  onReload: () => void;
 }) {
+  const [isEditing, setIsEditing] = useState(false);
   const { habit, cycleDay, doneCount, startsInDays } = entry;
   const hasWindow = habit.windowStart !== undefined && habit.windowEnd !== undefined;
+
+  if (isEditing) {
+    return (
+      <EditHabitForm
+        habit={habit}
+        onDone={() => setIsEditing(false)}
+        onSaved={() => {
+          setIsEditing(false);
+          onReload();
+        }}
+      />
+    );
+  }
 
   return (
     <Card className="gap-2 p-3.5">
@@ -129,7 +146,13 @@ function HabitRow({
         <Tag label={hasWindow ? `${habit.windowStart}–${habit.windowEnd}` : '全天'} />
         <Tag label={`本期已完成 ${doneCount} 天`} />
       </View>
-      <View className="flex-row justify-end">
+      <View className="flex-row justify-end gap-2">
+        <Button
+          size="sm"
+          label="编辑"
+          variant="ghost"
+          onPress={() => setIsEditing(true)}
+        />
         <Button
           size="sm"
           label="删除"
@@ -400,6 +423,7 @@ export default function HabitsScreen() {
               <HabitRow
                 key={entry.habit.id}
                 entry={entry}
+                onReload={reload}
                 onTrash={() => {
                   void trash(entry.habit.id).then((ok) => {
                     if (ok) reload();
