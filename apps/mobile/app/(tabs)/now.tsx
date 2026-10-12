@@ -21,7 +21,7 @@ import { useAppInsets } from '@/lib/use-app-insets';
 import { router, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Button, Card, ContextChip, SceneOption, Tag, cn } from '@nextdo/ui';
-import { formatDeadline, type CandidateKind } from '@nextdo/core';
+import { formatDeadline, toIso, type CandidateKind, type NextAction, type NextCandidate } from '@nextdo/core';
 import { useNow, shouldOfferReclarify, type NowEligible } from '@/hooks/use-now';
 import { useAppClock } from '@/hooks/use-app-clock';
 import { useSkipAction } from '@/hooks/use-skip-action';
@@ -41,6 +41,32 @@ import { SnoozeSheet } from '@/components/snooze-sheet';
 import { useSwipeRight } from '@/hooks/use-swipe-right';
 import { DeadlineChip } from '@/components/deadline-chip';
 import { AddSceneModal } from '@/components/add-scene-modal';
+import { EditActionModal } from '@/components/edit-action-modal';
+
+function candidateToNextAction(candidate: NextCandidate, now: Date): NextAction {
+  return {
+    id: candidate.id,
+    createdAt: candidate.createdAt,
+    updatedAt: toIso(now),
+    deletedAt: null,
+    title: candidate.title,
+    projectId: candidate.projectId,
+    contextIds: candidate.contextIds,
+    estMinutes: candidate.estMinutes,
+    value: candidate.value,
+    deadline: candidate.deadline,
+    dueDate: candidate.dueDate,
+    dependsOnId: candidate.dependsOnId,
+    windowStart: candidate.windowStart,
+    windowEnd: candidate.windowEnd,
+    windowDays: candidate.windowDays,
+    snoozedUntil: candidate.snoozedUntil,
+    lastSnoozedAt: candidate.lastSnoozedAt,
+    consecutiveSkips: candidate.consecutiveSkips,
+    lastSkippedAt: candidate.lastSkippedAt,
+    status: 'open',
+  };
+}
 
 const TIME_CHIPS = [15, 30, 60, 120] as const;
 
@@ -438,6 +464,7 @@ const ActionRow = memo(function ActionRow({
   onComplete,
   onSnooze,
   onTrash,
+  onEdit,
 }: {
   entry: NowEligible;
   now: Date;
@@ -446,6 +473,7 @@ const ActionRow = memo(function ActionRow({
   onComplete: (kind: CandidateKind, id: string) => void;
   onSnooze: (kind: CandidateKind, id: string) => void;
   onTrash: (kind: CandidateKind, id: string) => void;
+  onEdit: (candidate: NextCandidate) => void;
 }) {
   const action = entry.action;
   // Swipe right = 完成 (issue #17). The button below is the same action, so
@@ -493,6 +521,9 @@ const ActionRow = memo(function ActionRow({
           <View className="flex-row justify-end gap-2">
             <Button size="sm" label="完成" variant="ghost" onPress={() => onComplete(action.kind, action.id)} />
             <Button size="sm" label="稍后" variant="ghost" onPress={() => onSnooze(action.kind, action.id)} />
+            {action.kind === 'next' ? (
+              <Button size="sm" label="编辑" variant="ghost" onPress={() => onEdit(action as NextCandidate)} />
+            ) : null}
             <Button size="sm" label="删除" variant="ghost" onPress={() => onTrash(action.kind, action.id)} />
           </View>
         </Card>
@@ -697,6 +728,7 @@ export default function NowScreen() {
   const projectTitles = useProjectTitles();
   const { data: contexts } = useContexts();
   const [snoozeTarget, setSnoozeTarget] = useState<{ kind: CandidateKind; id: string } | null>(null);
+  const [editingAction, setEditingAction] = useState<NextAction | null>(null);
   const [skippedViewIds, setSkippedViewIds] = useState<string[]>([]);
   const [selectedContextIds, setSelectedContextIds] = useState<string[]>([]);
   const [isListExpanded, setIsListExpanded] = useState(true);
@@ -771,6 +803,13 @@ export default function NowScreen() {
       void complete({ actionKind, actionId });
     },
     [complete],
+  );
+
+  const handleEdit = useCallback(
+    (candidate: NextCandidate) => {
+      setEditingAction(candidateToNextAction(candidate, now));
+    },
+    [now],
   );
 
   const subtitleParts = useMemo(() => {
@@ -863,10 +902,20 @@ export default function NowScreen() {
                 <>
                   {/* Recommendation Hero Card — prioritized first */}
                   <Card variant="elevated" className="p-4 shadow-sm">
-                    <View className="mb-2.5 flex-row items-center gap-2">
-                      <Tag label={KIND_LABELS[displayed.action.kind]} tone="accent" />
-                      {displayed.action.estMinutes > 0 ? (
-                        <Tag label={`${displayed.action.estMinutes} 分钟`} tone="neutral" />
+                    <View className="mb-2.5 flex-row items-center justify-between">
+                      <View className="flex-row items-center gap-2">
+                        <Tag label={KIND_LABELS[displayed.action.kind]} tone="accent" />
+                        {displayed.action.estMinutes > 0 ? (
+                          <Tag label={`${displayed.action.estMinutes} 分钟`} tone="neutral" />
+                        ) : null}
+                      </View>
+                      {displayed.action.kind === 'next' ? (
+                        <Button
+                          size="sm"
+                          label="编辑"
+                          variant="ghost"
+                          onPress={() => handleEdit(displayed.action as NextCandidate)}
+                        />
                       ) : null}
                     </View>
                     <Text className="font-display text-xl font-bold tracking-tight text-ink dark:text-ink-dark">
@@ -1039,6 +1088,7 @@ export default function NowScreen() {
                             onComplete={() => handleComplete(entry.action.kind, entry.action.id)}
                             onSnooze={handleSnooze}
                             onTrash={handleTrash}
+                            onEdit={handleEdit}
                           />
                         ))
                       ) : (
@@ -1085,6 +1135,13 @@ export default function NowScreen() {
             });
           }
         }}
+      />
+
+      <EditActionModal
+        action={editingAction}
+        visible={editingAction !== null}
+        onClose={() => setEditingAction(null)}
+        onSaved={() => setEditingAction(null)}
       />
     </View>
   );

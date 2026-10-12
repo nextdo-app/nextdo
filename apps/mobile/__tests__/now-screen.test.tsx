@@ -26,6 +26,10 @@ const completeCalls: { count: number; shouldFail: boolean; args: unknown[] } = {
   shouldFail: false,
   args: [],
 };
+const updateCalls: { count: number; actions: unknown[] } = {
+  count: 0,
+  actions: [],
+};
 // Counts the habit READS (`useHabits` re-reads on mount, on focus and on
 // `reload()`). The success-path test can assert the rendered counters
 // changed, but the FAILURE path renders identically whether or not a
@@ -92,6 +96,11 @@ jest.mock('@nextdo/db', () => {
       completeCalls.count += 1;
       completeCalls.args.push(args);
       if (completeCalls.shouldFail) throw new Error('complete rejected');
+    },
+    updateNextAction: async (_db: unknown, action: unknown) => {
+      updateCalls.count += 1;
+      updateCalls.actions.push(action);
+      return action;
     },
     snoozeAction: async () => undefined,
     trashAction: async () => undefined,
@@ -249,6 +258,8 @@ beforeEach(() => {
   completeCalls.count = 0;
   completeCalls.shouldFail = false;
   completeCalls.args = [];
+  updateCalls.count = 0;
+  updateCalls.actions = [];
   habitReads.habits = 0;
   habitReads.days = 0;
   contextReads.count = 0;
@@ -964,6 +975,46 @@ describe('Now screen', () => {
       // The row is unchanged and still checkable.
       expect(screen.getByText('今天习惯 0/1')).toBeTruthy();
       expect(screen.getByRole('button', { name: '完成习惯：阅读' })).toBeTruthy();
+    });
+
+    it('opens EditActionModal on Now screen and saves action edits', async () => {
+      setPool([
+        nextAction({
+          id: 'action-edit-test',
+          title: '写需求文档',
+          estMinutes: 30,
+          value: 3,
+        }),
+      ]);
+      renderRouter('app', { initialUrl: '/(tabs)/now' });
+      await flushRenders();
+
+      await waitFor(() => expect(screen.getAllByText('写需求文档').length).toBeGreaterThan(0));
+
+      // Tap 编辑 button in the action row or hero
+      const editButtons = screen.getAllByRole('button', { name: '编辑' });
+      expect(editButtons.length).toBeGreaterThan(0);
+      fireEvent.press(editButtons[0]!);
+      await flushRenders();
+
+      // Modal is visible with action details
+      expect(screen.getByText('编辑行动')).toBeTruthy();
+      expect(screen.getByLabelText('行动名称输入框').props.value).toBe('写需求文档');
+
+      // Change title
+      fireEvent.changeText(screen.getByLabelText('行动名称输入框'), '写技术设计文档');
+      await flushRenders();
+
+      // Tap 保存修改
+      fireEvent.press(screen.getByRole('button', { name: '保存修改' }));
+      await flushRenders();
+
+      // Verify updateNextAction was called with modified title
+      await waitFor(() => expect(updateCalls.count).toBe(1));
+      expect(updateCalls.actions[0]).toMatchObject({
+        id: 'action-edit-test',
+        title: '写技术设计文档',
+      });
     });
   });
 });

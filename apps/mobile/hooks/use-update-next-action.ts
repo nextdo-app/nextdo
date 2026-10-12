@@ -18,6 +18,8 @@ export interface UpdateNextActionPatch {
   value?: Value;
   /** ISO datetime; an explicit `undefined` clears a stored deadline. */
   deadline?: string;
+  /** Context ids assigned to this action. */
+  contextIds?: string[];
 }
 
 export interface UpdateNextActionArgs {
