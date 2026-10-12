@@ -1082,3 +1082,37 @@ Released v0.1.2 with all 4 Android ABIs after fixing three consecutive blockers 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 35: 手机端检查更新支持正式版与测试版双渠道 (fixes #18)
+<!-- trellis-session: v=2 fp=8726338aac6936ce -->
+
+**Date**: 2026-10-12
+**Task**: 手机端检查更新支持正式版与测试版双渠道 (fixes #18)
+**Branch**: `main`
+
+### Summary
+
+手机端检查更新支持正式版与测试版双渠道检测、渠道偏好持久化设置与多版本自主选择更新目标
+
+### Main Changes
+
+- 在 lib/app-update.ts 中实现 releases.atom 全量解析与双渠道最佳版本筛选，支持平滑降级至 releases/latest 正式版
+- 在 lib/app-update.ts 与 hooks/use-app-update.ts 中支持更新渠道偏好（正式版/测试版）持久化存储与多候选版本切换
+- 在 settings.tsx 中新增更新渠道偏好按钮组与多版本选择卡片，展示版本号、渠道徽章与发布日期
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3404523` | feat(mobile): dual-channel update check with preference and multi-release selection (fixes #18) |
+
+### Testing
+
+- [OK] 单元测试：app-update.test.ts (72 passed) 与 settings-screen.test.tsx (57 passed) 全部通过
+- [OK] 门禁全绿：pnpm verify:web --no-serve（lint、typecheck、test、build:web 全部通过）
+- [OK] 浏览器实测：完成 settings 页面交互并截图记录至 .verify/dual-channel-update-check/
+
+### Status
+
+[OK] **Completed**
