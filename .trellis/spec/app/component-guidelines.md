@@ -58,6 +58,10 @@
   and must not be introduced — the web build is the desktop surface.
 - Field values stay `'YYYY-MM-DD'` / `'HH:mm'` strings (the clarify-flow
   contract); the picker's defaults come from the app clock (`now` prop).
+- This applies to EVERY date/time field, not just the ones that started out
+  as pickers — the habit form's optional time window was two free-text
+  `HH:mm` inputs until issue #13 and had to be converted. A text input for a
+  value the picker already owns is a defect, not a shortcut.
 
 ## Cloud sync (Settings tab, `apps/mobile/app/(tabs)/settings.tsx`)
 

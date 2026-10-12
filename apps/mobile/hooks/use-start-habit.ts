@@ -10,12 +10,21 @@
  * `status` is `active`, and `windowDays` is NOT written (undefined =
  * every day; the weekday picker is out of scope).
  *
+ * `startedAt` is the challenge's first day: the user's picked start date
+ * when `startDate` is given (issue #13), otherwise `now`.
+ *
  * `now` from the single app clock (hook-guidelines Rule 4).
  */
 import { useCallback, useMemo, useState } from 'react';
 import { usePowerSync } from '@powersync/react';
 import { startHabit, wrapDb } from '@nextdo/db';
-import { logger, toIso, ulid, type Value } from '@nextdo/core';
+import {
+  habitStartDateAt,
+  logger,
+  toIso,
+  ulid,
+  type Value,
+} from '@nextdo/core';
 import { useAppClock } from './use-app-clock';
 
 /** The challenge-cycle length (PRD F2 — fixed, not user-editable). */
@@ -32,6 +41,13 @@ export interface StartHabitArgs {
   /** "HH:mm" pair, or undefined for an all-day habit. */
   windowStart?: string;
   windowEnd?: string;
+  /**
+   * The challenge's first day as a device-local `YYYY-MM-DD` key (issue
+   * #13). Omitted = start today. Today or later, per `checkHabitStartDate`;
+   * a key that rule rejects is ignored here in favour of `now`, so an
+   * unvalidated start date never reaches storage.
+   */
+  startDate?: string;
 }
 
 export interface UseStartHabitResult {
@@ -51,6 +67,12 @@ export function useStartHabit(): UseStartHabitResult {
       const nowIso = toIso(now);
       const title = args.title.trim();
       const actionTitle = args.actionTitle.trim();
+      // A picked start date becomes the habit's `startedAt` at local
+      // midnight, so `habitCycleDay` advances by whole calendar days.
+      // Anything the start-date rule rejects falls back to `now` (start
+      // today) rather than persisting an out-of-rule challenge.
+      const startedAt =
+        args.startDate === undefined ? null : habitStartDateAt(args.startDate, now);
       try {
         const result = await startHabit(
           db,
@@ -69,22 +91,21 @@ export function useStartHabit(): UseStartHabitResult {
             ...(args.windowStart !== undefined ? { windowStart: args.windowStart } : {}),
             ...(args.windowEnd !== undefined ? { windowEnd: args.windowEnd } : {}),
             cycleDays: HABIT_CYCLE_DAYS,
-            startedAt: nowIso,
+            startedAt: startedAt === null ? nowIso : toIso(startedAt),
             status: 'active' as const,
           },
           now,
         );
-        // Cycle day 1 is today, so seeding cannot legitimately fail here
-        // (no weekday mask, today inside the cycle). If it ever does, the
-        // habit exists without its first day — say so instead of
-        // pretending the challenge started (PRD F3).
-        if (result.today === null) {
-          logger.error(
-            'habit start seeded no HabitDay',
-            new Error(`habit ${title} started without a challenge day`),
-          );
-          setError('习惯已创建，但今天的挑战日没有生成，请检查时间窗口。');
-          return false;
+        // `today` is null whenever the challenge is not live yet — a habit
+        // booked to start in the future has no day for today yet, and that
+        // is exactly what the user asked for. Not an error: the habit and
+        // its full cycle are committed. `cycleDay` stays null in the UI
+        // until the start date arrives, which is the honest readout.
+        if (result.today === null && args.startDate !== undefined) {
+          logger.info('habit challenge not live yet', {
+            title,
+            startDate: args.startDate,
+          });
         }
         setError(null);
         return true;

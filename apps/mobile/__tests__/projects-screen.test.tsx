@@ -205,7 +205,7 @@ import {
   updateNextAction,
   updateProject,
 } from '@nextdo/db';
-import { formatDueLabel } from '@/lib/format';
+import { formatDeadline } from '@nextdo/core';
 
 const mockedAddProject = addProject as jest.Mock;
 const mockedAddNextAction = addNextAction as jest.Mock;
@@ -220,6 +220,29 @@ const mockedUpdateNextAction = updateNextAction as jest.Mock;
 const DAY = 24 * 60 * 60 * 1000;
 const daysAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString();
 const daysFromNow = (n: number) => new Date(Date.now() + n * DAY).toISOString();
+
+/** `YYYY-MM-DD` for a day relative to today, in the picker's own format. */
+function dayKey(offset: number): string {
+  const day = new Date();
+  day.setDate(day.getDate() + offset);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
+}
+
+/**
+ * Open the first 截止 field on screen, pick `dateKey`, confirm.
+ *
+ * The deadline field is read-only (issue #16) — its value only ever arrives
+ * through the picker modal, which renders real calendar days only.
+ */
+async function pickDeadline(dateKey: string): Promise<void> {
+  fireEvent.press(screen.getAllByRole('button', { name: /^截止/ })[0]!);
+  const [year, month, day] = dateKey.split('-');
+  fireEvent.press(screen.getByLabelText(`年 ${year}`));
+  fireEvent.press(screen.getByLabelText(`月 ${Number(month)}`));
+  fireEvent.press(screen.getByLabelText(`日 ${Number(day)}`));
+  fireEvent.press(screen.getByRole('button', { name: '确定' }));
+}
 
 function action(overrides: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -428,9 +451,11 @@ describe('Projects tab', () => {
     expect(screen.getAllByText('▶ 当前下一步行动')).toHaveLength(2);
     expect(screen.getByText('运行 baseline A')).toBeTruthy();
     expect(screen.getByText('电脑')).toBeTruthy();
-    // The next-action sub-card's deadline chip (3 days out → M月D日, no
-    // 截止 prefix — that one belongs to the card-level chip).
-    expect(screen.getByText(formatDueLabel(daysFromNow(3), new Date()))).toBeTruthy();
+    // The next-action sub-card's deadline chip (3 days out → 「M月D日 截止」,
+    // spoken by core's `formatDeadline` rather than the card's own wording —
+    // the project and action chips must never describe the same instant two
+    // different ways).
+    expect(screen.getByText(formatDeadline(daysFromNow(3), new Date()))).toBeTruthy();
   });
 
   it('the filter chips switch between 进行中 / 无下一步 / 已归档', async () => {
@@ -567,37 +592,82 @@ describe('Project detail', () => {
     );
   });
 
-  it('composes a deadline date as local end-of-day ISO (domain deadline is a datetime)', async () => {
+  it('a picked deadline is stored as that local day\'s end-of-day ISO', async () => {
     renderRouter('app', { initialUrl: '/projects/p-1' });
     await waitFor(() => expect(screen.getByText('＋ 添加行动')).toBeTruthy());
     fireEvent.press(screen.getByText('＋ 添加行动'));
 
     fireEvent.changeText(screen.getByPlaceholderText('下一步行动（具体的、单步的）'), '整理实验数据');
     fireEvent.press(screen.getByText('30'));
-    fireEvent.changeText(screen.getByPlaceholderText('截止（YYYY-MM-DD，可选）'), '2026-10-01');
+    await pickDeadline(dayKey(5));
     fireEvent.press(screen.getByText('添加'));
 
     await waitFor(() => expect(mockedAddNextAction).toHaveBeenCalledTimes(1));
+    const picked = new Date(dayKey(5));
     expect(mockedAddNextAction.mock.calls[0][1]).toMatchObject({
       title: '整理实验数据',
       estMinutes: 30,
       projectId: 'p-1',
-      deadline: new Date(2026, 9, 1, 23, 59, 59).toISOString(),
+      deadline: new Date(
+        picked.getFullYear(),
+        picked.getMonth(),
+        picked.getDate(),
+        23,
+        59,
+        59,
+      ).toISOString(),
     });
   });
 
-  it('an impossible deadline date is blocked with a hint and never stored', async () => {
+  it('the deadline field is a picker, not a free-text box, and 清除 empties it', async () => {
     renderRouter('app', { initialUrl: '/projects/p-1' });
     await waitFor(() => expect(screen.getByText('＋ 添加行动')).toBeTruthy());
     fireEvent.press(screen.getByText('＋ 添加行动'));
 
-    fireEvent.changeText(screen.getByPlaceholderText('下一步行动（具体的、单步的）'), '整理实验数据');
-    fireEvent.press(screen.getByText('30'));
-    fireEvent.changeText(screen.getByPlaceholderText('截止（YYYY-MM-DD，可选）'), '2026-02-30');
-    fireEvent.press(screen.getByText('添加'));
+    // The old hand-typed box is gone: the field is a button that opens the
+    // picker, so an impossible date such as 2026-02-30 cannot be entered at
+    // all — the picker only ever renders real calendar days.
+    expect(screen.queryByPlaceholderText('截止（YYYY-MM-DD，可选）')).toBeNull();
+    const field = screen.getByRole('button', { name: /^截止，未选择/ });
+    await pickDeadline(dayKey(5));
+    expect(screen.getByText(dayKey(5))).toBeTruthy();
 
-    expect(screen.getByText('日期格式应为 YYYY-MM-DD（例如 2026-10-01）')).toBeTruthy();
-    expect(mockedAddNextAction).not.toHaveBeenCalled();
+    // Clearing returns the field to its unset wording.
+    fireEvent.press(screen.getByRole('button', { name: '清除截止' }));
+    expect(screen.getByRole('button', { name: /^截止，未选择/ })).toBeTruthy();
+    expect(field).toBeTruthy();
+  });
+
+  it('editing a project: a picked deadline is saved and 清除 removes it', async () => {
+    renderRouter('app', { initialUrl: '/projects/p-1' });
+    await waitFor(() => expect(screen.getByText('论文实验')).toBeTruthy());
+
+    fireEvent.press(screen.getAllByText('编辑')[0]!);
+    await pickDeadline(dayKey(5));
+    fireEvent.press(screen.getByText('保存'));
+
+    await waitFor(() => expect(mockedUpdateProject).toHaveBeenCalledTimes(1));
+    const picked = new Date(dayKey(5));
+    expect(mockedUpdateProject.mock.calls[0][1]).toMatchObject({
+      id: 'p-1',
+      deadline: new Date(
+        picked.getFullYear(),
+        picked.getMonth(),
+        picked.getDate(),
+        23,
+        59,
+        59,
+      ).toISOString(),
+    });
+
+    // Re-open and clear: `deadline: undefined` must reach the row so the
+    // column is written back as NULL.
+    fireEvent.press(screen.getAllByText('编辑')[0]!);
+    fireEvent.press(screen.getByRole('button', { name: '清除截止' }));
+    fireEvent.press(screen.getByText('保存'));
+
+    await waitFor(() => expect(mockedUpdateProject).toHaveBeenCalledTimes(2));
+    expect(mockedUpdateProject.mock.calls[1][1]).toHaveProperty('deadline', undefined);
   });
 
   it('editing the project (R1): saving updates the header with the new fields', async () => {

@@ -42,6 +42,25 @@ export function localDateKey(date: Date): string {
   return `${year}${month}${day}`;
 }
 
+/**
+ * Signed whole days from one device-local calendar day to another, both as
+ * `YYYYMMDD` keys — positive when `toKey` is the later day.
+ *
+ * Anchored at local noon on both sides, the same trick `habitCycleDay` uses.
+ * Adding `86_400_000` ms to a midnight timestamp would not do: across a
+ * daylight-saving transition a day is 23 or 25 hours long, so the result
+ * would round to the wrong date.
+ */
+export function daysBetweenDateKeys(fromKey: string, toKey: string): number {
+  const noon = (key: string): number => {
+    const year = Number(key.slice(0, 4));
+    const month = Number(key.slice(4, 6));
+    const day = Number(key.slice(6, 8));
+    return new Date(year, month - 1, day, 12, 0, 0, 0).getTime();
+  };
+  return Math.round((noon(toKey) - noon(fromKey)) / 86_400_000);
+}
+
 export interface Hhmm {
   hour: number;
   minute: number;

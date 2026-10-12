@@ -28,21 +28,29 @@ import { useProjectCards, isProjectStalled } from '@/hooks/use-project-cards';
 import { useAddProject } from '@/hooks/use-add-project';
 import { useContexts } from '@/hooks/use-contexts';
 import { useAppClock } from '@/hooks/use-app-clock';
+import { DateTimePicker } from '@/components/datetime-picker';
+import { DeadlineChip } from '@/components/deadline-chip';
+import { PickerField } from '@/components/picker-field';
+import { endOfLocalDayIso } from '@/lib/clarify-flow';
 import { errorMessage } from '@/lib/error-messages';
-import { formatDueLabel } from '@/lib/format';
 
 type FilterKind = 'active' | 'no-next' | 'archived';
 
 const INPUT_CLASS =
   'rounded-md border border-border/80 bg-canvas p-3 text-base text-ink placeholder:text-muted focus:border-accent dark:border-border-dark dark:bg-canvas-dark dark:text-ink-dark dark:placeholder:text-muted-dark';
 
-/** The inline new-project form (title + outcome + value 1–5). Project
- *  only — no context field (contexts belong to actions). */
+/** The inline new-project form (title + outcome + value 1–5 + optional
+ *  deadline). Project only — no context field (contexts belong to
+ *  actions). */
 function NewProjectForm({ onDone }: { onDone: () => void }) {
   const { add, error } = useAddProject();
+  const now = useAppClock();
   const [title, setTitle] = useState('');
   const [outcome, setOutcome] = useState('');
   const [value, setValue] = useState<Value>(3);
+  /** `YYYY-MM-DD` as picked; the row stores it as an ISO datetime. */
+  const [deadline, setDeadline] = useState('');
+  const [showDeadlinePicker, setShowDeadlinePicker] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const canSubmit = title.trim() !== '' && outcome.trim() !== '' && !submitting;
@@ -50,11 +58,13 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
   const create = () => {
     if (!canSubmit) return;
     setSubmitting(true);
-    void add({ title, outcome, value }).then(() => {
+    const deadlineIso = deadline === '' ? undefined : (endOfLocalDayIso(deadline) ?? undefined);
+    void add({ title, outcome, value, deadline: deadlineIso }).then(() => {
       setSubmitting(false);
       setTitle('');
       setOutcome('');
       setValue(3);
+      setDeadline('');
       onDone();
     });
   };
@@ -75,6 +85,23 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
         onChangeText={setOutcome}
       />
       <ValueChips value={value} onChange={setValue} />
+      <PickerField
+        label="截止"
+        value={deadline}
+        placeholder="截止日期（可选）"
+        onPress={() => setShowDeadlinePicker(true)}
+        onClear={() => setDeadline('')}
+      />
+      {showDeadlinePicker ? (
+        <DateTimePicker
+          mode="date"
+          title="选择截止日期"
+          value={deadline}
+          now={now}
+          onConfirm={setDeadline}
+          onClose={() => setShowDeadlinePicker(false)}
+        />
+      ) : null}
       {error !== null ? <Text className="font-sans text-sm text-danger">{errorMessage(error)}</Text> : null}
       <View className="mt-1 flex-row gap-2.5">
         <Button label="创建" onPress={create} disabled={!canSubmit} />
@@ -159,9 +186,13 @@ function ProjectCardRow({
           >
             {card.title}
           </Text>
-          {card.earliestOpenDeadline !== null ? (
-            <Tag label={`截止 ${formatDueLabel(card.earliestOpenDeadline, now)}`} tone="warning" />
-          ) : null}
+          {/* The PROJECT's own deadline (issue #16) — shown before the
+              action-level chip below so the two deadlines are never confused
+              for each other. */}
+          <DeadlineChip deadline={card.deadline} now={now} />
+          {/* …and the soonest deadline among its OPEN actions. Also a
+              DeadlineChip so the urgency wording matches everywhere. */}
+          <DeadlineChip deadline={card.earliestOpenDeadline} now={now} />
         </View>
 
         <View className="flex-row items-center gap-2">
@@ -180,9 +211,7 @@ function ProjectCardRow({
               <Text className="font-sans text-xs font-semibold text-accent dark:text-accent-dark">
                 ▶ 当前下一步行动
               </Text>
-              {card.nextAction.deadline !== null ? (
-                <Tag label={formatDueLabel(card.nextAction.deadline, now)} tone="warning" />
-              ) : null}
+              <DeadlineChip deadline={card.nextAction.deadline} now={now} />
             </View>
             <Text className="mt-1 font-sans text-sm text-ink dark:text-ink-dark" numberOfLines={2}>
               {card.nextAction.title}

@@ -122,10 +122,24 @@ describe('determinism', () => {
 
 describe('tie-breaks: (score desc, deadline asc [nulls last], estMinutes asc, id asc)', () => {
   it('equal scores → earlier deadline first, even with a larger estimate', () => {
-    // X: value 1, est 19, deadline in 72 h (band 0.7) — floats exactly tie with Y
-    // Y: value 5, est 1, no deadline — same score, but no deadline (nulls last)
-    const x = makeNext({ id: 'x', value: 1, estMinutes: 19, deadline: iso(72 * HOUR_MS) });
-    const y = makeNext({ id: 'y', value: 5, estMinutes: 1 });
+    // Since the Eisenhower quadrant became the PRIMARY sort key (issue #16),
+    // this tie-break is only observable between two candidates that share a
+    // quadrant — otherwise the quadrant decides first and the tie-break is
+    // never reached. Both are value 3 with no deadline pressure (168 h is
+    // past the 48 h "soon" window) ⇒ both 重要不紧急. The only remaining
+    // difference that can make the floats tie is health-protection, which
+    // offsets X's deadline signal exactly:
+    //   X = 0.4 (deadline) + 0.48 (value) + 0.1 (time-fit)          = 0.98
+    //   Y = 0.48 (value) + 0.1 (time-fit) + 0.4 (health)           = 0.98
+    // With the scores tied, the deadline tie-break puts X (which HAS a
+    // deadline) ahead of Y (nulls last).
+    const x = makeNext({
+      id: 'x',
+      value: 3,
+      estMinutes: 30,
+      deadline: iso(168 * HOUR_MS),
+    });
+    const y = makeNext({ id: 'y', value: 3, estMinutes: 30, category: 'health' });
     const out = recommend(input([x, y]));
     expect(out.eligible.map((s) => s.actionId)).toEqual(['x', 'y']);
   });
@@ -245,5 +259,113 @@ describe('reasons, preemption, edges', () => {
       'habit-commitment': 0.5,
       'health-protection': 0.4,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Eisenhower ordering (issue #16)
+// ---------------------------------------------------------------------------
+
+describe('Eisenhower quadrant ordering', () => {
+  /**
+   * A valuable, long-waiting action in a valuable project. On score alone it
+   * is the strongest candidate in the pool — which is exactly what the
+   * quadrant has to overrule.
+   */
+  const IMPORTANT_NO_DEADLINE = makeNext({
+    id: 'important-no-deadline',
+    title: '推进长期项目',
+    value: 5,
+    estMinutes: 60,
+    projectId: 'p1',
+    createdAt: iso(-24 * 14 * HOUR_MS), // waiting-time saturated at the 14-day cap
+  });
+
+  it('an urgent action outranks a higher-scoring important one', () => {
+    const urgent = makeNext({
+      id: 'urgent-trivial',
+      title: '交水电费',
+      value: 2,
+      estMinutes: 60,
+      deadline: iso(3 * HOUR_MS),
+    });
+    const out = recommend(
+      input([IMPORTANT_NO_DEADLINE, urgent], {
+        projects: [{ id: 'p1', value: 5, status: 'active' }],
+      }),
+    );
+    // Without the quadrant this order would be reversed — assert that too,
+    // so the test fails loudly if the sort ever silently reverts.
+    const urgentScore = out.eligible.find((s) => s.actionId === urgent.id)?.score ?? 0;
+    const importantScore =
+      out.eligible.find((s) => s.actionId === IMPORTANT_NO_DEADLINE.id)?.score ?? 0;
+    expect(importantScore).toBeGreaterThan(urgentScore);
+    expect(out.eligible.map((s) => s.actionId)).toEqual([
+      urgent.id,
+      IMPORTANT_NO_DEADLINE.id,
+    ]);
+    expect(out.recommended?.actionId).toBe(urgent.id);
+  });
+
+  it('重要且紧急 sorts ahead of 不重要但紧急', () => {
+    const importantUrgent = makeNext({
+      id: 'iu',
+      value: 5,
+      deadline: iso(2 * HOUR_MS),
+      createdAt: iso(-HOUR_MS),
+    });
+    const merelyUrgent = makeNext({
+      id: 'u',
+      value: 1,
+      estMinutes: 10,
+      deadline: iso(2 * HOUR_MS),
+      createdAt: iso(-24 * HOUR_MS),
+    });
+    const out = recommend(input([merelyUrgent, importantUrgent]));
+    expect(out.eligible.map((s) => s.actionId)).toEqual(['iu', 'u']);
+  });
+
+  it('重要但不紧急 sorts ahead of 不重要且不紧急', () => {
+    const important = makeNext({ id: 'i', value: 4, estMinutes: 10 });
+    const neither = makeNext({ id: 'n', value: 1, estMinutes: 10 });
+    const out = recommend(input([neither, important]));
+    expect(out.eligible.map((s) => s.actionId)).toEqual(['i', 'n']);
+  });
+
+  it('orders all four quadrants by the PRD priority', () => {
+    const out = recommend(
+      input([
+        makeNext({ id: 'q4-neither', value: 1, estMinutes: 10 }), // 都不紧急不紧急
+        makeNext({ id: 'q3-important', value: 4, estMinutes: 10 }), // 重要不紧急
+        makeNext({ id: 'q2-urgent', value: 2, estMinutes: 10, deadline: iso(HOUR_MS) }),
+        makeNext({ id: 'q1-important-urgent', value: 5, estMinutes: 10, deadline: iso(HOUR_MS) }),
+      ]),
+    );
+    expect(out.eligible.map((s) => s.actionId)).toEqual([
+      'q1-important-urgent',
+      'q2-urgent',
+      'q3-important',
+      'q4-neither',
+    ]);
+  });
+
+  it('still sorts by score WITHIN a quadrant', () => {
+    // Both are 重要且紧急; the score decides which one leads.
+    const strong = makeNext({ id: 'strong', value: 5, estMinutes: 5, deadline: iso(HOUR_MS) });
+    const weak = makeNext({ id: 'weak', value: 3, estMinutes: 55, deadline: iso(HOUR_MS) });
+    const out = recommend(input([weak, strong]));
+    expect(out.eligible.map((s) => s.actionId)).toEqual(['strong', 'weak']);
+  });
+
+  it('an overdue action sorts above one that is merely upcoming', () => {
+    const overdue = makeNext({ id: 'od', value: 3, estMinutes: 10, deadline: iso(-HOUR_MS) });
+    const upcoming = makeNext({
+      id: 'up',
+      value: 3,
+      estMinutes: 10,
+      deadline: iso(10 * 24 * HOUR_MS),
+    });
+    const out = recommend(input([upcoming, overdue]));
+    expect(out.eligible.map((s) => s.actionId)).toEqual(['od', 'up']);
   });
 });

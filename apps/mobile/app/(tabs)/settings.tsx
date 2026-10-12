@@ -52,7 +52,7 @@ import { Button, Card, cn } from '@nextdo/ui';
 import { useCloudSync } from '@/hooks/use-cloud-sync';
 import { useReminderPermission } from '@/hooks/use-reminder-permission';
 import { useAppUpdate } from '@/hooks/use-app-update';
-import { openExternalUrl, type UpdateFailureReason } from '@/lib/app-update';
+import { formatReleaseDate, openExternalUrl, type UpdateFailureReason } from '@/lib/app-update';
 import {
   formatConnectionString,
   formatDeepLink,
@@ -123,7 +123,58 @@ const INPUT_CLASS =
 /** Placeholders / accessibility labels — the single definitions the tests
  *  match on (a duplicated literal in the JSX is how copy drifts). */
 const SERVER_ADDRESS_PLACEHOLDER = '自建服务器地址（例如：https://my-sync.workers.dev）';
+/**
+ * The "同步是怎么工作的？" toggle and its body (issue #15).
+ *
+ * Rendered in BOTH the connected and the disconnected states on purpose: the
+ * person who has not connected yet is exactly the one asking "when does it
+ * sync, and can I change that?" — hiding the answer behind having already
+ * connected would leave the question unanswered.
+ */
+function SyncExplainer({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  return (
+    <View className="gap-1.5">
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={open ? '收起同步说明' : '同步是怎么工作的？'}
+        accessibilityState={{ expanded: open }}
+        onPress={onToggle}
+      >
+        <Text className="font-sans text-xs font-semibold text-accent dark:text-accent-dark">
+          {open ? '收起同步说明 ▴' : '同步是怎么工作的？ ▾'}
+        </Text>
+      </Pressable>
+      {open ? (
+        <View className="gap-1.5 rounded-lg border border-border/80 bg-surface p-3 dark:border-border-dark dark:bg-surface-dark">
+          {SYNC_EXPLAINER.map((line) => (
+            <Text
+              key={line.q}
+              className="font-sans text-xs leading-relaxed text-muted dark:text-muted-dark"
+            >
+              <Text className="font-semibold text-ink dark:text-ink-dark">{line.q}</Text>
+              {'  '}
+              {line.a}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 const TOKEN_PLACEHOLDER = '云同步连接串（例如 https://...|token）';
+
+/**
+ * The four things users ask about sync (issue #15), stated as the code
+ * actually behaves — 详见 `docs/sync.md`. Kept as data so the card renders
+ * them as a list instead of four hand-written paragraphs that can drift.
+ */
+const SYNC_EXPLAINER: readonly { q: string; a: string }[] = [
+  { q: '什么时候同步？', a: '连上之后一直在跑。你在这台设备上的每一次改动都会立刻排队上传，没有定时任务。' },
+  { q: '多久一次？', a: '没有固定间隔——写入即触发上传；别的设备的改动通过长连接推过来。' },
+  { q: '能自己设置频率吗？', a: '不能。只能配置服务器地址和连接凭据。' },
+  { q: '失败了怎么办？', a: '网络问题由系统自动重试，数据不会丢。数据本身不合法时，服务端会拒收并在下方列出原因。' },
+];
 const ADVANCED_BACKEND_PLACEHOLDER = 'https://nextdo.example.com/api';
 const ADVANCED_ENDPOINT_PLACEHOLDER = 'https://nextdo.example.com/sync';
 const TOKEN_ACCESSIBILITY_LABEL = '云同步连接串';
@@ -163,6 +214,8 @@ export default function SettingsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [showQrCode, setShowQrCode] = useState(false);
+  /** The "同步是怎么工作的？" explainer inside the cloud-sync card (#15). */
+  const [showSyncHelp, setShowSyncHelp] = useState(false);
   const [rejections, setRejections] = useState<UploadRejectedOp[]>([]);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -472,6 +525,13 @@ export default function SettingsScreen() {
             <Text className="font-sans text-sm text-muted dark:text-muted-dark">
               已连接 — 数据在这台设备与服务器之间自动同步。
             </Text>
+            {/* The four questions users actually ask about sync (issue #15).
+                Answered from the code's real behaviour, not a design doc —
+                see docs/sync.md, which is the long version. */}
+            <SyncExplainer
+              open={showSyncHelp}
+              onToggle={() => setShowSyncHelp((prev) => !prev)}
+            />
             {storedConfig !== null ? (
               <View className="gap-1">
                 <Text className="font-sans text-xs text-muted dark:text-muted-dark">
@@ -547,6 +607,13 @@ export default function SettingsScreen() {
             <Text className="font-sans text-sm text-muted dark:text-muted-dark">
               未连接 — 数据仅保存在这台设备上。粘贴来自其他设备或服务器的云同步连接串，或填写自建服务器地址开启同步。
             </Text>
+
+            {/* Same explainer as the connected state — the unconnected reader
+                is the one who most needs to know what connecting would do. */}
+            <SyncExplainer
+              open={showSyncHelp}
+              onToggle={() => setShowSyncHelp((prev) => !prev)}
+            />
 
             <Pressable
               accessibilityRole="link"
@@ -846,15 +913,83 @@ export default function SettingsScreen() {
               </View>
             ) : null}
           </View>
+          {/* 更新渠道偏好切换（Issue #18：用户自主设定默认接收更新的渠道） */}
+          <View className="gap-1.5 pt-0.5">
+            <Text className="font-sans text-xs text-muted dark:text-muted-dark">
+              更新渠道偏好
+            </Text>
+            <View className="flex-row gap-2">
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="偏好正式版渠道"
+                accessibilityState={{ selected: update.preferredChannel === 'stable' }}
+                onPress={() => {
+                  void update.setPreferredChannel('stable');
+                }}
+                className={cn(
+                  'flex-1 items-center justify-center rounded-lg border py-2 px-1',
+                  update.preferredChannel === 'stable'
+                    ? 'border-accent bg-accent/15 dark:border-accent-dark dark:bg-accent-dark/20'
+                    : 'border-border/80 bg-surface dark:border-border-dark dark:bg-surface-dark',
+                )}
+              >
+                <Text
+                  className={cn(
+                    'font-sans text-xs font-semibold',
+                    update.preferredChannel === 'stable'
+                      ? 'text-accent dark:text-accent-dark'
+                      : 'text-ink dark:text-ink-dark',
+                  )}
+                >
+                  正式版（稳定推荐）
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="偏好测试版渠道"
+                accessibilityState={{ selected: update.preferredChannel === 'beta' }}
+                onPress={() => {
+                  void update.setPreferredChannel('beta');
+                }}
+                className={cn(
+                  'flex-1 items-center justify-center rounded-lg border py-2 px-1',
+                  update.preferredChannel === 'beta'
+                    ? 'border-accent bg-accent/15 dark:border-accent-dark dark:bg-accent-dark/20'
+                    : 'border-border/80 bg-surface dark:border-border-dark dark:bg-surface-dark',
+                )}
+              >
+                <Text
+                  className={cn(
+                    'font-sans text-xs font-semibold',
+                    update.preferredChannel === 'beta'
+                      ? 'text-accent dark:text-accent-dark'
+                      : 'text-ink dark:text-ink-dark',
+                  )}
+                >
+                  测试版（优先尝鲜）
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
           <Button
             label={update.checking ? '检查中…' : '检查更新'}
             disabled={update.checking}
             onPress={update.check}
           />
           {update.outcome?.kind === 'up-to-date' ? (
-            <Text className="font-sans text-sm text-muted dark:text-muted-dark">
-              已是最新版本（{update.outcome.latestVersion}）。
-            </Text>
+            <View className="gap-1">
+              <Text className="font-sans text-sm text-muted dark:text-muted-dark">
+                已是最新版本（{update.outcome.latestVersion}）。
+              </Text>
+              {update.outcome.stableRelease || update.outcome.betaRelease ? (
+                <Text className="font-sans text-xs text-muted/80 dark:text-muted-dark/80">
+                  {update.outcome.stableRelease ? `正式版：v${update.outcome.stableRelease.version}` : ''}
+                  {update.outcome.stableRelease && update.outcome.betaRelease ? ' · ' : ''}
+                  {update.outcome.betaRelease ? `测试版：v${update.outcome.betaRelease.version}` : ''}
+                </Text>
+              ) : null}
+            </View>
           ) : null}
           {update.outcome?.kind === 'failed' ? (
             <Text className="font-sans text-sm text-danger dark:text-danger-dark">
@@ -862,10 +997,126 @@ export default function SettingsScreen() {
             </Text>
           ) : null}
           {update.outcome?.kind === 'available' ? (
-            <View className="gap-2">
-              <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
-                发现新版本 v{update.outcome.latestVersion}
-              </Text>
+            <View className="gap-3">
+              {/* 多版本选择：当有两个或以上更新可用时让用户自主点选目标版本 */}
+              {update.outcome.options.length > 1 ? (
+                <View className="gap-2">
+                  <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+                    发现可用新版本，请选择要更新的目标：
+                  </Text>
+                  <View className="gap-2">
+                    {update.outcome.options.map((opt) => {
+                      const isSelected = opt.version === update.selectedVersion;
+                      return (
+                        <Pressable
+                          key={opt.version}
+                          accessibilityRole="button"
+                          accessibilityLabel={`选择更新至 ${opt.channelLabel} v${opt.version}`}
+                          accessibilityState={{ selected: isSelected }}
+                          onPress={() => {
+                            update.selectVersion(opt.version);
+                          }}
+                          className={cn(
+                            'rounded-xl border p-3 flex-row items-center justify-between',
+                            isSelected
+                              ? 'border-accent bg-accent/10 dark:border-accent-dark dark:bg-accent-dark/15'
+                              : 'border-border/80 bg-surface dark:border-border-dark dark:bg-surface-dark',
+                          )}
+                        >
+                          <View className="gap-1">
+                            <View className="flex-row items-center gap-2">
+                              <View
+                                className={cn(
+                                  'rounded-full px-2 py-0.5',
+                                  opt.channel === 'stable'
+                                    ? 'bg-surface-container dark:bg-surface-container-dark'
+                                    : 'bg-accent/20 dark:bg-accent-dark/25',
+                                )}
+                              >
+                                <Text
+                                  className={cn(
+                                    'font-sans text-[11px] font-semibold',
+                                    opt.channel === 'stable'
+                                      ? 'text-muted dark:text-muted-dark'
+                                      : 'text-accent dark:text-accent-dark',
+                                  )}
+                                >
+                                  {opt.channelLabel}
+                                </Text>
+                              </View>
+                              <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+                                v{opt.version}
+                              </Text>
+                              {opt.isPreferred ? (
+                                <Text className="font-sans text-[11px] text-muted dark:text-muted-dark">
+                                  (偏好)
+                                </Text>
+                              ) : null}
+                            </View>
+                            {opt.publishedAt ? (
+                              <Text className="font-sans text-xs text-muted dark:text-muted-dark">
+                                发布于 {formatReleaseDate(opt.publishedAt)}
+                              </Text>
+                            ) : null}
+                          </View>
+                          <View
+                            className={cn(
+                              'h-5 w-5 rounded-full border items-center justify-center',
+                              isSelected
+                                ? 'border-accent bg-accent dark:border-accent-dark dark:bg-accent-dark'
+                                : 'border-muted/40 dark:border-muted-dark/40',
+                            )}
+                          >
+                            {isSelected ? (
+                              <Text className="text-white text-[10px] font-bold">✓</Text>
+                            ) : null}
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              ) : (
+                <View className="gap-1">
+                  <View className="flex-row items-center gap-2">
+                    <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+                      发现新版本 v{update.outcome.latestVersion}
+                    </Text>
+                    {update.outcome.options[0] ? (
+                      <View
+                        className={cn(
+                          'rounded-full px-2 py-0.5',
+                          update.outcome.options[0].channel === 'stable'
+                            ? 'bg-surface-container dark:bg-surface-container-dark'
+                            : 'bg-accent/15 dark:bg-accent-dark/20',
+                        )}
+                      >
+                        <Text
+                          className={cn(
+                            'font-sans text-[11px] font-semibold',
+                            update.outcome.options[0].channel === 'stable'
+                              ? 'text-muted dark:text-muted-dark'
+                              : 'text-accent dark:text-accent-dark',
+                          )}
+                        >
+                          {update.outcome.options[0].channelLabel}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  {update.outcome.options[0]?.publishedAt ? (
+                    <Text className="font-sans text-xs text-muted dark:text-muted-dark">
+                      发布于 {formatReleaseDate(update.outcome.options[0].publishedAt)}
+                    </Text>
+                  ) : null}
+                  {update.preferredChannel === 'stable' &&
+                  update.outcome.options[0]?.channel !== 'stable' ? (
+                    <Text className="font-sans text-xs text-muted/90 dark:text-muted-dark/90 mt-0.5">
+                      提示：正式版当前已是最新，发现更高版本的测试版可供尝鲜。
+                    </Text>
+                  ) : null}
+                </View>
+              )}
               {update.outcome.downloads.length === 0 ? (
                 <Text className="font-sans text-xs text-muted dark:text-muted-dark">
                   没能识别你的设备型号，请在下方 release 页面选择安装包。

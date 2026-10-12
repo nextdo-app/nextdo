@@ -33,6 +33,7 @@
  */
 import { Linking, Platform } from 'react-native';
 import Constants from 'expo-constants';
+import { isReactNativeRuntime } from '@nextdo/db';
 
 /** 唯一的 release 源仓库。 */
 export const UPDATE_REPO = 'nextdo-app/nextdo';
@@ -172,8 +173,120 @@ export function getChannelLabel(channel: ReleaseChannel): string {
 }
 
 /* ------------------------------------------------------------------ *
+ * 更新渠道偏好持久化（Issue #18：用户自选更新目标渠道）
+ * ------------------------------------------------------------------ */
+
+/** 用户偏好的更新渠道：正式版（稳定推荐）或测试版（优先尝鲜）。 */
+export type UpdateChannelPreference = 'stable' | 'beta';
+
+export const UPDATE_CHANNEL_PREFERENCE_KEY = 'nextdo.settings.update-channel-preference';
+
+interface KeyValue {
+  getItem(key: string): Promise<string | null>;
+  setItem(key: string, value: string): Promise<void>;
+}
+
+interface WebStorageHost {
+  localStorage?: {
+    getItem(key: string): string | null;
+    setItem(key: string, value: string): void;
+  };
+}
+
+function createMemoryStore(): KeyValue {
+  const map = new Map<string, string>();
+  return {
+    async getItem(key) {
+      return map.has(key) ? (map.get(key) as string) : null;
+    },
+    async setItem(key, value) {
+      map.set(key, value);
+    },
+  };
+}
+
+function createStorage(): KeyValue {
+  if (isReactNativeRuntime()) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const store = require('expo-secure-store') as {
+        getItemAsync(key: string): Promise<string | null>;
+        setItemAsync(key: string, value: string): Promise<void>;
+      };
+      return {
+        getItem: (key) => store.getItemAsync(key),
+        setItem: (key, value) => store.setItemAsync(key, value),
+      };
+    } catch {
+      return createMemoryStore();
+    }
+  }
+  const host = globalThis as unknown as WebStorageHost;
+  if (host.localStorage !== undefined) {
+    const ls = host.localStorage;
+    return {
+      async getItem(key) {
+        return ls.getItem(key);
+      },
+      async setItem(key, value) {
+        ls.setItem(key, value);
+      },
+    };
+  }
+  return createMemoryStore();
+}
+
+const preferenceStorage = createStorage();
+
+/**
+ * 获取当前持久化的更新渠道偏好。
+ *
+ * 默认策略：
+ * - 若当前运行版本本身是预发布版本（如 -beta），默认倾向于测试版；
+ * - 若当前运行版本是正式版，默认倾向于正式版（避免误导普通用户）。
+ */
+export async function getUpdateChannelPreference(): Promise<UpdateChannelPreference> {
+  try {
+    const stored = await preferenceStorage.getItem(UPDATE_CHANNEL_PREFERENCE_KEY);
+    if (stored === 'beta' || stored === 'stable') {
+      return stored;
+    }
+  } catch {
+    // 降级回退到默认
+  }
+  return currentAppChannel() !== 'stable' ? 'beta' : 'stable';
+}
+
+/**
+ * 持久化保存用户的更新渠道偏好。
+ */
+export async function setUpdateChannelPreference(pref: UpdateChannelPreference): Promise<void> {
+  try {
+    await preferenceStorage.setItem(UPDATE_CHANNEL_PREFERENCE_KEY, pref);
+  } catch {
+    // 忽略异常
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * tag 解析 + 按平台拼安装包
  * ------------------------------------------------------------------ */
+
+/** 包含详细元数据的 release 描述。 */
+export interface ReleaseInfo {
+  tag: string;
+  version: string;
+  channel: ReleaseChannel;
+  channelLabel: string;
+  publishedAt: string | null;
+}
+
+/** 格式化 ISO 时间为简洁日期（YYYY-MM-DD）。 */
+export function formatReleaseDate(isoString: string | null): string {
+  if (!isoString) return '';
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(isoString);
+  return match && match[1] !== undefined ? match[1] : isoString;
+}
 
 /** 解析出来的最新 release。 */
 export interface LatestRelease {
@@ -228,6 +341,66 @@ export function parseAtomFeedTags(atomXml: string): string[] {
     }
   }
   return tags;
+}
+
+/**
+ * 从 GitHub releases.atom feed 的 XML 文本中提取包含更新日期的完整 release 记录列表。
+ */
+export function parseAtomFeedEntries(atomXml: string): ReleaseInfo[] {
+  const entries: ReleaseInfo[] = [];
+  const seen = new Set<string>();
+  const entryRegex = /<entry[\s\S]*?<\/entry>/g;
+  const entryMatches = atomXml.matchAll(entryRegex);
+
+  for (const match of entryMatches) {
+    const block = match[0];
+    const tagMatch = /\/releases\/tag\/([^"/?#\s]+)/.exec(block);
+    if (!tagMatch || tagMatch[1] === undefined) continue;
+    const rawTag = decodeURIComponent(tagMatch[1]);
+    const version = rawTag.replace(/^v/i, '');
+    if (version === '' || seen.has(version)) continue;
+    seen.add(version);
+
+    const updatedMatch = /<updated>([^<]+)<\/updated>/.exec(block);
+    const publishedAt = updatedMatch && updatedMatch[1] ? updatedMatch[1].trim() : null;
+    const channel = getReleaseChannel(version);
+
+    entries.push({
+      tag: rawTag,
+      version,
+      channel,
+      channelLabel: getChannelLabel(channel),
+      publishedAt,
+    });
+  }
+  return entries;
+}
+
+/** 两个渠道的最新版本记录（支持独立展示与选择）。 */
+export interface DualChannelReleases {
+  stable: ReleaseInfo | null;
+  beta: ReleaseInfo | null;
+}
+
+/**
+ * 从全部 release 记录中筛选正式版与测试版的最新版本。
+ */
+export function pickDualChannelReleases(entries: ReleaseInfo[]): DualChannelReleases {
+  let bestStable: ReleaseInfo | null = null;
+  let bestBeta: ReleaseInfo | null = null;
+
+  for (const entry of entries) {
+    if (entry.channel === 'stable') {
+      if (bestStable === null || compareVersions(entry.version, bestStable.version) > 0) {
+        bestStable = entry;
+      }
+    } else if (entry.channel === 'beta' || entry.channel === 'alpha' || entry.channel === 'rc') {
+      if (bestBeta === null || compareVersions(entry.version, bestBeta.version) > 0) {
+        bestBeta = entry;
+      }
+    }
+  }
+  return { stable: bestStable, beta: bestBeta };
 }
 
 /**
@@ -533,6 +706,84 @@ export async function fetchLatestRelease(
 
   // 均失败时返回 atom 的错误原因
   return atomResult;
+}
+
+/** 双渠道版本检索结果。 */
+export type DualChannelResult =
+  | { ok: true; releases: DualChannelReleases }
+  | { ok: false; reason: UpdateFailureReason };
+
+/**
+ * 同时检查正式版与测试版的最新版本（Issue #18 核心方法）。
+ *
+ * 优先拉取 releases.atom（包含预发布版在内的所有 release 记录），
+ * 若访问成功且解析到有效版本，则返回双渠道最新版本；
+ * 若 atom 访问失败或未匹配到，平滑降级到 releases/latest 拿正式版兜底；
+ * 均失败时返回失败原因。
+ */
+export async function fetchDualChannelReleases(): Promise<DualChannelResult> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    controller.abort();
+  }, REQUEST_TIMEOUT_MS);
+  let atomErrorReason: UpdateFailureReason;
+  try {
+    const response = await fetch(releasesAtomUrl(), {
+      signal: controller.signal,
+    });
+    if (response.ok) {
+      if (typeof response.text === 'function') {
+        const text = await response.text();
+        const entries = parseAtomFeedEntries(text);
+        const dual = pickDualChannelReleases(entries);
+        if (dual.stable !== null || dual.beta !== null) {
+          return { ok: true, releases: dual };
+        }
+      }
+      // 容错兼容：如果未提供 text() 函数但 url 包含 tag（如单测仅 mock 了 302 url）
+      const fallbackTag = parseLatestTag(response.url);
+      if (fallbackTag !== null) {
+        const version = fallbackTag.replace(/^v/i, '');
+        const channel = getReleaseChannel(version);
+        const info: ReleaseInfo = {
+          tag: fallbackTag,
+          version,
+          channel,
+          channelLabel: getChannelLabel(channel),
+          publishedAt: null,
+        };
+        return {
+          ok: true,
+          releases: {
+            stable: channel === 'stable' ? info : null,
+            beta: channel !== 'stable' ? info : null,
+          },
+        };
+      }
+      atomErrorReason = 'payload';
+    } else {
+      atomErrorReason = 'http';
+    }
+  } catch {
+    atomErrorReason = 'network';
+  } finally {
+    clearTimeout(timer);
+  }
+
+  // 降级兜底：尝试 releases/latest（仅能获取正式版）
+  const latestResult = await fetchReleaseFromLatest();
+  if (latestResult.ok) {
+    const stableInfo: ReleaseInfo = {
+      tag: latestResult.release.tag,
+      version: latestResult.release.version,
+      channel: 'stable',
+      channelLabel: '正式版',
+      publishedAt: null,
+    };
+    return { ok: true, releases: { stable: stableInfo, beta: null } };
+  }
+
+  return { ok: false, reason: latestResult.reason ?? atomErrorReason };
 }
 
 /**

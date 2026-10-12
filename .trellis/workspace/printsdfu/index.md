@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 33
-- **Last Active**: 2026-10-11
+- **Total Sessions**: 35
+- **Last Active**: 2026-10-12
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1044 | Active |
+| `journal-1.md` | ~1118 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 35 | 2026-10-12 | 手机端检查更新支持正式版与测试版双渠道 (fixes #18) | `3404523` | `main` |
+| 34 | 2026-10-12 | 完成四项积压任务、现代化重构时间选择器并归档 | `fb0fe07`, `5087c77`, `f3529c4`, `a649643`, `ebc8f47`, `158bff1` | `main` |
 | 33 | 2026-10-11 | 修复测试版更新检测通道与恢复贴底导航栏 | `7c9505d`, `641dbc2` | `main` |
 | 32 | 2026-10-11 | 澄清向导场景样式统一与发布版本规范 | `beeb67a`, `c91b920`, `bac6d7c`, `e7f7495`, `70127aa`, `23723b2` | `feature/stitch-scene-redesign` |
 | 31 | 2026-10-11 | 还原全平台经典图标与优化 .verify 规范结构 | `fd42de8`, `5395226` | `feature/stitch-scene-redesign` |

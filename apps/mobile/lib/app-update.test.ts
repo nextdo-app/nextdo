@@ -14,23 +14,30 @@ import {
   compareVersions,
   currentAppChannel,
   detectMacArch,
+  fetchDualChannelReleases,
   fetchLatestRelease,
+  formatReleaseDate,
   getChannelLabel,
   getReleaseChannel,
+  getUpdateChannelPreference,
   isPrerelease,
   isTauriDesktop,
   latestReleaseUrl,
   openExternalUrl,
+  parseAtomFeedEntries,
   parseAtomFeedTags,
   parseLatestTag,
   pickDownloads,
+  pickDualChannelReleases,
   pickLatestReleaseForChannel,
   pollDesktopDownloadProgress,
   releasePageUrl,
   releasesAtomUrl,
+  setUpdateChannelPreference,
   startDesktopDownload,
   viaProxy,
   type LatestRelease,
+  type ReleaseInfo,
 } from './app-update';
 
 const PREFIX = UPDATE_PROXY_PREFIX;
@@ -551,5 +558,153 @@ describe('fetchLatestRelease', () => {
       ok: false,
       reason: 'network',
     });
+  });
+});
+
+describe('parseAtomFeedEntries & pickDualChannelReleases (Issue #18)', () => {
+  it('parses entries with tag, channel, and published timestamp', () => {
+    const atomXml = `
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <entry>
+          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.5-beta.2"/>
+          <updated>2026-10-12T08:00:00Z</updated>
+        </entry>
+        <entry>
+          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4"/>
+          <updated>2026-10-10T12:00:00Z</updated>
+        </entry>
+      </feed>
+    `;
+
+    const entries = parseAtomFeedEntries(atomXml);
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toEqual({
+      tag: 'v0.1.5-beta.2',
+      version: '0.1.5-beta.2',
+      channel: 'beta',
+      channelLabel: '测试版',
+      publishedAt: '2026-10-12T08:00:00Z',
+    });
+    expect(entries[1]).toEqual({
+      tag: 'v0.1.4',
+      version: '0.1.4',
+      channel: 'stable',
+      channelLabel: '正式版',
+      publishedAt: '2026-10-10T12:00:00Z',
+    });
+  });
+
+  it('pickDualChannelReleases identifies latest stable and beta separately', () => {
+    const entries: ReleaseInfo[] = [
+      {
+        tag: 'v0.1.5-beta.1',
+        version: '0.1.5-beta.1',
+        channel: 'beta',
+        channelLabel: '测试版',
+        publishedAt: '2026-10-11T00:00:00Z',
+      },
+      {
+        tag: 'v0.1.5-beta.2',
+        version: '0.1.5-beta.2',
+        channel: 'beta',
+        channelLabel: '测试版',
+        publishedAt: '2026-10-12T00:00:00Z',
+      },
+      {
+        tag: 'v0.1.4',
+        version: '0.1.4',
+        channel: 'stable',
+        channelLabel: '正式版',
+        publishedAt: '2026-10-10T00:00:00Z',
+      },
+      {
+        tag: 'v0.1.3',
+        version: '0.1.3',
+        channel: 'stable',
+        channelLabel: '正式版',
+        publishedAt: '2026-10-01T00:00:00Z',
+      },
+    ];
+
+    const dual = pickDualChannelReleases(entries);
+    expect(dual.stable?.version).toBe('0.1.4');
+    expect(dual.beta?.version).toBe('0.1.5-beta.2');
+  });
+
+  it('formatReleaseDate formats ISO date to YYYY-MM-DD or empty', () => {
+    expect(formatReleaseDate('2026-10-12T08:00:00Z')).toBe('2026-10-12');
+    expect(formatReleaseDate('2026-05-01')).toBe('2026-05-01');
+    expect(formatReleaseDate(null)).toBe('');
+  });
+});
+
+describe('update channel preference storage (Issue #18)', () => {
+  it('defaults to stable channel for stable current version', async () => {
+    const pref = await getUpdateChannelPreference();
+    expect(pref).toBe('stable');
+  });
+
+  it('saves and reads user channel preference', async () => {
+    await setUpdateChannelPreference('beta');
+    const pref = await getUpdateChannelPreference();
+    expect(pref).toBe('beta');
+
+    await setUpdateChannelPreference('stable');
+    const reset = await getUpdateChannelPreference();
+    expect(reset).toBe('stable');
+  });
+});
+
+describe('fetchDualChannelReleases (Issue #18)', () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('fetches both channels from atom feed successfully', async () => {
+    const atomXml = `
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <entry>
+          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.5-beta.1"/>
+          <updated>2026-10-12T00:00:00Z</updated>
+        </entry>
+        <entry>
+          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4"/>
+          <updated>2026-10-10T00:00:00Z</updated>
+        </entry>
+      </feed>
+    `;
+
+    globalThis.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      text: async () => atomXml,
+    }) as unknown as typeof fetch;
+
+    const res = await fetchDualChannelReleases();
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.releases.stable?.version).toBe('0.1.4');
+      expect(res.releases.beta?.version).toBe('0.1.5-beta.1');
+    }
+  });
+
+  it('falls back to latestReleaseUrl when atom fails', async () => {
+    globalThis.fetch = jest.fn().mockImplementation(async (url: string) => {
+      if (url === releasesAtomUrl()) {
+        return { ok: false, status: 500 };
+      }
+      return {
+        ok: true,
+        url: `${PREFIX}https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4`,
+      };
+    }) as unknown as typeof fetch;
+
+    const res = await fetchDualChannelReleases();
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.releases.stable?.version).toBe('0.1.4');
+      expect(res.releases.beta).toBeNull();
+    }
   });
 });

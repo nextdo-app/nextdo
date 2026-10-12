@@ -15,9 +15,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePowerSync } from '@powersync/react';
 import { habitCycleDay, listHabits, listHabitDays, wrapDb } from '@nextdo/db';
-import { localDateKey, logger, parseIso, type Habit, type HabitDay } from '@nextdo/core';
-
-const DAY_MS = 86_400_000;
+import {
+  daysBetweenDateKeys,
+  localDateKey,
+  logger,
+  parseIso,
+  type Habit,
+  type HabitDay,
+} from '@nextdo/core';
 
 export type HabitCellStatus = 'done' | 'today' | 'missed' | 'future';
 
@@ -38,6 +43,12 @@ export interface ProjectHabitEntry {
   cycleDay: number | null;
   /** Completed HabitDays within the current cycle. */
   doneCount: number;
+  /**
+   * Whole days from today until the challenge's first day; null unless the
+   * challenge is booked ahead. Drives the 「N 天后开始」 readout — a habit
+   * whose start date is in the future has no cycle day yet.
+   */
+  startsInDays: number | null;
   /** Today's HabitDay row if open and actionable. */
   todayDay: HabitDay | null;
   /** The cycleDays cells for the current challenge cycle. */
@@ -91,7 +102,12 @@ export function useProjectHabits(projectId: string | null, now: Date): UseProjec
           const habitDaysMap = daysByHabit.get(habit.id) ?? new Map<string, HabitDay>();
           const cycleDays = habit.cycleDays ?? 21;
           const cycleDay = habitCycleDay(habit.startedAt, cycleDays, todayKey);
-          const startedAtMs = parseIso(habit.startedAt).getTime();
+          const start = parseIso(habit.startedAt);
+          const startYear = start.getFullYear();
+          const startMonth = start.getMonth();
+          const startDay = start.getDate();
+          const gap = daysBetweenDateKeys(todayKey, localDateKey(start));
+          const startsInDays = gap > 0 ? gap : null;
 
           const grid: HabitGridDay[] = [];
           let todayDay: HabitDay | null = null;
@@ -99,8 +115,11 @@ export function useProjectHabits(projectId: string | null, now: Date): UseProjec
 
           for (let d = 0; d < cycleDays; d++) {
             const dayNumber = d + 1;
-            const dayDate = new Date(startedAtMs + d * DAY_MS);
-            const dateKey = localDateKey(dayDate);
+            // Local noon, stepped by calendar days — NOT `start + d * DAY_MS`,
+            // which slips a date on either side of a daylight-saving change.
+            const dateKey = localDateKey(
+              new Date(startYear, startMonth, startDay + d, 12, 0, 0, 0),
+            );
             const isToday = dateKey === todayKey;
             const dayRow = habitDaysMap.get(dateKey);
 
@@ -132,6 +151,7 @@ export function useProjectHabits(projectId: string | null, now: Date): UseProjec
             habit,
             cycleDay,
             doneCount,
+            startsInDays,
             todayDay,
             grid,
           });

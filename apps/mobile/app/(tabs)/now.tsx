@@ -16,12 +16,12 @@
  * hooks); every mutation goes through a mutation hook.
  */
 import { memo, useCallback, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Animated, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { router, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Button, Card, ContextChip, SceneOption, Tag, cn } from '@nextdo/ui';
-import type { CandidateKind } from '@nextdo/core';
+import { formatDeadline, type CandidateKind } from '@nextdo/core';
 import { useNow, shouldOfferReclarify, type NowEligible } from '@/hooks/use-now';
 import { useAppClock } from '@/hooks/use-app-clock';
 import { useSkipAction } from '@/hooks/use-skip-action';
@@ -36,8 +36,10 @@ import { errorMessage } from '@/lib/error-messages';
 import { cognitiveLoadLabel } from '@/lib/cognitive-load';
 import { FILTER_RULE_LABELS, REASON_LABELS } from '@/lib/reason-labels';
 import { KIND_LABELS } from '@/lib/kind-labels';
-import { formatLocalDate, formatLocalDateTime, formatDueLabel } from '@/lib/format';
+import { formatLocalDateTime } from '@/lib/format';
 import { SnoozeSheet } from '@/components/snooze-sheet';
+import { useSwipeRight } from '@/hooks/use-swipe-right';
+import { DeadlineChip } from '@/components/deadline-chip';
 import { AddSceneModal } from '@/components/add-scene-modal';
 
 const TIME_CHIPS = [15, 30, 60, 120] as const;
@@ -433,6 +435,7 @@ const ActionRow = memo(function ActionRow({
   now,
   projectName,
   contextName,
+  onComplete,
   onSnooze,
   onTrash,
 }: {
@@ -440,40 +443,61 @@ const ActionRow = memo(function ActionRow({
   now: Date;
   projectName: string | undefined;
   contextName: (id: string) => string;
+  onComplete: (kind: CandidateKind, id: string) => void;
   onSnooze: (kind: CandidateKind, id: string) => void;
   onTrash: (kind: CandidateKind, id: string) => void;
 }) {
   const action = entry.action;
+  // Swipe right = 完成 (issue #17). The button below is the same action, so
+  // the gesture is an accelerator and never the only way to reach it.
+  const swipe = useSwipeRight(() => onComplete(action.kind, action.id));
   return (
-    <Card variant="outlined" className="gap-2 p-3.5">
-      <View className="flex-row items-start gap-2">
-        <View className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-accent/60 dark:bg-accent-dark/60" />
-        <Text className="flex-1 font-sans text-base font-medium text-ink dark:text-ink-dark">
-          {action.title}
+    <View className="overflow-hidden rounded-2xl">
+      {/* The affordance revealed by the swipe. Sits UNDER the card, so the
+          row slides off it rather than dragging a label along. */}
+      <View
+        pointerEvents="none"
+        className="absolute inset-y-0 left-0 items-center justify-center bg-accent/20 dark:bg-accent-dark/25"
+      >
+        <Text className="font-sans text-sm font-semibold text-accent dark:text-accent-dark">
+          ✓ 完成
         </Text>
       </View>
-      <View className="flex-row flex-wrap items-center gap-1.5">
-        {projectName !== undefined ? <Tag label={projectName} /> : null}
-        {action.contextIds.map((id) => (
-          <ContextChip key={id} name={contextName(id)} />
-        ))}
-        <View className="ml-auto flex-row items-center gap-1">
-          {action.kind === 'calendar' && action.startsAt !== undefined ? (
-            <Text className="font-sans text-xs text-muted dark:text-muted-dark">
-              开始 {formatLocalDateTime(action.startsAt)}
+      <Animated.View {...swipe.panHandlers} style={{ transform: [{ translateX: swipe.translateX }] }}>
+        <Card variant="outlined" className="gap-2 p-3.5">
+          <View className="flex-row items-start gap-2">
+            <View className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-accent/60 dark:bg-accent-dark/60" />
+            <Text className="flex-1 font-sans text-base font-medium text-ink dark:text-ink-dark">
+              {action.title}
             </Text>
-          ) : action.deadline !== undefined ? (
-            <Tag label={formatDueLabel(action.deadline, now)} tone="warning" />
-          ) : (
-            <Text className="font-sans text-xs text-muted dark:text-muted-dark">随时</Text>
-          )}
-        </View>
-      </View>
-      <View className="flex-row justify-end gap-2">
-        <Button size="sm" label="稍后" variant="ghost" onPress={() => onSnooze(action.kind, action.id)} />
-        <Button size="sm" label="删除" variant="ghost" onPress={() => onTrash(action.kind, action.id)} />
-      </View>
-    </Card>
+          </View>
+          <View className="flex-row flex-wrap items-center gap-1.5">
+            {projectName !== undefined ? <Tag label={projectName} /> : null}
+            {action.contextIds.map((id) => (
+              <ContextChip key={id} name={contextName(id)} />
+            ))}
+            <View className="ml-auto flex-row items-center gap-1">
+              {action.kind === 'calendar' && action.startsAt !== undefined ? (
+                <Text className="font-sans text-xs text-muted dark:text-muted-dark">
+                  开始 {formatLocalDateTime(action.startsAt)}
+                </Text>
+              ) : action.deadline !== undefined ? (
+                /* Same chip the project screens use (issue #16) — the 待办
+                   view must say 已逾期 / 今天截止 / 还剩 N 天, not a bare date. */
+                <DeadlineChip deadline={action.deadline} now={now} />
+              ) : (
+                <Text className="font-sans text-xs text-muted dark:text-muted-dark">随时</Text>
+              )}
+            </View>
+          </View>
+          <View className="flex-row justify-end gap-2">
+            <Button size="sm" label="完成" variant="ghost" onPress={() => onComplete(action.kind, action.id)} />
+            <Button size="sm" label="稍后" variant="ghost" onPress={() => onSnooze(action.kind, action.id)} />
+            <Button size="sm" label="删除" variant="ghost" onPress={() => onTrash(action.kind, action.id)} />
+          </View>
+        </Card>
+      </Animated.View>
+    </View>
   );
 });
 
@@ -740,6 +764,15 @@ export default function NowScreen() {
     [trash],
   );
 
+  /** Row-level 完成 — one definition for the button and the swipe gesture
+   *  (issue #17), so the two can never diverge. */
+  const handleComplete = useCallback(
+    (actionKind: CandidateKind, actionId: string) => {
+      void complete({ actionKind, actionId });
+    },
+    [complete],
+  );
+
   const subtitleParts = useMemo(() => {
     const parts: string[] = [];
     if (displayed !== null) {
@@ -751,11 +784,13 @@ export default function NowScreen() {
         parts.push(`开始 ${formatLocalDateTime(displayed.action.startsAt)}`);
       }
       if (displayed.action.deadline !== undefined) {
-        parts.push(`截止 ${formatLocalDate(displayed.action.deadline)}`);
+        // Spoken the same way the chip speaks it — the screen-reader label
+        // and the visible chip must not describe one deadline two ways.
+        parts.push(formatDeadline(displayed.action.deadline, now));
       }
     }
     return parts;
-  }, [displayed, projectTitles]);
+  }, [displayed, projectTitles, now]);
 
   const habits = habitRows ?? [];
   const todayRows = useMemo(() => habits.filter((row) => row.today !== null), [habits]);
@@ -1001,6 +1036,7 @@ export default function NowScreen() {
                                 : undefined
                             }
                             contextName={contextName}
+                            onComplete={() => handleComplete(entry.action.kind, entry.action.id)}
                             onSnooze={handleSnooze}
                             onTrash={handleTrash}
                           />

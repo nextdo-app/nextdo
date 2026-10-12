@@ -65,6 +65,13 @@ index.html 回落 —— 直接访问 `/settings` 这类深层路由不会 404�
 
 ## Known pitfalls
 
+- **There are TWO `localDateKey` functions, with DIFFERENT formats.** `@nextdo/core`'s
+  returns `YYYYMMDD` (no dashes) — that is `HabitDay.localDate` storage.
+  `apps/mobile/lib/review-dates.ts`'s returns `YYYY-MM-DD` — that is what
+  `DateTimePicker` `date` mode emits and what every form field holds. Importing
+  the wrong one produces a value that fails its own regex downstream. When a
+  screen needs a picker's value, take the picker-shaped key and keep the
+  conversion at the boundary.
 - **Do not call the GitHub API from a shipped client.** `api.github.com`
   allows 60 unauthenticated requests per IP per hour, and any CDN /
   acceleration proxy in front of it has a *shared* IP — so a rate-limited

@@ -1,0 +1,33 @@
+{
+  "id": "habit-start-date-picker",
+  "name": "habit-start-date-picker",
+  "title": "Habit start date picker (GitHub issue #13)",
+  "description": "把建立习惯时的起始日期文本框替换为日期选择组件，统一格式化与校验，减少格式错误（对应 GitHub issue #13）",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "printsdfu",
+  "assignee": "printsdfu",
+  "createdAt": "2026-10-11",
+  "completedAt": "2026-10-12",
+  "branch": "main",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/core/src/domain/habit-start.ts",
+    "packages/core/src/domain/habit-start.test.ts",
+    "apps/mobile/components/picker-field.tsx",
+    "apps/mobile/app/habits.tsx"
+  ],
+  "notes": "验证截图见 .verify/habit-start-date-picker/",
+  "meta": {
+    "github_issue": "https://github.com/nextdo-app/nextdo/issues/13"
+  }
+}

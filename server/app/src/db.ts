@@ -31,7 +31,16 @@ import { logger } from './logger.js';
  *  client mints; matches packages/db/src/schema.ts exactly). */
 export const MUTABLE_TABLES: Readonly<Record<string, readonly string[]>> = {
   inbox_items: ['created_at', 'updated_at', 'deleted_at', 'title', 'captured_at'],
-  projects: ['created_at', 'updated_at', 'deleted_at', 'title', 'outcome', 'value', 'status'],
+  projects: [
+    'created_at',
+    'updated_at',
+    'deleted_at',
+    'title',
+    'outcome',
+    'value',
+    'status',
+    'deadline',
+  ],
   next_actions: [
     'created_at',
     'updated_at',

@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/app/index.md", "reason": "apps/mobile 改动前的必读清单与质量门禁"}
+{"file": ".trellis/spec/app/component-guidelines.md", "reason": "表单日期/时间必须走 DateTimePicker 的强制约定，含无障碍与状态信号要求"}
+{"file": ".trellis/spec/app/hook-guidelines.md", "reason": "use-start-habit 的写路径与 now 注入规则"}
+{"file": ".trellis/spec/domain/domain-model.md", "reason": "Habit/HabitDay 模型、habitCycleDay 周期语义、不变量 5（确定性 id）"}
+{"file": ".trellis/spec/domain/index.md", "reason": "packages/core 的开发前清单与质量门禁"}
+{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "测试要求与 Web 验证门禁"}

@@ -1,0 +1,32 @@
+{
+  "id": "dual-channel-update-check",
+  "name": "dual-channel-update-check",
+  "title": "手机端检查更新支持正式版与测试版双渠道",
+  "description": "手机端检查更新同时支持正式版与测试版，展示版本详情并允许用户切换/选择更新目标 (fixes #18)",
+  "status": "completed",
+  "dev_type": "feature",
+  "scope": "apps/mobile",
+  "package": "@nextdo/mobile",
+  "priority": "P1",
+  "creator": "printsdfu",
+  "assignee": "printsdfu",
+  "createdAt": "2026-10-12",
+  "completedAt": "2026-10-12",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "apps/mobile/lib/app-update.ts",
+    "apps/mobile/hooks/use-app-update.ts",
+    "apps/mobile/app/(tabs)/settings.tsx",
+    "apps/mobile/lib/app-update.test.ts",
+    "apps/mobile/__tests__/settings-screen.test.tsx"
+  ],
+  "notes": "支持正式版与测试版双渠道检查更新，支持渠道偏好设置与多版本选择",
+  "meta": {}
+}

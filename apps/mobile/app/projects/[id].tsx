@@ -21,6 +21,8 @@ import { useAppInsets } from '@/lib/use-app-insets';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Button, Card, ContextChip, EmptyState, Tag, ValueChips, cn, type TagTone } from '@nextdo/ui';
 import { DateTimePicker } from '@/components/datetime-picker';
+import { PickerField } from '@/components/picker-field';
+import { DeadlineChip } from '@/components/deadline-chip';
 import { localDateKey, type NextAction, type Project, type ProjectStatus, type Value } from '@nextdo/core';
 import { useProjects } from '@/hooks/use-projects';
 import { useProjectActions } from '@/hooks/use-project-actions';
@@ -39,7 +41,6 @@ import { useContexts } from '@/hooks/use-contexts';
 import { errorMessage } from '@/lib/error-messages';
 import { PROJECT_STATUS_LABELS } from '@/lib/status-labels';
 import { endOfLocalDayIso } from '@/lib/clarify-flow';
-import { formatLocalDate } from '@/lib/format';
 import { goBack } from '@/lib/go-back';
 import { SnoozeSheet } from '@/components/snooze-sheet';
 
@@ -80,7 +81,6 @@ function AddActionForm({ projectId, now, onDone, onAdded }: { projectId: string;
   const [estMinutes, setEstMinutes] = useState<number | null>(null);
   const [value, setValue] = useState<Value>(3);
   const [deadline, setDeadline] = useState('');
-  const [deadlineHint, setDeadlineHint] = useState<string | null>(null);
   const [showPicker, setShowPicker] = useState(false);
   const [customEst, setCustomEst] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -95,18 +95,11 @@ function AddActionForm({ projectId, now, onDone, onAdded }: { projectId: string;
 
   const addAction = () => {
     if (!canSubmit || estMinutes === null) return;
-    // The domain deadline is an ISO *datetime*; the input is a local date —
-    // compose that local day's 23:59:59 (the same convention as the Clarify
-    // wizard), and block impossible dates instead of storing them raw.
-    let deadlineIso: string | undefined;
-    if (deadline.trim() !== '') {
-      const iso = endOfLocalDayIso(deadline.trim());
-      if (iso === null) {
-        setDeadlineHint('日期格式应为 YYYY-MM-DD（例如 2026-10-01）');
-        return;
-      }
-      deadlineIso = iso;
-    }
+    // The domain deadline is an ISO *datetime*; the picker hands back a local
+    // date — compose that local day's 23:59:59 (the same convention as the
+    // Clarify wizard). The picker only ever emits a real `YYYY-MM-DD`, so
+    // there is nothing left to reject here.
+    const deadlineIso = deadline === '' ? undefined : (endOfLocalDayIso(deadline) ?? undefined);
     setSubmitting(true);
     void add({ title, estMinutes, value, projectId, deadline: deadlineIso }).then(() => {
       setSubmitting(false);
@@ -114,7 +107,6 @@ function AddActionForm({ projectId, now, onDone, onAdded }: { projectId: string;
       setEstMinutes(null);
       setValue(3);
       setDeadline('');
-      setDeadlineHint(null);
       onAdded();
       onDone();
     });
@@ -147,24 +139,13 @@ function AddActionForm({ projectId, now, onDone, onAdded }: { projectId: string;
         />
       </View>
       <ValueChips value={value} onChange={setValue} />
-      <View className="flex-row items-center gap-2">
-        <TextInput
-          className={cn(INPUT_CLASS, 'flex-1')}
-          placeholder="截止（YYYY-MM-DD，可选）"
-          value={deadline}
-          onChangeText={(value) => {
-            setDeadline(value);
-            setDeadlineHint(null);
-          }}
-          autoCapitalize="none"
-        />
-        <Button
-          size="sm"
-          label={deadline ? '更换日期' : '选择日期'}
-          variant="secondary"
-          onPress={() => setShowPicker(true)}
-        />
-      </View>
+      <PickerField
+        label="截止"
+        value={deadline}
+        placeholder="截止日期（可选）"
+        onPress={() => setShowPicker(true)}
+        onClear={() => setDeadline('')}
+      />
       {showPicker ? (
         <DateTimePicker
           mode="date"
@@ -173,14 +154,10 @@ function AddActionForm({ projectId, now, onDone, onAdded }: { projectId: string;
           now={now}
           onConfirm={(val) => {
             setDeadline(val);
-            setDeadlineHint(null);
             setShowPicker(false);
           }}
           onClose={() => setShowPicker(false)}
         />
-      ) : null}
-      {deadlineHint !== null ? (
-        <Text className="text-sm text-danger">{deadlineHint}</Text>
       ) : null}
       {error !== null ? <Text className="text-sm text-danger">{errorMessage(error)}</Text> : null}
       <View className="flex-row gap-2">
@@ -195,11 +172,16 @@ function AddActionForm({ projectId, now, onDone, onAdded }: { projectId: string;
  *  Projects tab's NewProjectForm, pre-filled from the current row. Status
  *  is NOT an editable field (归档/恢复 are the header's quick actions).
  *  Empty title or empty outcome cannot submit. */
-function EditProjectForm({ project, onDone, onSaved }: { project: Project; onDone: () => void; onSaved: () => void }) {
+function EditProjectForm({ project, now, onDone, onSaved }: { project: Project; now: Date; onDone: () => void; onSaved: () => void }) {
   const { update, error } = useUpdateProject();
   const [title, setTitle] = useState(project.title);
   const [outcome, setOutcome] = useState(project.outcome);
   const [value, setValue] = useState<Value>(project.value);
+  /** `YYYY-MM-DD` as picked; the row stores it as an ISO datetime. */
+  const [deadline, setDeadline] = useState(
+    project.deadline === undefined ? '' : localDateKey(new Date(project.deadline)),
+  );
+  const [showDeadlinePicker, setShowDeadlinePicker] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const canSubmit = title.trim() !== '' && outcome.trim() !== '' && !submitting;
@@ -207,7 +189,10 @@ function EditProjectForm({ project, onDone, onSaved }: { project: Project; onDon
   const save = async () => {
     if (!canSubmit) return;
     setSubmitting(true);
-    const ok = await update({ project, patch: { title: title.trim(), outcome: outcome.trim(), value } });
+    // `deadline: undefined` CLEARS the column (`projectToRow` maps a missing
+    // deadline to NULL) — that is how 「清除」 removes an existing one.
+    const deadlineIso = deadline === '' ? undefined : (endOfLocalDayIso(deadline) ?? undefined);
+    const ok = await update({ project, patch: { title: title.trim(), outcome: outcome.trim(), value, deadline: deadlineIso } });
     setSubmitting(false);
     if (ok) onSaved();
   };
@@ -228,6 +213,23 @@ function EditProjectForm({ project, onDone, onSaved }: { project: Project; onDon
         onChangeText={setOutcome}
       />
       <ValueChips value={value} onChange={setValue} />
+      <PickerField
+        label="截止"
+        value={deadline}
+        placeholder="截止日期（可选）"
+        onPress={() => setShowDeadlinePicker(true)}
+        onClear={() => setDeadline('')}
+      />
+      {showDeadlinePicker ? (
+        <DateTimePicker
+          mode="date"
+          title="选择截止日期"
+          value={deadline}
+          now={now}
+          onConfirm={setDeadline}
+          onClose={() => setShowDeadlinePicker(false)}
+        />
+      ) : null}
       {error !== null ? <Text className="text-sm text-danger">{errorMessage(error)}</Text> : null}
       <View className="flex-row gap-2">
         <Button label="保存" onPress={() => void save()} disabled={!canSubmit} />
@@ -251,7 +253,6 @@ function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; 
       ? ''
       : localDateKey(new Date(action.deadline)),
   );
-  const [deadlineHint, setDeadlineHint] = useState<string | null>(null);
   const [showPicker, setShowPicker] = useState(false);
   const [customEst, setCustomEst] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -267,17 +268,9 @@ function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; 
   const save = async () => {
     if (!canSubmit || estMinutes === null) return;
     // Same convention as AddActionForm: the domain deadline is an ISO
-    // *datetime*; the input is a local date — compose that local day's
-    // 23:59:59, and block impossible dates instead of storing them raw.
-    let deadlineIso: string | undefined;
-    if (deadline.trim() !== '') {
-      const iso = endOfLocalDayIso(deadline.trim());
-      if (iso === null) {
-        setDeadlineHint('日期格式应为 YYYY-MM-DD（例如 2026-10-01）');
-        return;
-      }
-      deadlineIso = iso;
-    }
+    // *datetime*; the picker hands back a local date — compose that local
+    // day's 23:59:59. `undefined` CLEARS an existing deadline.
+    const deadlineIso = deadline === '' ? undefined : (endOfLocalDayIso(deadline) ?? undefined);
     setSubmitting(true);
     const ok = await update({ action, patch: { title: title.trim(), estMinutes, value, deadline: deadlineIso } });
     setSubmitting(false);
@@ -311,24 +304,13 @@ function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; 
         />
       </View>
       <ValueChips value={value} onChange={setValue} />
-      <View className="flex-row items-center gap-2">
-        <TextInput
-          className={cn(INPUT_CLASS, 'flex-1')}
-          placeholder="截止（YYYY-MM-DD，可选）"
-          value={deadline}
-          onChangeText={(next) => {
-            setDeadline(next);
-            setDeadlineHint(null);
-          }}
-          autoCapitalize="none"
-        />
-        <Button
-          size="sm"
-          label={deadline ? '更换日期' : '选择日期'}
-          variant="secondary"
-          onPress={() => setShowPicker(true)}
-        />
-      </View>
+      <PickerField
+        label="截止"
+        value={deadline}
+        placeholder="截止日期（可选）"
+        onPress={() => setShowPicker(true)}
+        onClear={() => setDeadline('')}
+      />
       {showPicker ? (
         <DateTimePicker
           mode="date"
@@ -337,14 +319,10 @@ function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; 
           now={now}
           onConfirm={(val) => {
             setDeadline(val);
-            setDeadlineHint(null);
             setShowPicker(false);
           }}
           onClose={() => setShowPicker(false)}
         />
-      ) : null}
-      {deadlineHint !== null ? (
-        <Text className="text-sm text-danger">{deadlineHint}</Text>
       ) : null}
       {error !== null ? <Text className="text-sm text-danger">{errorMessage(error)}</Text> : null}
       <View className="flex-row gap-2">
@@ -457,7 +435,7 @@ function ProjectHabitRow({
   onComplete: (dayId: string) => void;
   onTrash?: (habitId: string) => void;
 }) {
-  const { habit, cycleDay, doneCount, todayDay, grid } = entry;
+  const { habit, cycleDay, doneCount, startsInDays, todayDay, grid } = entry;
   const cycleDays = habit.cycleDays ?? 21;
   const [armedTrash, setArmedTrash] = useState(false);
 
@@ -468,7 +446,13 @@ function ProjectHabitRow({
           {habit.title}
         </Text>
         <Tag
-          label={cycleDay === null ? `本期 ${cycleDays} 天` : `第 ${cycleDay}/${cycleDays} 天`}
+          label={
+            cycleDay !== null
+              ? `第 ${cycleDay}/${cycleDays} 天`
+              : startsInDays !== null
+                ? `${startsInDays} 天后开始`
+                : `本期 ${cycleDays} 天`
+          }
           tone="accent"
         />
       </View>
@@ -661,6 +645,9 @@ export default function ProjectDetailScreen() {
                 tone={project.hasOpenAction ? 'accent' : 'danger'}
               />
               <Tag label={`价值 ${project.value}`} />
+              {/* The project's OWN deadline, spoken in the same words an
+                  action's is (issue #16) — 逾期 / 今天截止 / 还剩 N 天. */}
+              <DeadlineChip deadline={project.deadline} now={now} />
             </View>
             {/* 归档 / 恢复 = a `status` single-field update (no confirm —
                 reversible); done/dropped (terminal) show no status/edit
@@ -714,6 +701,7 @@ export default function ProjectDetailScreen() {
             <View className="mt-2">
               <EditProjectForm
                 project={project}
+                now={now}
                 onDone={() => setShowEditProject(false)}
                 onSaved={() => setShowEditProject(false)}
               />
@@ -764,9 +752,7 @@ export default function ProjectDetailScreen() {
                       <View className="flex-row flex-wrap items-center gap-2">
                         <Tag label={`${action.estMinutes} 分钟`} />
                         <Tag label={`价值 ${action.value}`} />
-                        {action.deadline !== undefined && action.deadline !== null ? (
-                          <Tag label={`截止 ${formatLocalDate(action.deadline)}`} tone="warning" />
-                        ) : null}
+                        <DeadlineChip deadline={action.deadline} now={now} />
                       </View>
                       {action.contextIds.length > 0 ? (
                         <View className="flex-row flex-wrap gap-1.5">

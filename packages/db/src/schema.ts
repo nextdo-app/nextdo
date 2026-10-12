@@ -87,6 +87,12 @@ export const AppSchema = new Schema({
     outcome: column.text,
     value: column.integer,
     status: column.text,
+    /**
+     * ISO datetime (exact moment) — issue #16. Nullable: a project may have
+     * no deadline. Same shape as `next_actions.deadline` on purpose, so one
+     * status/wording function reads both.
+     */
+    deadline: column.text,
   }),
 
   next_actions: new Table(
@@ -383,6 +389,7 @@ export function projectFromRow(row: ProjectRow): Project {
     outcome: row.outcome ?? '',
     value: row.value as Value,
     status: row.status as ProjectStatus,
+    deadline: row.deadline ?? undefined,
   };
 }
 
@@ -393,6 +400,7 @@ export function projectToRow(project: Project): Omit<ProjectRow, 'id'> {
     outcome: project.outcome,
     value: project.value,
     status: project.status,
+    deadline: project.deadline ?? null,
   };
 }
 

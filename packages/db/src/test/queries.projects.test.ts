@@ -354,3 +354,66 @@ describe('projectCardsWatchQuery (design §4.1)', () => {
     expect(isStalled(null, 'not-a-date', FIXTURE_NOW)).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Project deadline (issue #16)
+// ---------------------------------------------------------------------------
+
+describe('project deadline', () => {
+  it('round-trips: set → read back → change → clear', async () => {
+    const { db, close } = await open();
+    try {
+      const project = makeProject();
+      await addProject(db, project);
+      // No deadline is the default, and it reads back as absent (undefined),
+      // not as an empty string — the UI branches on exactly that.
+      expect((await listProjects(db))[0]?.deadline).toBeUndefined();
+
+      const due = toIso(new Date(FIXTURE_NOW.getTime() + 3 * DAY_MS));
+      await updateProject(db, { ...project, deadline: due });
+      expect((await listProjects(db))[0]?.deadline).toBe(due);
+
+      const later = toIso(new Date(FIXTURE_NOW.getTime() + 9 * DAY_MS));
+      await updateProject(db, { ...project, deadline: later });
+      expect((await listProjects(db))[0]?.deadline).toBe(later);
+
+      await updateProject(db, { ...project, deadline: undefined });
+      expect((await listProjects(db))[0]?.deadline).toBeUndefined();
+    } finally {
+      await close();
+    }
+  });
+
+  it('leaves pre-existing rows (NULL column) readable as "no deadline"', async () => {
+    // The column was added to a table that already had rows; those rows must
+    // keep working without a backfill migration.
+    const { db, close } = await open(true);
+    try {
+      const list = await listProjects(db);
+      expect(list).toHaveLength(3);
+      expect(list.every((project) => project.deadline === undefined)).toBe(true);
+    } finally {
+      await close();
+    }
+  });
+
+  it('survives a status transition with the deadline intact', async () => {
+    const { db, close } = await open();
+    try {
+      const project = makeProject();
+      const due = toIso(new Date(FIXTURE_NOW.getTime() + DAY_MS));
+      await addProject(db, { ...project, deadline: due });
+      await updateProject(db, {
+        ...project,
+        deadline: due,
+        status: 'on-hold',
+        updatedAt: toIso(FIXTURE_NOW),
+      });
+      const reloaded = (await listProjects(db))[0];
+      expect(reloaded?.status).toBe('on-hold');
+      expect(reloaded?.deadline).toBe(due);
+    } finally {
+      await close();
+    }
+  });
+});

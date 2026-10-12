@@ -32,7 +32,8 @@ CREATE TABLE projects (
   title TEXT,
   outcome TEXT,
   value INTEGER,
-  status TEXT
+  status TEXT,
+  deadline TEXT
 );
 
 CREATE TABLE next_actions (

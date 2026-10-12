@@ -1,0 +1,31 @@
+{
+  "id": "sync-trigger-frequency-doc",
+  "name": "sync-trigger-frequency-doc",
+  "title": "Document sync trigger timing and frequency (GitHub issue #15)",
+  "description": "明确并文档化数据同步的触发时机、默认频率、手动触发、重试与用户可见提示（对应 GitHub issue #15）",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "printsdfu",
+  "assignee": "printsdfu",
+  "createdAt": "2026-10-11",
+  "completedAt": "2026-10-12",
+  "branch": "main",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "docs/sync.md",
+    "apps/mobile/app/(tabs)/settings.tsx"
+  ],
+  "notes": "验证截图见 .verify/sync-trigger-frequency-doc/",
+  "meta": {
+    "github_issue": "https://github.com/nextdo-app/nextdo/issues/15"
+  }
+}

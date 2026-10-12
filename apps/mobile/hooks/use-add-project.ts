@@ -14,6 +14,11 @@ export interface AddProjectArgs {
   title: string;
   outcome: string;
   value: Value;
+  /**
+   * ISO datetime, already converted from the picker's `YYYY-MM-DD` by
+   * `endOfLocalDayIso` (issue #16). Undefined = no deadline.
+   */
+  deadline?: string;
 }
 
 export interface UseAddProjectResult {
@@ -41,6 +46,7 @@ export function useAddProject(): UseAddProjectResult {
         // New projects start active (PRD: status decisions live in the
         // weekly review, not on the create form).
         status: 'active' as const,
+        ...(args.deadline !== undefined ? { deadline: args.deadline } : {}),
       };
       try {
         await addProject(db, project);

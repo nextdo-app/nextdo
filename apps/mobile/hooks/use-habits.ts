@@ -17,7 +17,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePowerSync } from '@powersync/react';
 import { habitCycleDay, listHabits, listHabitDays, wrapDb } from '@nextdo/db';
-import { localDateKey, logger, type Habit, type HabitDay } from '@nextdo/core';
+import {
+  daysBetweenDateKeys,
+  localDateKey,
+  logger,
+  parseIso,
+  type Habit,
+  type HabitDay,
+} from '@nextdo/core';
 
 export interface HabitWithProgress {
   habit: Habit;
@@ -25,6 +32,13 @@ export interface HabitWithProgress {
   cycleDay: number | null;
   /** HabitDays done INSIDE the current cycle. */
   doneCount: number;
+  /**
+   * Whole days from today until the challenge's first day; null unless the
+   * challenge is booked ahead (a start date later than today). There is no
+   * cycle day to show for such a habit yet, so this is what the list
+   * renders instead of 「第 N/M 天」.
+   */
+  startsInDays: number | null;
   /**
    * Today's HabitDay row — the generated action instance. `null` when the
    * weekday mask / cycle boundary excluded today (no row was seeded), which
@@ -74,7 +88,9 @@ export function useHabits(now: Date): UseHabitsResult {
           // `listHabitDays` is read unfiltered (the cycle count needs every
           // day, not just today's), so today's row is picked out here.
           const today = habitDays.find((day) => day.localDate === localDate) ?? null;
-          rows.push({ habit, cycleDay, doneCount, today });
+          const gap = daysBetweenDateKeys(localDate, localDateKey(parseIso(habit.startedAt)));
+          const startsInDays = gap > 0 ? gap : null;
+          rows.push({ habit, cycleDay, doneCount, startsInDays, today });
         }
         setData(rows);
         setError(null);
