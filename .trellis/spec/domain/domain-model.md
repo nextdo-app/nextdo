@@ -182,6 +182,18 @@ A rule generating a recurring action (Proposal §7).
   `cycleDays: number` (default 21 — a **challenge cycle**, UI copy must not claim
   "21 days guarantees a habit"), `startedAt`,
   `status: "active" | "completed" | "broken"`.
+  - `startedAt` is the challenge's **first day**, chosen by the user (task
+    10-11-habit-start-date-picker). The app writes it at the picked day's local
+    midnight, so `habitCycleDay` advances by whole calendar days; the stored
+    type is unchanged (ISO string) and pre-existing rows keep their meaning.
+  - A start date is legal only from **today onwards** — there is no upper
+    bound, enforced by `checkHabitStartDate`
+    (`packages/core/src/domain/habit-start.ts`). Later than today is fine:
+    `seedHabitDays` lays the whole cycle down up front and the pool query
+    only ever reads a day whose `localDate` is today, so the days before the
+    start date stay inert. Earlier than today is rejected because there is
+    no daily backfill job — a habit created after its own cycle began would
+    carry days the user can never complete.
   - Status transitions: `active → completed` (last day of the cycle done);
     `active → broken` (a day in the cycle missed — detected at the start of the next
     local day: a current-cycle HabitDay with `localDate < today` not done);
@@ -192,6 +204,19 @@ A rule generating a recurring action (Proposal §7).
   - Unique constraint on `(habitId, localDate)`.
   - Generation is `INSERT OR IGNORE` — idempotent, so offline multi-device generation
     never creates duplicates (Proposal §10).
+  - **Seeding lays down the habit's WHOLE cycle** (`seedHabitDays` in
+    `packages/db/src/queries/habits.ts`) — every day from `startedAt` through
+    `startedAt + cycleDays − 1` — rather than stopping at today. There is no
+    daily backfill job, so a day not written at creation time would never
+    appear; pre-seeding is what lets a challenge be booked to start in the
+    future. The pool query filters on `local_date = today`, so the days before
+    the start date never leak into a recommendation. A cycle that is
+    **entirely in the past** ⇒ seed nothing (those rows would only ever read
+    as missed); the weekday mask still skips individual days either way.
+  - `startHabit` returns TODAY's seeded day, which is **null** whenever the
+    challenge is not live yet (booked ahead, or a weekday mask excludes
+    today). That null is an ordinary outcome, **not** a failure — callers
+    must not surface it as an error.
   - "Day" and the window are evaluated in the **device's local calendar timezone** at
     generation time; no server timezone is involved.
   - Persisted `status: "open" | "done"`. **`missed` is derived** (a past localDate
