@@ -69,6 +69,7 @@ jest.mock('expo-router', () => ({
 }));
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { Platform } from 'react-native';
 import { ValidationNextdoError } from '@nextdo/core';
 import { applyClarify, listInboxItems, listNextActions, reclarifyAction } from '@nextdo/db';
 import { router } from 'expo-router';
@@ -831,5 +832,151 @@ describe('WizardBody — done step (explicit exits, no auto-back)', () => {
     fireEvent.press(screen.getByText('完成'));
     expect(router.back).not.toHaveBeenCalled();
     expect(router.replace).toHaveBeenCalledWith('/(tabs)/inbox');
+  });
+});
+
+/**
+ * Keyboard navigation (issue #17).
+ *
+ * The hook only registers DOM handlers under `Platform.OS === 'web'`, and
+ * jest runs this suite as iOS — so each test here pretends to be the desktop
+ * shell first, exactly like the settings suite's `pretendDesktopMac`.
+ */
+describe('WizardBody — keyboard navigation (desktop)', () => {
+  const ORIGINAL_OS = Platform.OS;
+
+  beforeEach(() => {
+    Object.defineProperty(Platform, 'OS', { value: 'web', configurable: true });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(Platform, 'OS', { value: ORIGINAL_OS, configurable: true });
+  });
+
+  /**
+   * The class list of the pressable wrapping `label` — the ring rides on the
+   * option, which sits a few wrappers above the `Text` that carries the label
+   * (RN's `Pressable` inserts its own views), so walk up to find it.
+   */
+  function ringOn(label: string): string {
+    return ringOnElement(screen.getByText(label));
+  }
+
+  /** Same, for an element the test already resolved (labels can repeat). */
+  function ringOnElement(start: ReturnType<typeof screen.getByText>): string {
+    let node: ReturnType<typeof screen.getByText> | null = start;
+    // RN interleaves composite wrappers, so walk generously.
+    for (let depth = 0; node !== null && depth < 8; depth += 1) {
+      const className = node.props?.className;
+      // Every navigable option carries its own base border (the
+      // `secondary` button variant, the q2b row), so that is the marker
+      // for "this wrapper IS the option".
+      if (typeof className === 'string' && className.includes('border-border')) return className;
+      node = node.parent;
+    }
+    return '';
+  }
+
+  /**
+   * Fire a key on the option list. The handler is on the wrapper, so the
+   * event is fired on a child and RNTL walks up to it — the same bubbling a
+   * real keystroke does.
+   */
+  function pressKey(label: string, key: string): void {
+    fireEvent(screen.getByText(label), 'keyDown', { key, preventDefault: jest.fn() });
+  }
+
+  it('opens on the first option with the ring lit, and no other option ringed', () => {
+    renderWizard();
+    expect(ringOn('可以，是行动')).toContain('border-accent');
+    expect(ringOn('不行')).not.toContain('border-accent');
+  });
+
+  it('↓ / ↑ move the ring and wrap around the ends', () => {
+    renderWizard();
+    pressKey('可以，是行动', 'ArrowDown');
+    expect(ringOn('不行')).toContain('border-accent');
+    expect(ringOn('可以，是行动')).not.toContain('border-accent');
+
+    // Wraps forward from the last option back to the first…
+    pressKey('不行', 'ArrowDown');
+    expect(ringOn('可以，是行动')).toContain('border-accent');
+    // …and backward from the first to the last.
+    pressKey('可以，是行动', 'ArrowUp');
+    expect(ringOn('不行')).toContain('border-accent');
+  });
+
+  it('Enter presses the LIT option — ↓ then Enter answers 「不行」, not 「可以」', () => {
+    renderWizard();
+    pressKey('可以，是行动', 'ArrowDown');
+    pressKey('可以，是行动', 'Enter');
+    // 「不行」 branches to q1b; 「可以」 would have gone to q2. Landing on
+    // q1b is the proof that Enter acted on the moved selection.
+    expect(screen.getAllByText('那它更接近哪一类？').length).toBeGreaterThan(0);
+  });
+
+  it('Enter on the untouched first option takes the 「可以」 branch', () => {
+    renderWizard();
+    pressKey('可以，是行动', 'Enter');
+    expect(screen.getAllByText('需要多个步骤才能完成吗？').length).toBeGreaterThan(0);
+  });
+
+  it('a new question resets the ring to its own first option', () => {
+    renderWizard();
+    // Park the ring on q1's SECOND answer, then answer with the mouse.
+    pressKey('可以，是行动', 'ArrowDown');
+    fireEvent.press(screen.getByText('可以，是行动'));
+
+    // q2's own list starts at its own first answer — the ring does not carry
+    // over, and focus has already been handed back to the new question.
+    expect(ringOn('是，拆成项目')).toContain('border-accent');
+    expect(ringOn('否，一步能完成')).not.toContain('border-accent');
+  });
+
+  it('q2b: ↓ walks from the project rows into the fall-through answers', () => {
+    mockedUseProjects.mockReturnValue({
+      data: [ACTIVE_PROJECT, { ...ACTIVE_PROJECT, id: 'proj-3', title: '读书笔记', value: 3 }],
+      error: null,
+    });
+    renderWizard();
+    fireEvent.press(screen.getByText('可以，是行动'));
+    fireEvent.press(screen.getByText('否，一步能完成'));
+
+    // Two projects + 新建项目 + 不属于项目 — the ring starts on the first row.
+    expect(ringOn('毕业论文实验（价值 4）')).toContain('border-accent');
+    pressKey('毕业论文实验（价值 4）', 'ArrowDown');
+    expect(ringOn('读书笔记（价值 3）')).toContain('border-accent');
+    pressKey('读书笔记（价值 3）', 'ArrowDown');
+    expect(ringOn('新建项目')).toContain('border-accent');
+    pressKey('新建项目', 'ArrowDown');
+    expect(ringOn('不属于项目')).toContain('border-accent');
+  });
+
+  it('Enter on the last q2b answer submits that choice (the ring really moved)', () => {
+    mockedUseProjects.mockReturnValue({
+      data: [ACTIVE_PROJECT],
+      error: null,
+    });
+    renderWizard();
+    fireEvent.press(screen.getByText('可以，是行动'));
+    fireEvent.press(screen.getByText('否，一步能完成'));
+    pressKey('毕业论文实验（价值 4）', 'End');
+    // End jumps to the LAST answer, not to the last project row.
+    expect(ringOn('不属于项目')).toContain('border-accent');
+    pressKey('毕业论文实验（价值 4）', 'Enter');
+    // 「不属于项目」 → q3 (the regular chain), not the project form.
+    expect(screen.getAllByText('大约 2 分钟内能完成吗？').length).toBeGreaterThan(0);
+  });
+
+  it('the back control sits outside the keyboard list (no arrow lands on it)', () => {
+    renderWizard();
+    fireEvent.press(screen.getByText('可以，是行动'));
+    expect(screen.getAllByText('← 上一步').length).toBeGreaterThan(0);
+    // `Choices` renders the back button as a sibling of the navigable
+    // container, so no arrow can ever put the ring on it. (The summary card
+    // renders its own 「← 上一步」, hence the getAll.)
+    for (const back of screen.getAllByText('← 上一步')) {
+      expect(ringOnElement(back)).not.toContain('border-accent');
+    }
   });
 });

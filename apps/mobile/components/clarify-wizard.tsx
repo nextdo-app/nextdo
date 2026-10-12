@@ -52,6 +52,7 @@ import {
 import { usePowerSync } from '@powersync/react';
 import type { Context, Project, Value } from '@nextdo/core';
 import { useAppClock } from '@/hooks/use-app-clock';
+import { useOptionKeyboardNav } from '@/hooks/use-option-keyboard-nav';
 import { useInboxItem } from '@/hooks/use-inbox-item';
 import { useActionTitle } from '@/hooks/use-action-title';
 import { useContexts } from '@/hooks/use-contexts';
@@ -493,9 +494,15 @@ export function WizardBody({
             {state.step === 'q1b' && (
               <View className="gap-4">
                 <Question title="那它更接近哪一类？" />
-                <Button label="资料（留个参考）" size="lg" variant="secondary" onPress={() => dispatch({ type: 'answer-q1b', kind: 'reference' })} disabled={submitting} />
-                <Button label="有空再说" size="lg" variant="secondary" onPress={() => dispatch({ type: 'answer-q1b', kind: 'someday' })} disabled={submitting} />
-                <Button label="删除" size="lg" variant="secondary" onPress={() => dispatch({ type: 'answer-q1b', kind: 'trash' })} disabled={submitting} />
+                <Choices
+                  step="q1b"
+                  disabled={submitting}
+                  choices={[
+                    { label: '资料（留个参考）', onPress: () => dispatch({ type: 'answer-q1b', kind: 'reference' }) },
+                    { label: '有空再说', onPress: () => dispatch({ type: 'answer-q1b', kind: 'someday' }) },
+                    { label: '删除', onPress: () => dispatch({ type: 'answer-q1b', kind: 'trash' }) },
+                  ]}
+                />
                 {canGoBack ? (
                   <Button label="← 上一步" variant="ghost" onPress={handleBack} disabled={submitting} />
                 ) : null}
@@ -672,28 +679,127 @@ function Question({ title, sub }: { title: string; sub?: string }) {
   );
 }
 
+/**
+ * One answer to a question. Plain answers render as a `Button`; answers that
+ * carry a description (the project list in q2b) render as a described row.
+ */
+interface Choice {
+  label: string;
+  /** A longer second line; its presence selects the row layout. */
+  detail?: string;
+  /** Small marker on the right of a described row (q2b's 「当前」). */
+  badge?: string;
+  onPress: () => void;
+}
+
+/**
+ * The keyboard-navigable option column (issue #17).
+ *
+ * Every question in the wizard renders through here, which is what makes the
+ * arrow-key loop uniform: arrows move the ring, Enter presses the lit option,
+ * and arriving at a new question resets the ring to its first answer and
+ * pulls keyboard focus back (see `useOptionKeyboardNav`).
+ *
+ * The 「← 上一步」 button sits OUTSIDE this container on purpose — the back
+ * control is not an answer, so it must not be reachable with ↓/Enter.
+ */
+function Choices({
+  step,
+  choices,
+  disabled,
+}: {
+  /** The wizard step — changing it resets the selection (resetKey). */
+  step: string;
+  choices: readonly Choice[];
+  disabled: boolean;
+}) {
+  const nav = useOptionKeyboardNav(choices.length, (index) => {
+    choices[index]?.onPress();
+  }, step);
+
+  return (
+    <View {...nav.containerProps} className="gap-4">
+      {choices.map((choice, index) => {
+        const ring = nav.ringClass(index);
+        if (choice.detail !== undefined) {
+          return (
+            <Pressable
+              key={choice.label}
+              accessibilityRole="button"
+              accessibilityLabel={`挂到项目：${choice.label}`}
+              accessibilityState={{ disabled }}
+              onPress={choice.onPress}
+              disabled={disabled}
+              className={cn(
+                'rounded-lg border border-border bg-surface p-3.5 dark:border-border-dark dark:bg-surface-dark',
+                ring,
+              )}
+            >
+              <View className="flex-row items-center gap-2">
+                <Text className="flex-1 font-sans text-base text-ink dark:text-ink-dark">
+                  {choice.label}
+                  {choice.detail !== undefined ? `（${choice.detail}）` : ''}
+                </Text>
+                {choice.badge !== undefined ? (
+                  <Text className="rounded-full bg-accent/15 px-2 py-0.5 font-sans text-xs font-medium text-accent dark:bg-accent-dark/20 dark:text-accent-dark">
+                    {choice.badge}
+                  </Text>
+                ) : null}
+              </View>
+            </Pressable>
+          );
+        }
+        return (
+          <Button
+            key={choice.label}
+            label={choice.label}
+            size="lg"
+            variant="secondary"
+            onPress={choice.onPress}
+            disabled={disabled}
+            className={ring}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
+/** A question card: the prompt, its answers, and the back control. */
 function QuestionCard({ state, dispatch, onDoNow, disabled, canGoBack, onBack, projects, currentProjectId }: QuestionCardProps) {
+  const back = canGoBack ? (
+    <Button label="← 上一步" variant="ghost" onPress={onBack} disabled={disabled} />
+  ) : null;
+
   switch (state.step) {
     case 'q1':
       return (
         <View className="gap-4">
           <Question title="可以变成下一步行动吗？" sub="这件事能由你做成一件具体的事吗？" />
-          <Button label="可以，是行动" size="lg" variant="secondary" onPress={() => dispatch({ type: 'answer-q1', actionable: true })} disabled={disabled} />
-          <Button label="不行" size="lg" variant="secondary" onPress={() => dispatch({ type: 'answer-q1', actionable: false })} disabled={disabled} />
-          {canGoBack ? (
-            <Button label="← 上一步" variant="ghost" onPress={onBack} disabled={disabled} />
-          ) : null}
+          <Choices
+            step="q1"
+            disabled={disabled}
+            choices={[
+              { label: '可以，是行动', onPress: () => dispatch({ type: 'answer-q1', actionable: true }) },
+              { label: '不行', onPress: () => dispatch({ type: 'answer-q1', actionable: false }) },
+            ]}
+          />
+          {back}
         </View>
       );
     case 'q2':
       return (
         <View className="gap-4">
           <Question title="需要多个步骤才能完成吗？" />
-          <Button label="是，拆成项目" size="lg" variant="secondary" onPress={() => dispatch({ type: 'answer-q2', multipleSteps: true })} disabled={disabled} />
-          <Button label="否，一步能完成" size="lg" variant="secondary" onPress={() => dispatch({ type: 'answer-q2', multipleSteps: false })} disabled={disabled} />
-          {canGoBack ? (
-            <Button label="← 上一步" variant="ghost" onPress={onBack} disabled={disabled} />
-          ) : null}
+          <Choices
+            step="q2"
+            disabled={disabled}
+            choices={[
+              { label: '是，拆成项目', onPress: () => dispatch({ type: 'answer-q2', multipleSteps: true }) },
+              { label: '否，一步能完成', onPress: () => dispatch({ type: 'answer-q2', multipleSteps: false }) },
+            ]}
+          />
+          {back}
         </View>
       );
     case 'q2b':
@@ -707,86 +813,93 @@ function QuestionCard({ state, dispatch, onDoNow, disabled, canGoBack, onBack, p
                 : '挂到已有项目下（价值默认跟随项目），或新建 / 不挂。'
             }
           />
-          {projects.map((project) => (
-            <Pressable
-              key={project.id}
-              accessibilityRole="button"
-              accessibilityLabel={`挂到项目：${project.title}`}
-              onPress={() =>
-                dispatch({
-                  type: 'answer-q2b',
-                  choice: 'attach',
-                  projectId: project.id,
-                  projectValue: project.value,
-                  projectTitle: project.title,
-                })
-              }
-              disabled={disabled}
-              className="rounded-lg border border-border bg-surface p-3.5 dark:border-border-dark dark:bg-surface-dark"
-            >
-              <View className="flex-row items-center gap-2">
-                <Text className="flex-1 font-sans text-base text-ink dark:text-ink-dark">
-                  {project.title}（价值 {project.value}）
-                </Text>
-                {currentProjectId === project.id ? (
-                  <Text className="rounded-full bg-accent/15 px-2 py-0.5 font-sans text-xs font-medium text-accent dark:bg-accent-dark/20 dark:text-accent-dark">
-                    当前
-                  </Text>
-                ) : null}
-              </View>
-            </Pressable>
-          ))}
-          <Button label="新建项目" size="lg" variant="secondary" onPress={() => dispatch({ type: 'answer-q2b', choice: 'new-project' })} disabled={disabled} />
-          {state.multipleSteps ? null : (
-            <Button label="不属于项目" size="lg" variant="secondary" onPress={() => dispatch({ type: 'answer-q2b', choice: 'none' })} disabled={disabled} />
-          )}
-          {canGoBack ? (
-            <Button label="← 上一步" variant="ghost" onPress={onBack} disabled={disabled} />
-          ) : null}
+          {/* The project rows and the two fall-through answers share one
+              keyboard list, so ↓ walks straight from the last project into
+              「新建项目」 (issue #17). */}
+          <Choices
+            step="q2b"
+            disabled={disabled}
+            choices={[
+              ...projects.map((project) => ({
+                label: project.title,
+                detail: `价值 ${project.value}`,
+                ...(currentProjectId === project.id ? { badge: '当前' } : {}),
+                onPress: () =>
+                  dispatch({
+                    type: 'answer-q2b',
+                    choice: 'attach',
+                    projectId: project.id,
+                    projectValue: project.value,
+                    projectTitle: project.title,
+                  }),
+              })),
+              { label: '新建项目', onPress: () => dispatch({ type: 'answer-q2b', choice: 'new-project' }) },
+              ...(state.multipleSteps
+                ? []
+                : [{ label: '不属于项目', onPress: () => dispatch({ type: 'answer-q2b', choice: 'none' }) }]),
+            ]}
+          />
+          {back}
         </View>
       );
     case 'q3':
       return (
         <View className="gap-4">
           <Question title="大约 2 分钟内能完成吗？" />
-          <Button label="是，2 分钟内" size="lg" variant="secondary" onPress={() => dispatch({ type: 'answer-q3', twoMinutes: true })} disabled={disabled} />
-          <Button label="否" size="lg" variant="secondary" onPress={() => dispatch({ type: 'answer-q3', twoMinutes: false })} disabled={disabled} />
-          {canGoBack ? (
-            <Button label="← 上一步" variant="ghost" onPress={onBack} disabled={disabled} />
-          ) : null}
+          <Choices
+            step="q3"
+            disabled={disabled}
+            choices={[
+              { label: '是，2 分钟内', onPress: () => dispatch({ type: 'answer-q3', twoMinutes: true }) },
+              { label: '否', onPress: () => dispatch({ type: 'answer-q3', twoMinutes: false }) },
+            ]}
+          />
+          {back}
         </View>
       );
     case 'q3b':
       return (
         <View className="gap-4">
           <Question title="现在就做掉吗？" sub="做完直接记为完成，不再排队。" />
-          <Button label="是，现在就做完" size="lg" variant="secondary" onPress={onDoNow} disabled={disabled} />
-          <Button label="否，记成行动" size="lg" variant="secondary" onPress={() => dispatch({ type: 'answer-q3b', completedOnTheSpot: false })} disabled={disabled} />
-          {canGoBack ? (
-            <Button label="← 上一步" variant="ghost" onPress={onBack} disabled={disabled} />
-          ) : null}
+          <Choices
+            step="q3b"
+            disabled={disabled}
+            choices={[
+              { label: '是，现在就做完', onPress: onDoNow },
+              { label: '否，记成行动', onPress: () => dispatch({ type: 'answer-q3b', completedOnTheSpot: false }) },
+            ]}
+          />
+          {back}
         </View>
       );
     case 'q4':
       return (
         <View className="gap-4">
           <Question title="应该由你完成吗？" />
-          <Button label="是，我的事" size="lg" variant="secondary" onPress={() => dispatch({ type: 'answer-q4', myResponsibility: true })} disabled={disabled} />
-          <Button label="否，在等别人" size="lg" variant="secondary" onPress={() => dispatch({ type: 'answer-q4', myResponsibility: false })} disabled={disabled} />
-          {canGoBack ? (
-            <Button label="← 上一步" variant="ghost" onPress={onBack} disabled={disabled} />
-          ) : null}
+          <Choices
+            step="q4"
+            disabled={disabled}
+            choices={[
+              { label: '是，我的事', onPress: () => dispatch({ type: 'answer-q4', myResponsibility: true }) },
+              { label: '否，在等别人', onPress: () => dispatch({ type: 'answer-q4', myResponsibility: false }) },
+            ]}
+          />
+          {back}
         </View>
       );
     case 'q5':
       return (
         <View className="gap-4">
           <Question title="必须在固定日期/时间执行吗？" />
-          <Button label="是，固定时间" size="lg" variant="secondary" onPress={() => dispatch({ type: 'answer-q5', fixedTime: true })} disabled={disabled} />
-          <Button label="否，普通行动" size="lg" variant="secondary" onPress={() => dispatch({ type: 'answer-q5', fixedTime: false })} disabled={disabled} />
-          {canGoBack ? (
-            <Button label="← 上一步" variant="ghost" onPress={onBack} disabled={disabled} />
-          ) : null}
+          <Choices
+            step="q5"
+            disabled={disabled}
+            choices={[
+              { label: '是，固定时间', onPress: () => dispatch({ type: 'answer-q5', fixedTime: true }) },
+              { label: '否，普通行动', onPress: () => dispatch({ type: 'answer-q5', fixedTime: false }) },
+            ]}
+          />
+          {back}
         </View>
       );
   }
