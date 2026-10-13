@@ -12,6 +12,7 @@ import {
   detectMacArch,
   detectUpdatePlatform,
   fetchDualChannelReleases,
+  getAutoUpdateCheckPreference,
   getChannelLabel,
   getReleaseChannel,
   getUpdateChannelPreference,
@@ -21,6 +22,7 @@ import {
   pickDownloads,
   pollDesktopDownloadProgress,
   releasePageUrl,
+  setAutoUpdateCheckPreference,
   setUpdateChannelPreference,
   startDesktopDownload,
   type DesktopDownloadProgress,
@@ -42,6 +44,7 @@ export interface AvailableUpdateOption {
   downloads: ReleaseDownload[];
   isPreferred: boolean;
   isNewerThanCurrent: boolean;
+  notes: string | null;
 }
 
 /** 一次检查的结论。 */
@@ -84,6 +87,10 @@ export interface UseAppUpdateResult {
   preferredChannel: UpdateChannelPreference;
   /** 切换并持久化更新渠道偏好。 */
   setPreferredChannel: (pref: UpdateChannelPreference) => Promise<void>;
+  /** 是否开启自动检查更新（默认开启）。 */
+  autoCheckEnabled: boolean;
+  /** 切换并持久化自动检查更新偏好。 */
+  setAutoCheckEnabled: (enabled: boolean) => Promise<void>;
   /** 检查进行中（按钮禁用 + 「检查中…」）。 */
   checking: boolean;
   /** 上一次检查的结论；还没查过是 `null`。 */
@@ -135,6 +142,7 @@ export function useAppUpdate(): UseAppUpdateResult {
   const [preferredChannel, setPreferredChannelState] = useState<UpdateChannelPreference>(
     channel !== 'stable' ? 'beta' : 'stable',
   );
+  const [autoCheckEnabled, setAutoCheckEnabledState] = useState(true);
 
   // 架构要问系统（桌面壳走 IPC，浏览器走 UA 高熵字段），是异步的，所以是 state。
   const [macArch, setMacArch] = useState<MacArch | null>(null);
@@ -152,6 +160,9 @@ export function useAppUpdate(): UseAppUpdateResult {
     void getUpdateChannelPreference().then((pref) => {
       if (mountedRef.current) setPreferredChannelState(pref);
     });
+    void getAutoUpdateCheckPreference().then((enabled) => {
+      if (mountedRef.current) setAutoCheckEnabledState(enabled);
+    });
     return () => {
       mountedRef.current = false;
       stopDesktopUpdatePolling();
@@ -168,6 +179,11 @@ export function useAppUpdate(): UseAppUpdateResult {
   const setPreferredChannel = useCallback(async (pref: UpdateChannelPreference) => {
     setPreferredChannelState(pref);
     await setUpdateChannelPreference(pref);
+  }, []);
+
+  const setAutoCheckEnabled = useCallback(async (enabled: boolean) => {
+    setAutoCheckEnabledState(enabled);
+    await setAutoUpdateCheckPreference(enabled);
   }, []);
 
   const check = useCallback(() => {
@@ -211,6 +227,7 @@ export function useAppUpdate(): UseAppUpdateResult {
           downloads: stableDownloads,
           isPreferred: preferredChannel === 'stable',
           isNewerThanCurrent: true,
+          notes: stable.notes,
         });
       }
       if (betaIsNewer && beta !== null) {
@@ -223,6 +240,7 @@ export function useAppUpdate(): UseAppUpdateResult {
           downloads: betaDownloads,
           isPreferred: preferredChannel === 'beta',
           isNewerThanCurrent: true,
+          notes: beta.notes,
         });
       }
 
@@ -354,6 +372,8 @@ export function useAppUpdate(): UseAppUpdateResult {
     channelLabel,
     preferredChannel,
     setPreferredChannel,
+    autoCheckEnabled,
+    setAutoCheckEnabled,
     checking,
     outcome,
     selectedVersion,

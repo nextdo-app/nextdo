@@ -973,6 +973,39 @@ export default function SettingsScreen() {
             </View>
           </View>
 
+          {/* 自动检查更新开关 */}
+          <View className="flex-row items-center justify-between py-1 border-t border-border/40 dark:border-border-dark/40 pt-2">
+            <View className="gap-0.5 flex-1 pr-3">
+              <Text className="font-sans text-xs font-semibold text-ink dark:text-ink-dark">
+                自动检查更新
+              </Text>
+              <Text className="font-sans text-[11px] text-muted dark:text-muted-dark leading-tight">
+                开启后应用启动时自动检测新版本，若有更新将展示更新说明供您确认
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityLabel="自动检查更新"
+              accessibilityState={{ checked: update.autoCheckEnabled }}
+              onPress={() => {
+                void update.setAutoCheckEnabled(!update.autoCheckEnabled);
+              }}
+              className={cn(
+                'h-6 w-11 rounded-full p-0.5 justify-center',
+                update.autoCheckEnabled
+                  ? 'bg-accent dark:bg-accent-dark'
+                  : 'bg-muted/40 dark:bg-muted-dark/40',
+              )}
+            >
+              <View
+                className={cn(
+                  'h-5 w-5 rounded-full bg-white shadow-sm',
+                  update.autoCheckEnabled ? 'self-end' : 'self-start',
+                )}
+              />
+            </Pressable>
+          </View>
+
           <Button
             label={update.checking ? '检查中…' : '检查更新'}
             disabled={update.checking}
@@ -1118,6 +1151,25 @@ export default function SettingsScreen() {
                   ) : null}
                 </View>
               )}
+              {/* 当前选定版本的 ChangeLog 更新说明展示 */}
+              {(() => {
+                const selectedOpt =
+                  update.outcome.options.find((opt) => opt.version === update.selectedVersion) ??
+                  update.outcome.options[0];
+                if (!selectedOpt?.notes) return null;
+                return (
+                  <View className="gap-1 rounded-xl border border-border/70 bg-surface-container/30 p-3 dark:border-border-dark/70 dark:bg-surface-container-dark/30">
+                    <Text className="font-sans text-xs font-semibold text-ink dark:text-ink-dark">
+                      版本更新说明 (v{selectedOpt.version})
+                    </Text>
+                    <ScrollView nestedScrollEnabled className="max-h-40">
+                      <Text className="font-sans text-xs leading-relaxed text-ink dark:text-ink-dark whitespace-pre-wrap">
+                        {selectedOpt.notes}
+                      </Text>
+                    </ScrollView>
+                  </View>
+                );
+              })()}
               {update.outcome.downloads.length === 0 ? (
                 <Text className="font-sans text-xs text-muted dark:text-muted-dark">
                   没能识别你的设备型号，请在下方 release 页面选择安装包。

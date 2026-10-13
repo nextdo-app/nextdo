@@ -648,6 +648,47 @@ describe('settings update-check block', () => {
     expect(screen.getByText('发现新版本 v0.1.10')).toBeTruthy();
   });
 
+  it('allows toggling auto update check switch', async () => {
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+
+    expect(screen.getByText('自动检查更新')).toBeTruthy();
+    const switchBtn = screen.getByRole('switch', { name: '自动检查更新' });
+    expect(switchBtn).toBeTruthy();
+    // 默认开启
+    expect(switchBtn.props.accessibilityState?.checked).toBe(true);
+
+    fireEvent.press(switchBtn);
+    await flush();
+
+    expect(switchBtn.props.accessibilityState?.checked).toBe(false);
+
+    fireEvent.press(switchBtn);
+    await flush();
+
+    expect(switchBtn.props.accessibilityState?.checked).toBe(true);
+  });
+
+  it('renders changelog release notes when available for selected version', async () => {
+    const atomXmlWithNotes = `
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <entry>
+          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.7"/>
+          <updated>2026-10-13T08:00:00Z</updated>
+          <content type="html">&lt;p&gt;Key changes:&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Auto update checking&lt;/li&gt;&lt;/ul&gt;</content>
+        </entry>
+      </feed>
+    `;
+    mockUpdateFetch.mockResolvedValue(atomFeedResponse(atomXmlWithNotes));
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+
+    await pressCheckForUpdate();
+
+    expect(screen.getByText('版本更新说明 (v0.1.7)')).toBeTruthy();
+    expect(screen.getByText(/Auto update checking/)).toBeTruthy();
+  });
+
   it('allows switching update channel preference between stable and beta', async () => {
     renderRouter('app', { initialUrl: '/(tabs)/settings' });
     await flush();

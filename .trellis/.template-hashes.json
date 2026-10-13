@@ -159,7 +159,7 @@
     ".codex/hooks/inject-workflow-state.py": "71ef1aa1ed1051a697cae3c9ebffa518958a3bbd4d147434f382348829915f8c",
     ".codex/hooks.json": "85a58ba7cdf1e19e7f75ddcc64e5680180c487ca266a74bd5005f31abeee2e02",
     ".codex/config.toml": "9f2d20e28f0bc9c886312eca3ad3bba41533ef4615aaaafe25e98152302267bb",
-    "AGENTS.md": "6cacfe99748b435d0660c2463c697bc323d53798aecf3492283ca8eac1b29682",
+    "AGENTS.md": "0d897205b5afae40b71fab4c3ff5e5721368ba4fe8e2a086504aa0a6149e46fc",
     ".trellis/agents/check.md": "edb4f57361407249a53bf5998ebf91c40d2b969e826a2c5e1b4e813a08bcb175",
     ".trellis/agents/implement.md": "66e25ad046c94869442834bc3cdfbd5a9a7412d3ff54561d64d2886552c27e87",
     ".trellis/config.yaml": "a966e6d374e9e6ff283cf761ccd99631323ee1754856cef51ad154ca0afb9dfa",

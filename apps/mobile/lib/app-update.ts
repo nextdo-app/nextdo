@@ -180,6 +180,7 @@ export function getChannelLabel(channel: ReleaseChannel): string {
 export type UpdateChannelPreference = 'stable' | 'beta';
 
 export const UPDATE_CHANNEL_PREFERENCE_KEY = 'nextdo.settings.update-channel-preference';
+export const AUTO_UPDATE_CHECK_KEY = 'nextdo.settings.auto-update-check';
 
 interface KeyValue {
   getItem(key: string): Promise<string | null>;
@@ -268,6 +269,32 @@ export async function setUpdateChannelPreference(pref: UpdateChannelPreference):
   }
 }
 
+/**
+ * 获取是否开启自动检查更新（默认开启）。
+ */
+export async function getAutoUpdateCheckPreference(): Promise<boolean> {
+  try {
+    const stored = await preferenceStorage.getItem(AUTO_UPDATE_CHECK_KEY);
+    if (stored !== null) {
+      return stored === 'true';
+    }
+  } catch {
+    // 降级使用默认
+  }
+  return true;
+}
+
+/**
+ * 持久化保存是否开启自动检查更新。
+ */
+export async function setAutoUpdateCheckPreference(enabled: boolean): Promise<void> {
+  try {
+    await preferenceStorage.setItem(AUTO_UPDATE_CHECK_KEY, enabled ? 'true' : 'false');
+  } catch {
+    // 忽略异常
+  }
+}
+
 /* ------------------------------------------------------------------ *
  * tag 解析 + 按平台拼安装包
  * ------------------------------------------------------------------ */
@@ -279,6 +306,42 @@ export interface ReleaseInfo {
   channel: ReleaseChannel;
   channelLabel: string;
   publishedAt: string | null;
+  /** 该版本的更新说明（ChangeLog / Release Notes）。 */
+  notes: string | null;
+}
+
+/**
+ * 将 Atom feed 中 HTML 格式的更新说明清洗为易读纯文本格式。
+ */
+export function cleanAtomReleaseNotes(rawHtml: string): string | null {
+  if (!rawHtml || rawHtml.trim() === '') return null;
+  const decoded = rawHtml
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/gi, '\n\n$1\n\n')
+    .replace(/<p[^>]*>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '\n• ')
+    .replace(/<\/li>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<strong>(.*?)<\/strong>/gi, '$1')
+    .replace(/<b>(.*?)<\/b>/gi, '$1')
+    .replace(/<code>(.*?)<\/code>/gi, '`$1`')
+    .replace(/<a[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi, '$2 ($1)')
+    .replace(/<[^>]+>/g, '');
+
+  const cleaned = decoded
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line, idx, arr) => !(line === '' && arr[idx - 1] === ''))
+    .join('\n')
+    .trim();
+
+  return cleaned !== '' ? cleaned : null;
 }
 
 /** 格式化 ISO 时间为简洁日期（YYYY-MM-DD）。 */
@@ -365,12 +428,16 @@ export function parseAtomFeedEntries(atomXml: string): ReleaseInfo[] {
     const publishedAt = updatedMatch && updatedMatch[1] ? updatedMatch[1].trim() : null;
     const channel = getReleaseChannel(version);
 
+    const contentMatch = /<content[^>]*>([\s\S]*?)<\/content>/.exec(block);
+    const notes = contentMatch && contentMatch[1] ? cleanAtomReleaseNotes(contentMatch[1]) : null;
+
     entries.push({
       tag: rawTag,
       version,
       channel,
       channelLabel: getChannelLabel(channel),
       publishedAt,
+      notes,
     });
   }
   return entries;
@@ -751,6 +818,7 @@ export async function fetchDualChannelReleases(): Promise<DualChannelResult> {
           channel,
           channelLabel: getChannelLabel(channel),
           publishedAt: null,
+          notes: null,
         };
         return {
           ok: true,
@@ -779,6 +847,7 @@ export async function fetchDualChannelReleases(): Promise<DualChannelResult> {
       channel: 'stable',
       channelLabel: '正式版',
       publishedAt: null,
+      notes: null,
     };
     return { ok: true, releases: { stable: stableInfo, beta: null } };
   }

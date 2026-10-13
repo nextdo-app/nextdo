@@ -793,7 +793,10 @@ pub fn run() {
                 let url = tauri::WebviewUrl::App(std::path::PathBuf::from(""));
                 tauri::WebviewWindowBuilder::new(app, "main", url)
                     .title("Nextdo")
-                    .inner_size(1200.0, 800.0)
+                    .inner_size(1024.0, 720.0)
+                    .min_inner_size(800.0, 560.0)
+                    .resizable(true)
+                    .center()
                     .build()?;
             }
 

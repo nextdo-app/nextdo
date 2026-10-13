@@ -11,12 +11,14 @@
 import { Linking } from 'react-native';
 import {
   UPDATE_PROXY_PREFIX,
+  cleanAtomReleaseNotes,
   compareVersions,
   currentAppChannel,
   detectMacArch,
   fetchDualChannelReleases,
   fetchLatestRelease,
   formatReleaseDate,
+  getAutoUpdateCheckPreference,
   getChannelLabel,
   getReleaseChannel,
   getUpdateChannelPreference,
@@ -35,6 +37,7 @@ import {
   pollDesktopDownloadProgress,
   releasePageUrl,
   releasesAtomUrl,
+  setAutoUpdateCheckPreference,
   setUpdateChannelPreference,
   startDesktopDownload,
   viaProxy,
@@ -644,6 +647,7 @@ describe('parseAtomFeedEntries & pickDualChannelReleases (Issue #18)', () => {
       channel: 'beta',
       channelLabel: '测试版',
       publishedAt: '2026-10-12T08:00:00Z',
+      notes: null,
     });
     expect(entries[1]).toEqual({
       tag: 'v0.1.4',
@@ -651,7 +655,43 @@ describe('parseAtomFeedEntries & pickDualChannelReleases (Issue #18)', () => {
       channel: 'stable',
       channelLabel: '正式版',
       publishedAt: '2026-10-10T12:00:00Z',
+      notes: null,
     });
+  });
+
+  it('parses content HTML into clean release notes', () => {
+    const atomWithContent = `
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <entry>
+          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.6"/>
+          <updated>2026-10-13T08:00:00Z</updated>
+          <content type="html">&lt;h2&gt;What's Changed&lt;/h2&gt;&lt;ul&gt;&lt;li&gt;feat: add auto update check by @alice&lt;/li&gt;&lt;li&gt;fix: desktop window layout&lt;/li&gt;&lt;/ul&gt;</content>
+        </entry>
+      </feed>
+    `;
+    const entries = parseAtomFeedEntries(atomWithContent);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.notes).toContain("What's Changed");
+    expect(entries[0]?.notes).toContain('• feat: add auto update check by @alice');
+    expect(entries[0]?.notes).toContain('• fix: desktop window layout');
+  });
+
+  it('cleanAtomReleaseNotes strips HTML tags and normalizes list and headings', () => {
+    expect(cleanAtomReleaseNotes('')).toBeNull();
+    const html = '<p>Hello <strong>World</strong></p><ul><li>First Item</li><li>Second Item</li></ul>';
+    const cleaned = cleanAtomReleaseNotes(html);
+    expect(cleaned).toBe('Hello World\n\n• First Item\n• Second Item');
+  });
+
+  it('persists and retrieves auto update check preference', async () => {
+    // 默认开启
+    expect(await getAutoUpdateCheckPreference()).toBe(true);
+
+    await setAutoUpdateCheckPreference(false);
+    expect(await getAutoUpdateCheckPreference()).toBe(false);
+
+    await setAutoUpdateCheckPreference(true);
+    expect(await getAutoUpdateCheckPreference()).toBe(true);
   });
 
   it('pickDualChannelReleases identifies latest stable and beta separately', () => {
@@ -662,6 +702,7 @@ describe('parseAtomFeedEntries & pickDualChannelReleases (Issue #18)', () => {
         channel: 'beta',
         channelLabel: '测试版',
         publishedAt: '2026-10-11T00:00:00Z',
+        notes: null,
       },
       {
         tag: 'v0.1.5-beta.2',
@@ -669,6 +710,7 @@ describe('parseAtomFeedEntries & pickDualChannelReleases (Issue #18)', () => {
         channel: 'beta',
         channelLabel: '测试版',
         publishedAt: '2026-10-12T00:00:00Z',
+        notes: null,
       },
       {
         tag: 'v0.1.4',
@@ -676,6 +718,7 @@ describe('parseAtomFeedEntries & pickDualChannelReleases (Issue #18)', () => {
         channel: 'stable',
         channelLabel: '正式版',
         publishedAt: '2026-10-10T00:00:00Z',
+        notes: null,
       },
       {
         tag: 'v0.1.3',
@@ -683,6 +726,7 @@ describe('parseAtomFeedEntries & pickDualChannelReleases (Issue #18)', () => {
         channel: 'stable',
         channelLabel: '正式版',
         publishedAt: '2026-10-01T00:00:00Z',
+        notes: null,
       },
     ];
 
