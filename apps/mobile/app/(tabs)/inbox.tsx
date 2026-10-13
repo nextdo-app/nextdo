@@ -185,8 +185,9 @@ export default function InboxScreen() {
   return (
     <View
       style={{ paddingTop: topPadding }}
-      className="flex-1 w-full max-w-3xl mx-auto bg-canvas px-4 pb-4 dark:bg-canvas-dark relative"
+      className="flex-1 w-full bg-canvas px-4 pb-4 dark:bg-canvas-dark relative"
     >
+      <View className="flex-1 w-full max-w-3xl mx-auto">
       {/* Header block (design §2) */}
       <Text className="font-display text-3xl font-bold tracking-tight text-ink dark:text-ink-dark">
         清空大脑
@@ -264,6 +265,7 @@ export default function InboxScreen() {
           )}
         </>
       )}
+      </View>
 
       {/* Mobile Ergonomic Floating Action Button (Thumb Zone):
        * Anchored at bottom-right for effortless one-handed thumb capture */}

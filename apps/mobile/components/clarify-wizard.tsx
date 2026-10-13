@@ -410,12 +410,13 @@ export function WizardBody({
   return (
     <View
       style={{ paddingTop: topPadding }}
-      className="flex-1 w-full max-w-3xl mx-auto bg-canvas px-4 pb-4 dark:bg-canvas-dark"
+      className="flex-1 w-full bg-canvas px-4 pb-4 dark:bg-canvas-dark"
     >
       {/* The form steps can exceed the viewport (project / calendar forms
        * on a 800px-tall desktop window, or the keyboard on phone) — the
        * whole body scrolls, same pattern as the review screens. */}
       <ScrollView className="flex-1" keyboardShouldPersistTaps="handled">
+      <View className="w-full max-w-3xl mx-auto">
       {/* 1. header row: unified back button + step navigation on left, status tag on right */}
       <View className="mb-3.5 flex-row items-center justify-between">
         <View className="flex-row items-center gap-2">
@@ -543,6 +544,7 @@ export function WizardBody({
           <DecisionSummaryCard mode={state.mode} answered={state.answered} />
         </View>
       )}
+      </View>
       </ScrollView>
     </View>
   );
