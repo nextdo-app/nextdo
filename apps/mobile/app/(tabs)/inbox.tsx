@@ -24,6 +24,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { FlatList, Pressable, Text, TextInput, View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Button, Card, EmptyState, Tag } from '@nextdo/ui';
@@ -184,8 +185,9 @@ export default function InboxScreen() {
   return (
     <View
       style={{ paddingTop: topPadding }}
-      className="flex-1 bg-canvas px-4 pb-4 dark:bg-canvas-dark"
+      className="flex-1 w-full bg-canvas px-4 pb-4 dark:bg-canvas-dark relative"
     >
+      <View className="flex-1 w-full max-w-3xl mx-auto">
       {/* Header block (design §2) */}
       <Text className="font-display text-3xl font-bold tracking-tight text-ink dark:text-ink-dark">
         清空大脑
@@ -254,7 +256,7 @@ export default function InboxScreen() {
             <FlatList
               data={data}
               keyExtractor={(item) => item.id}
-              contentContainerClassName="gap-2.5 pb-6"
+              contentContainerClassName="gap-2.5 pb-20 md:pb-6"
               renderItem={({ item }) => (
                 <InboxRow item={item} now={now} onTrash={(id) => void trash(id)} />
               )}
@@ -263,6 +265,28 @@ export default function InboxScreen() {
           )}
         </>
       )}
+      </View>
+
+      {/* Mobile Ergonomic Floating Action Button (Thumb Zone):
+       * Anchored at bottom-right for effortless one-handed thumb capture */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="快速记录"
+        onPress={() => setShowQuickCapture(true)}
+        className="absolute bottom-6 right-5 h-13 w-13 items-center justify-center rounded-full bg-accent shadow-xl active:scale-95 dark:bg-accent-dark md:hidden z-10"
+        style={{
+          width: 52,
+          height: 52,
+          borderRadius: 26,
+          elevation: 6,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.25,
+          shadowRadius: 6,
+        }}
+      >
+        <Ionicons name="add" size={28} color="#ffffff" />
+      </Pressable>
 
       {/* On-launch & triggerable quick capture modal (R1: onCaptured hands
        *  the saved item to the Clarify wizard) */}

@@ -26,6 +26,7 @@ import { PickerField } from '@/components/picker-field';
 import { useContexts } from '@/hooks/use-contexts';
 import { useAppClock } from '@/hooks/use-app-clock';
 import { useUpdateNextAction } from '@/hooks/use-update-next-action';
+import { useAppInsets } from '@/lib/use-app-insets';
 import { endOfLocalDayIso } from '@/lib/clarify-flow';
 import { errorMessage } from '@/lib/error-messages';
 
@@ -146,6 +147,9 @@ export const EditActionModal = memo(function EditActionModal({
     }
   };
 
+  const insets = useAppInsets();
+  const bottomPadding = Math.max(insets.bottom, 12);
+
   return (
     <Modal
       visible={visible}
@@ -155,7 +159,7 @@ export const EditActionModal = memo(function EditActionModal({
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        className="flex-1 justify-end bg-black/40"
+        className="flex-1 justify-end bg-black/40 md:items-center md:justify-center md:p-6"
       >
         <Pressable
           accessibilityRole="button"
@@ -164,12 +168,15 @@ export const EditActionModal = memo(function EditActionModal({
           className="flex-1"
         />
 
-        <View className="max-h-[85%] rounded-t-3xl border-t border-border/80 bg-surface p-5 pt-3 shadow-2xl dark:border-border-dark dark:bg-surface-dark">
-          {/* Top drag handle indicator */}
-          <View className="mx-auto mb-3 h-1 w-10 rounded-full bg-border dark:bg-border-dark" />
+        <View
+          style={{ paddingBottom: bottomPadding }}
+          className="max-h-[90%] w-full rounded-t-3xl border-t border-border/80 bg-surface p-5 pt-3 shadow-2xl dark:border-border-dark dark:bg-surface-dark md:max-h-[85vh] md:max-w-lg md:rounded-2xl md:border md:p-6"
+        >
+          {/* Top drag handle indicator (mobile only) */}
+          <View className="mx-auto mb-3 h-1 w-10 rounded-full bg-border dark:bg-border-dark md:hidden" />
 
           {/* Modal Header */}
-          <View className="mb-4 flex-row items-center justify-between">
+          <View className="mb-3.5 flex-row items-center justify-between">
             <View className="flex-row items-center gap-2">
               <Text className="font-display text-base font-bold tracking-tight text-ink dark:text-ink-dark">
                 编辑行动
@@ -301,22 +308,22 @@ export const EditActionModal = memo(function EditActionModal({
                 {errorMessage(error)}
               </Text>
             ) : null}
-
-            {/* Action Buttons */}
-            <View className="mt-2 flex-row gap-2.5 pb-4">
-              <Button
-                label="保存修改"
-                className="flex-1"
-                disabled={!canSubmit}
-                onPress={() => void handleSave()}
-              />
-              <Button
-                label="取消"
-                variant="secondary"
-                onPress={onClose}
-              />
-            </View>
           </ScrollView>
+
+          {/* Ergonomic Action Buttons: anchored at the bottom thumb zone */}
+          <View className="mt-3 flex-row gap-2.5 border-t border-border/40 pt-3 dark:border-border-dark/40">
+            <Button
+              label="保存修改"
+              className="flex-1"
+              disabled={!canSubmit}
+              onPress={() => void handleSave()}
+            />
+            <Button
+              label="取消"
+              variant="secondary"
+              onPress={onClose}
+            />
+          </View>
 
           {showPicker ? (
             <DateTimePicker

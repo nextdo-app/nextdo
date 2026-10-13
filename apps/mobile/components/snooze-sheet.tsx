@@ -87,15 +87,15 @@ export function SnoozeSheet({ open, now, onSelect, onClose }: SnoozeSheetProps) 
   return (
     <>
       <Modal visible={open} transparent animationType="slide" onRequestClose={onClose}>
-        <View className="flex-1 justify-end bg-black/40">
+        <View className="flex-1 justify-end bg-black/40 md:items-center md:justify-center md:p-6">
           <Pressable className="flex-1" onPress={onClose} />
-          <View className="w-full items-center">
+          <View className="w-full items-center md:contents">
             <View
               style={{ paddingBottom: bottomPadding }}
-              className="w-full max-w-lg gap-3.5 rounded-t-[32px] border-t border-border/80 bg-surface p-6 shadow-2xl dark:border-border-dark/80 dark:bg-surface-dark"
+              className="w-full max-w-lg gap-3.5 rounded-t-[32px] border-t border-border/80 bg-surface p-6 shadow-2xl dark:border-border-dark/80 dark:bg-surface-dark md:rounded-2xl md:border"
             >
               {/* Top drag handle indicator on mobile */}
-              <View className="mx-auto mb-1 h-1.5 w-12 rounded-full bg-border/80 dark:bg-border-dark/80" />
+              <View className="mx-auto mb-1 h-1.5 w-12 rounded-full bg-border/80 dark:bg-border-dark/80 md:hidden" />
 
               <View className="flex-row items-center justify-between pb-1">
                 <View className="gap-0.5">

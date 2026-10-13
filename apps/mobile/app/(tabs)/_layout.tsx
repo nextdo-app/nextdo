@@ -6,6 +6,7 @@
  * Settings is the 5th tab (prod-deploy R6 — cloud sync is optional,
  * configured there).
  */
+import { useWindowDimensions, type ViewStyle } from 'react-native';
 import { Tabs } from 'expo-router';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { useAppTheme } from '@/lib/theme';
@@ -18,7 +19,23 @@ import { colors } from '@nextdo/ui';
 export default function TabsLayout() {
   const { isDark } = useAppTheme();
   const insets = useAppInsets();
+  const { width } = useWindowDimensions();
   const bottomPadding = Math.max(insets.bottom, 8);
+  // Align the 5 tabs horizontally with the centered max-w-3xl (768px) content
+  // column on wide desktop viewports while keeping the bar background & top
+  // border full-width across the window.
+  const horizontalInset = Math.max(0, (width - 768) / 2);
+
+  const tabBarStyle: ViewStyle = {
+    backgroundColor: isDark ? colors.surfaceDark : colors.surface,
+    borderTopColor: isDark ? colors.borderDark : colors.border,
+    borderTopWidth: 0.5,
+    height: 64 + (insets.bottom > 0 ? insets.bottom : 0),
+    paddingBottom: bottomPadding,
+    paddingTop: 6,
+    paddingLeft: horizontalInset,
+    paddingRight: horizontalInset,
+  };
 
   return (
     <Tabs
@@ -26,14 +43,7 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: isDark ? colors.accentDark : colors.accent,
         tabBarInactiveTintColor: isDark ? colors.mutedDark : colors.muted,
-        tabBarStyle: {
-          backgroundColor: isDark ? colors.surfaceDark : colors.surface,
-          borderTopColor: isDark ? colors.borderDark : colors.border,
-          borderTopWidth: 0.5,
-          height: 64 + (insets.bottom > 0 ? insets.bottom : 0),
-          paddingBottom: bottomPadding,
-          paddingTop: 6,
-        },
+        tabBarStyle,
         tabBarLabelStyle: {
           fontSize: 11,
           fontWeight: '600',

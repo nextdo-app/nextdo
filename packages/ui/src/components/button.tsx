@@ -29,18 +29,18 @@ const VARIANT_TEXT_CLASSES: Record<NonNullable<ButtonProps['variant']>, string> 
 
 const SIZE_CLASSES: Record<NonNullable<ButtonProps['size']>, string> = {
   // DESIGN 8px button tier (Paper Serenity): sm/md → rounded-md (8px),
-  // lg → rounded-lg (12px).
-  sm: 'h-9 px-3 rounded-md',
-  md: 'h-11 px-4 rounded-md',
-  // lg: 56px hero CTA — `h-13` is not in the default scale (class would be
-  // silently dropped, leaving the button content-height < 44pt).
-  lg: 'h-14 px-6 rounded-lg',
+  // lg → rounded-lg (12px). Mobile keeps touch-friendly target (>=44pt for md),
+  // while desktop screen收敛 to compact ergonomics (h-8 / h-9 / h-11).
+  sm: 'h-9 md:h-8 px-3 md:px-2.5 rounded-md',
+  md: 'h-11 md:h-9 px-4 md:px-3.5 rounded-md',
+  // lg: 56px hero CTA on mobile, 44px on desktop.
+  lg: 'h-14 md:h-11 px-6 md:px-5 rounded-lg',
 };
 
 const SIZE_TEXT_CLASSES: Record<NonNullable<ButtonProps['size']>, string> = {
   sm: 'text-xs',
-  md: 'text-sm',
-  lg: 'text-base',
+  md: 'text-sm md:text-xs',
+  lg: 'text-base md:text-sm',
 };
 
 /**

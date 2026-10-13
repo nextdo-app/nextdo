@@ -249,6 +249,7 @@ import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-librar
 import { useCloudSync } from '@/hooks/use-cloud-sync';
 import { Linking, Platform } from 'react-native';
 import { UPDATE_PROXY_PREFIX, UPDATE_REPO } from '@/lib/app-update';
+import { stopDesktopUpdatePolling } from '@/hooks/use-app-update';
 
 /** A tiny harness that drives the REAL `useCloudSync` hook directly. The
  *  button's canSubmit (two addresses non-empty) blocks empty-address
@@ -327,6 +328,15 @@ beforeEach(() => {
   (globalThis as { fetch: unknown }).fetch = mockUpdateFetch;
   openedUrls = [];
   downloadedUrls = [];
+  installedFilePaths = [];
+  openedFilePaths = [];
+  mockDownloadProgress = {
+    state: 'idle',
+    downloaded_bytes: 0,
+    total_bytes: 0,
+    file_path: '',
+    error: '',
+  };
   jest.spyOn(Linking, 'openURL').mockImplementation(async (url: string) => {
     openedUrls.push(url);
     return true;
@@ -340,6 +350,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  stopDesktopUpdatePolling();
   Object.defineProperty(Platform, 'OS', { value: 'ios', configurable: true });
   delete (globalThis as { window?: unknown }).window;
 });
@@ -373,6 +384,18 @@ let mockUpdateFetch: jest.Mock;
 let openedUrls: string[] = [];
 /** Every URL handed to Tauri download_update command. */
 let downloadedUrls: string[] = [];
+/** Every filePath handed to Tauri install_update_and_restart command. */
+let installedFilePaths: string[] = [];
+/** Every filePath handed to Tauri open_downloaded_file command. */
+let openedFilePaths: string[] = [];
+/** Mocked download progress returned by get_download_progress. */
+let mockDownloadProgress = {
+  state: 'idle',
+  downloaded_bytes: 0,
+  total_bytes: 0,
+  file_path: '',
+  error: '',
+};
 
 /**
  * Pretend the app runs in the Tauri desktop shell on macOS: Platform 'web'
@@ -396,8 +419,16 @@ function pretendDesktopMac(arch: 'aarch64' | 'x86_64' = 'aarch64'): void {
           downloadedUrls.push(args.url);
           return undefined;
         }
+        if (cmd === 'install_update_and_restart' && args?.filePath) {
+          installedFilePaths.push(args.filePath);
+          return undefined;
+        }
+        if (cmd === 'open_downloaded_file' && args?.filePath) {
+          openedFilePaths.push(args.filePath);
+          return undefined;
+        }
         if (cmd === 'get_download_progress') {
-          return { state: 'idle', downloaded_bytes: 0, total_bytes: 0, file_path: '', error: '' };
+          return mockDownloadProgress;
         }
         return arch;
       }),
@@ -687,6 +718,40 @@ describe('settings update-check block', () => {
       `${PROXY}https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4`,
       `${PROXY}https://github.com/nextdo-app/nextdo/releases/tag/v0.1.5-beta.1`,
     ]);
+  });
+
+  it('macOS desktop update download completion renders install-and-restart and manual open buttons', async () => {
+    mockDownloadProgress = {
+      state: 'done',
+      downloaded_bytes: 50 * 1024 * 1024,
+      total_bytes: 50 * 1024 * 1024,
+      file_path: '/tmp/Nextdo_0.1.4_aarch64.dmg',
+      error: '',
+    };
+    pretendDesktopMac('aarch64');
+    mockUpdateFetch.mockResolvedValue(redirectedTo('v0.1.4'));
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+
+    await pressCheckForUpdate();
+
+    const installer = screen.getByRole('button', { name: '下载并安装 macOS 安装包（Apple 芯片）' });
+    fireEvent.press(installer);
+    await flush();
+
+    expect(screen.getByText(/新版本已下载完成，可立即安装更新/)).toBeTruthy();
+    const restartBtn = screen.getByRole('button', { name: '立即安装并重启' });
+    const manualBtn = screen.getByRole('button', { name: '手动打开安装包' });
+    expect(restartBtn).toBeTruthy();
+    expect(manualBtn).toBeTruthy();
+
+    fireEvent.press(restartBtn);
+    await flush();
+    expect(installedFilePaths).toEqual(['/tmp/Nextdo_0.1.4_aarch64.dmg']);
+
+    fireEvent.press(manualBtn);
+    await flush();
+    expect(openedFilePaths).toEqual(['/tmp/Nextdo_0.1.4_aarch64.dmg']);
   });
 });
 

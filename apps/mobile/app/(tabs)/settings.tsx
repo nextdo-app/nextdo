@@ -376,6 +376,7 @@ export default function SettingsScreen() {
         contentContainerStyle={{ paddingTop: topPadding, paddingHorizontal: 16, paddingBottom: 32 }}
         keyboardShouldPersistTaps="handled"
       >
+        <View className="w-full max-w-3xl mx-auto">
         {/* Header block (matches the other tabs) */}
         <Text className="font-display text-3xl font-bold tracking-tight text-ink dark:text-ink-dark">
           设置
@@ -1149,11 +1150,21 @@ export default function SettingsScreen() {
                   {update.isDesktop && update.download.kind === 'done' ? (
                     <View className="gap-1.5">
                       <Text className="font-sans text-xs text-accent dark:text-accent-dark">
-                        ✓ 下载完成，安装程序已打开
+                        ✓ 新版本已下载完成，可立即安装更新
                       </Text>
+                      {update.installError ? (
+                        <Text className="font-sans text-xs text-danger dark:text-danger-dark">
+                          自动安装失败：{update.installError}
+                        </Text>
+                      ) : null}
                       <Button
-                        label="重新打开安装包"
+                        label={update.installing ? '正在安装并重启…' : '立即安装并重启'}
                         variant="secondary"
+                        onPress={update.installUpdate}
+                      />
+                      <Button
+                        label="手动打开安装包"
+                        variant="ghost"
                         onPress={update.openInstaller}
                       />
                     </View>
@@ -1201,6 +1212,7 @@ export default function SettingsScreen() {
             </View>
           ) : null}
         </Card>
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
