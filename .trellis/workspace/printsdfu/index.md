@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 36
-- **Last Active**: 2026-10-12
+- **Total Sessions**: 37
+- **Last Active**: 2026-10-13
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1157 | Active |
+| `journal-1.md` | ~1179 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 37 | 2026-10-13 | 支持自动检查更新并在发现新版本时展示 ChangeLog (v0.1.6-beta.3) | `3c65da9` | `main` |
 | 36 | 2026-10-12 | 支持编辑行动、项目与习惯 (Issue #19) | `5b06f6c`, `c3642f5` | `feat/edit-action-project-habit` |
 | 35 | 2026-10-12 | 手机端检查更新支持正式版与测试版双渠道 (fixes #18) | `3404523` | `main` |
 | 34 | 2026-10-12 | 完成四项积压任务、现代化重构时间选择器并归档 | `fb0fe07`, `5087c77`, `f3529c4`, `a649643`, `ebc8f47`, `158bff1` | `main` |

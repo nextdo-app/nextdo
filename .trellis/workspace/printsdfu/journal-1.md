@@ -1155,3 +1155,25 @@ Released v0.1.2 with all 4 Android ABIs after fixing three consecutive blockers 
 ### Next Steps
 
 - 提交 PR 并发布 0.1.6-beta.1 版本
+
+
+## Session 37: 支持自动检查更新并在发现新版本时展示 ChangeLog (v0.1.6-beta.3)
+<!-- trellis-session: v=2 fp=1140f37be6f1f147 -->
+
+**Date**: 2026-10-13
+**Task**: 支持自动检查更新并在发现新版本时展示 ChangeLog (v0.1.6-beta.3)
+**Branch**: `main`
+
+### Summary
+
+诊断并修复 0.1.6-beta.2 macOS 桌面端启动崩溃（动态与静态窗口创建冲突导致的 did_finish_launching SIGABRT）；新增应用启动静默检查更新与设置开关；实现新版本 ChangeLog 对话框展示与确认升级机制；版本 bump 至 0.1.6-beta.3 并通过 GitHub 完成 Release 发布。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3c65da9` | feat(update): 支持自动检查更新并在发现新版本时展示 ChangeLog 供用户确认升级 (bump to 0.1.6-beta.3) |
+
+### Status
+
+[OK] **Completed**
