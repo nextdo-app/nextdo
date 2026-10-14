@@ -187,7 +187,7 @@ export default function InboxScreen() {
       style={{ paddingTop: topPadding }}
       className="flex-1 w-full bg-canvas px-4 pb-4 dark:bg-canvas-dark relative"
     >
-      <View className="flex-1 w-full max-w-3xl mx-auto">
+      <View className="flex-1 w-full max-w-5xl mx-auto">
       {/* Header block (design §2) */}
       <Text className="font-display text-3xl font-bold tracking-tight text-ink dark:text-ink-dark">
         清空大脑
@@ -245,13 +245,14 @@ export default function InboxScreen() {
           </View>
 
           {data.length === 0 ? (
-            <>
+            <View className="mt-2 gap-2">
               <EmptyState
                 title="收件箱是空的"
                 hint="在上方输入并保存，这里会按捕获时间列出你记下的一切。"
+                className="flex-initial py-6"
               />
               <GtdTipCard defaultExpanded />
-            </>
+            </View>
           ) : (
             <FlatList
               data={data}

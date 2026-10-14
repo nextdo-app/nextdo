@@ -3,9 +3,15 @@
  *
  *   pick [25 | 45 | 60 | 自由计时] → startFocusSession → the live timer
  *   (preset countdown / free count-up) → [暂停]/[继续] (recordPause with
- *   the ABSOLUTE accumulated total) → time-up banner → [完成]
- *   (completeFocusSession → the canonical completeAction) / [放弃]
- *   (abandonFocusSession — the action stays untouched).
+ *   the ABSOLUTE accumulated total) → time-up banner → [结束专注]
+ *   (completeFocusSession — the SESSION only) → the follow-up step
+ *   「行动也完成？」 → [完成行动] (the canonical completeAction) /
+ *   [先不完成] / [放弃] (abandonFocusSession — the action stays untouched).
+ *
+ * **Ending a session is not ending the action** (issue 27): `completeFocusSession`
+ * writes the FocusSession row and nothing else, so the two events stay
+ * independent and reversible (the 「已完成行动」 window restores a mis-tap,
+ * keeping the focus history). Completing the action is always a separate tap.
  *
  * `now` discipline (hook-guidelines Rule 4): the 1-second interval only
  * feeds the DISPLAY; every db mutation takes `now` from `useAppClock`
@@ -53,6 +59,10 @@ export default function FocusScreen() {
   const [frozen, setFrozen] = useState<{ remaining: number | null; elapsed: number } | null>(null);
   const [timeUpDismissed, setTimeUpDismissed] = useState(false);
   const [busy, setBusy] = useState(false);
+  // The session reached its end and the row is finalized — the screen now
+  // asks the separate question "行动也完成？" (issue 27). Screen-local: the
+  // terminal row itself lives in the DB.
+  const [sessionEnded, setSessionEnded] = useState(false);
 
   const session = focus.activeSession;
 
@@ -98,12 +108,31 @@ export default function FocusScreen() {
     if (session === null || busy) return;
     setBusy(true);
     try {
+      // Session only — the action is NOT completed here (issue 27).
       await focus.complete(session.id);
+      setSessionEnded(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** The follow-up step's 完成行动 — the canonical complete transaction,
+   *  now an explicit and separate tap. */
+  const handleCompleteAction = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
       await completeAction({ actionKind, actionId });
       goBack('/(tabs)/now');
     } finally {
       setBusy(false);
     }
+  };
+
+  /** The follow-up step's 先不完成 — the focus is banked, the action stays
+   *  open and goes straight back into the execution pool. */
+  const handleKeepAction = () => {
+    goBack('/(tabs)/now');
   };
 
   const handleAbandon = async () => {
@@ -147,7 +176,22 @@ export default function FocusScreen() {
               <Tag label={KIND_LABELS[actionKind]} tone="accent" />
               {title !== null ? <Text className="flex-1 text-sm text-muted dark:text-muted-dark">{title}</Text> : null}
             </View>
-            {session === null ? (
+            {sessionEnded ? (
+              /* The follow-up step (issue 27): the session is banked, and
+                 whether the ACTION is done is a separate, explicit answer. */
+              <View className="items-center gap-4 py-4">
+                <Text className="font-display text-lg font-semibold text-ink dark:text-ink-dark">
+                  专注已完成
+                </Text>
+                <Text className="text-center text-sm leading-relaxed text-muted dark:text-muted-dark">
+                  这次专注已记录。行动是否完成由你决定 —— 还没做完就选「先不完成」，它会回到「现在」的执行池。
+                </Text>
+                <View className="flex-row gap-2">
+                  <Button label="完成行动" onPress={() => void handleCompleteAction()} disabled={busy} />
+                  <Button label="先不完成" variant="secondary" onPress={handleKeepAction} />
+                </View>
+              </View>
+            ) : session === null ? (
               <View className="items-center gap-4 py-4">
                 <Text className="text-sm text-muted dark:text-muted-dark">选择本次专注时长</Text>
                 <View className="flex-row flex-wrap justify-center gap-2">
@@ -186,7 +230,7 @@ export default function FocusScreen() {
                   <Card className="w-full border-warning bg-warning/10 p-3">
                     <Text className="text-sm font-medium text-ink dark:text-ink-dark">时间到</Text>
                     <View className="mt-2 flex-row gap-2">
-                      <Button label="完成" onPress={() => void handleComplete()} disabled={busy} />
+                      <Button label="结束专注" onPress={() => void handleComplete()} disabled={busy} />
                       <Button label="继续" variant="secondary" onPress={() => setTimeUpDismissed(true)} />
                     </View>
                   </Card>
@@ -218,7 +262,7 @@ export default function FocusScreen() {
                         disabled={busy}
                       />
                     )}
-                    <Button label="完成" onPress={() => void handleComplete()} disabled={busy} />
+                    <Button label="结束专注" onPress={() => void handleComplete()} disabled={busy} />
                     <Button label="放弃" variant="ghost" onPress={() => void handleAbandon()} disabled={busy} />
                   </View>
                 )}

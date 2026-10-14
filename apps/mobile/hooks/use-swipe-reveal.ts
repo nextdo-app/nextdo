@@ -1,12 +1,21 @@
 /**
- * Swipe-right-to-confirm for a list row (issue #17).
+ * Swipe-right-to-reveal for a list row (issue #17, reworked by issue 27).
  *
  * The mobile counterpart of the keyboard loop: finishing an action is the
- * single most repeated gesture in the app, and it should not cost a tap on a
- * small 「完成」 button every time.
+ * single most repeated gesture in the app, so the row gets a shortcut — but
+ * a shortcut to the CONFIRMATION, never past it. Releasing past the
+ * threshold parks the row open on its 完成 button; the action is completed
+ * only when that button is pressed. A single swipe can therefore never
+ * destroy work, which is the same promise issue 27 makes about a finished
+ * focus session.
  *
- * Conflict avoidance is the whole design, because a gesture that fights the
- * scroll view or the system back-swipe is worse than no gesture at all:
+ * On web the gesture is not registered at all (`panHandlers` is empty and
+ * `enabled` is false): a mouse drag is not a swipe, it fights text selection
+ * and the scrollbar, and the desktop build's completion path is a plain
+ * click on the row's own 完成 button.
+ *
+ * Conflict avoidance is the rest of the design, because a gesture that
+ * fights the scroll view or the system back-swipe is worse than no gesture:
  *
  *  - **Horizontal intent only.** The responder is claimed only once the
  *    finger has travelled clearly further sideways than vertically
@@ -15,9 +24,9 @@
  *    for the first frame.
  *  - **Never from the screen edge.** A touch that starts within 24pt of the
  *    left edge is left alone, so the iOS system back-swipe keeps working.
- *  - **Past the threshold it commits, before it springs back.** Releasing
- *    under the threshold animates the row home and does nothing else, so a
- *    stray flick costs nothing.
+ *  - **Past the threshold it parks open.** Releasing under the threshold
+ *    animates the row home and does nothing else, so a stray flick costs
+ *    nothing; releasing past it slides the row aside and stops.
  *
  * Built on RN's built-in `PanResponder` + `Animated` rather than
  * `react-native-gesture-handler` / `reanimated`: those are already in
@@ -25,15 +34,15 @@
  * not justify turning on a worklet runtime (spec: app/component-guidelines
  * "no new dependencies without a reason").
  */
-import { useCallback, useMemo, useRef } from 'react';
-import { Animated, PanResponder, type PanResponderGestureState } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { Animated, PanResponder, Platform, type PanResponderGestureState } from 'react-native';
 
 /** Horizontal travel (pt) before the gesture is claimed from the scroll view. */
 const CLAIM_DX = 12;
 /** …and it must beat the vertical travel by this factor to be "horizontal". */
 const HORIZONTAL_DOMINANCE = 1.5;
-/** Travel (pt) that, on release, commits the action. */
-export const COMMIT_DX = 96;
+/** Travel (pt) that, on release, parks the row open on its 完成 button. */
+export const REVEAL_DX = 96;
 /** Touches starting closer than this to the left edge belong to the system. */
 const EDGE_GUARD = 24;
 /** Furthest the row travels while held — past this it just stops. */
@@ -62,22 +71,36 @@ export function isSystemEdge(pageX: number): boolean {
   return pageX <= EDGE_GUARD;
 }
 
-/** Did the release travel far (or fast) enough to commit? */
-export function shouldCommit(dx: number, vx: number): boolean {
-  // A fast flick counts even without the full distance — users flick, they
-  // do not drag.
-  return dx >= COMMIT_DX || (vx > 0.5 && dx >= COMMIT_DX / 2);
+/**
+ * Did the release travel far (or fast) enough to park the row open?
+ *
+ * This is NOT "should the action be completed" — that is the button's tap,
+ * and only that (issue 27). A fast flick counts without the full distance,
+ * because users flick rather than drag.
+ */
+export function shouldReveal(dx: number, vx: number): boolean {
+  return dx >= REVEAL_DX || (vx > 0.5 && dx >= REVEAL_DX / 2);
 }
 
-export interface SwipeRight {
-  /** Spread onto the swipeable row. */
+export interface SwipeReveal {
+  /** Spread onto the swipeable row; empty on web. */
   panHandlers: ReturnType<typeof PanResponder.create>['panHandlers'];
   /** How far the row has been dragged, for `Animated.View`. */
   translateX: Animated.Value;
+  /** True while the row is parked open and its 完成 button is live. */
+  revealed: boolean;
+  /** Complete — called by the exposed 完成 button only. */
+  confirm: () => void;
+  /** Close the exposed button without completing. */
+  close: () => void;
+  /** False on web: the row completes by click, never by gesture. */
+  enabled: boolean;
 }
 
-export function useSwipeRight(onCommit: () => void): SwipeRight {
+export function useSwipeReveal(onCommit: () => void): SwipeReveal {
   const translateX = useRef(new Animated.Value(0)).current;
+  const [revealed, setRevealed] = useState(false);
+  const enabled = Platform.OS !== 'web';
   // Same reason the keyboard hook reads its callback through a ref: a fresh
   // closure per render would rebuild the responder on every render.
   const commitRef = useRef(onCommit);
@@ -95,6 +118,16 @@ export function useSwipeRight(onCommit: () => void): SwipeRight {
     [translateX],
   );
 
+  const close = useCallback(() => {
+    setRevealed(false);
+    settle(0);
+  }, [settle]);
+
+  const confirm = useCallback(() => {
+    commitRef.current();
+    close();
+  }, [close]);
+
   const responder = useMemo(
     () =>
       PanResponder.create({
@@ -111,13 +144,27 @@ export function useSwipeRight(onCommit: () => void): SwipeRight {
           translateX.setValue(Math.max(0, Math.min(gesture.dx, MAX_DX)));
         },
         onPanResponderRelease: (_event, gesture: PanResponderGestureState) => {
-          if (shouldCommit(gesture.dx, gesture.vx)) commitRef.current();
-          settle(0);
+          // Park open on a committed swipe; otherwise snap home silently.
+          if (shouldReveal(gesture.dx, gesture.vx)) {
+            setRevealed(true);
+            settle(REVEAL_DX);
+          } else {
+            setRevealed(false);
+            settle(0);
+          }
         },
-        onPanResponderTerminate: () => settle(0),
+        onPanResponderTerminate: close,
       }),
-    [settle, translateX],
+    [close, settle, translateX],
   );
 
-  return { panHandlers: responder.panHandlers, translateX };
+  return {
+    // Web spreads nothing: no responder, so a mouse drag never moves the row.
+    panHandlers: enabled ? responder.panHandlers : {},
+    translateX,
+    revealed,
+    confirm,
+    close,
+    enabled,
+  };
 }

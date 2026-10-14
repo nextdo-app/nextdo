@@ -703,7 +703,7 @@ export default function ProjectDetailScreen() {
         contentContainerStyle={{ paddingTop: topPadding, paddingHorizontal: 16, paddingBottom: 80 }}
         keyboardShouldPersistTaps="handled"
       >
-        <View className="w-full max-w-3xl mx-auto">
+        <View className="w-full max-w-5xl mx-auto">
         <View className="mb-4 flex-row items-center justify-between">
           <Button label="← 项目" variant="ghost" onPress={() => goBack('/(tabs)/projects')} />
         </View>

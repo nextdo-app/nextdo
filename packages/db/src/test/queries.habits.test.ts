@@ -138,13 +138,26 @@ describe('CRUD + transitions', () => {
     }
   });
 
-  it('update: completed is terminal (completed → active is illegal)', async () => {
+  it('update: completed → active is legal (issue 27 — the restore reopens a challenge)', async () => {
+    const { db, close } = await open(true);
+    try {
+      const completed = (await listHabits(db)).find((habit) => habit.id === H.completed);
+      await updateHabit(db, { ...(completed as Habit), status: 'active', updatedAt: toIso(FIXTURE_NOW) });
+
+      const updated = (await listHabits(db)).find((habit) => habit.id === H.completed);
+      expect(updated?.status).toBe('active');
+    } finally {
+      await close();
+    }
+  });
+
+  it('update: completed → broken is still illegal', async () => {
     const { db, close } = await open(true);
     try {
       const completed = (await listHabits(db)).find((habit) => habit.id === H.completed);
       await expect(
-        updateHabit(db, { ...(completed as Habit), status: 'active', updatedAt: toIso(FIXTURE_NOW) }),
-      ).rejects.toMatchObject({ code: 'invalid-transition:completed:active' });
+        updateHabit(db, { ...(completed as Habit), status: 'broken', updatedAt: toIso(FIXTURE_NOW) }),
+      ).rejects.toMatchObject({ code: 'invalid-transition:completed:broken' });
     } finally {
       await close();
     }

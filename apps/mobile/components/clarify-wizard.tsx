@@ -416,7 +416,7 @@ export function WizardBody({
        * on a 800px-tall desktop window, or the keyboard on phone) — the
        * whole body scrolls, same pattern as the review screens. */}
       <ScrollView className="flex-1" keyboardShouldPersistTaps="handled">
-      <View className="w-full max-w-3xl mx-auto">
+      <View className="w-full max-w-5xl mx-auto">
       {/* 1. header row: unified back button + step navigation on left, status tag on right */}
       <View className="mb-3.5 flex-row items-center justify-between">
         <View className="flex-row items-center gap-2">

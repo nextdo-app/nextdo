@@ -52,11 +52,14 @@ export type {
 export {
   addNextAction,
   completeAction,
+  listCompletedActions,
   listNextActions,
+  reopenAction,
   snoozeAction,
   trashAction,
   updateNextAction,
 } from './queries/actions';
+export type { CompletedAction } from './queries/actions';
 // Reminder read (the delivery layer's source of truth — task 09-30).
 export { listScheduledReminders } from './queries/reminders';
 export type { ScheduledReminderRow } from './queries/reminders';
@@ -96,6 +99,7 @@ export {
 // Watched-query builders for the app's `@powersync/react` data hooks
 // (database-guidelines "@powersync/react boundary").
 export {
+  completedActionsWatchQuery,
   inboxItemsWatchQuery,
   poolTriggerWatchQuery,
   projectCardsWatchQuery,

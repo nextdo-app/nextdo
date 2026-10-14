@@ -19,6 +19,7 @@ import {
   waitingForItemFromRow,
 } from '../schema';
 import { toCompilableQuery } from '../watch-query';
+import { completedActionFromRow, completedActionsQuery, type CompletedAction } from './actions';
 import { poolWatchQuery } from './pool';
 import type { NextdoDb } from '../types';
 
@@ -204,5 +205,14 @@ export function waitingForWatchQuery(db: NextdoDb): CompilableQuery<WaitingForIt
     .where('deleted_at', 'is', null)
     .orderBy('created_at', 'desc');
   return toCompilableQuery(builder, waitingForItemFromRow);
+}
+
+/**
+ * The 「已完成行动」 window's watch query (issue 27) — same single statement
+ * as `listCompletedActions`, so the row disappears the instant its restore
+ * transaction lands (status + soft-deleted CompletionRecord, one commit).
+ */
+export function completedActionsWatchQuery(db: NextdoDb): CompilableQuery<CompletedAction> {
+  return toCompilableQuery(completedActionsQuery(db), completedActionFromRow);
 }
 

@@ -1,19 +1,24 @@
 /**
- * The swipe-to-complete gesture rules (issue #17).
+ * The swipe-to-reveal gesture rules (issue #17, reworked by issue 27).
  *
- * `useSwipeRight`'s value is almost entirely in what it REFUSES to claim:
+ * `useSwipeReveal`'s value is almost entirely in what it REFUSES to claim:
  * a gesture that steals vertical scrolling or the iOS back-swipe is worse
  * than no gesture. So these tests pin the three decisions — horizontal
- * intent, edge guard, commit threshold — rather than the animation.
+ * intent, edge guard, reveal threshold — rather than the animation.
+ *
+ * What a release does is the point of issue 27: past the threshold the row
+ * parks open on its 完成 button and the action is NOT completed. The rules
+ * below can therefore only ever decide "reveal / don't reveal" — there is
+ * deliberately no predicate that decides "complete".
  */
 import {
-  COMMIT_DX,
+  REVEAL_DX,
   isHorizontalSwipe,
   isSystemEdge,
-  shouldCommit,
-} from '../hooks/use-swipe-right';
+  shouldReveal,
+} from '../hooks/use-swipe-reveal';
 
-describe('swipe-right gesture rules', () => {
+describe('swipe-to-reveal gesture rules', () => {
   describe('isHorizontalSwipe — claiming the touch from the scroll view', () => {
     it('claims a clearly sideways drag', () => {
       expect(isHorizontalSwipe({ dx: 40, dy: 4, vx: 0 })).toBe(true);
@@ -52,28 +57,28 @@ describe('swipe-right gesture rules', () => {
     });
   });
 
-  describe('shouldCommit — what a release actually does', () => {
+  describe('shouldReveal — what a release actually does', () => {
     it('does nothing for a drag that stopped short', () => {
-      expect(shouldCommit(20, 0)).toBe(false);
-      expect(shouldCommit(COMMIT_DX - 1, 0)).toBe(false);
+      expect(shouldReveal(20, 0)).toBe(false);
+      expect(shouldReveal(REVEAL_DX - 1, 0)).toBe(false);
     });
 
-    it('commits once the row is dragged past the threshold', () => {
-      expect(shouldCommit(COMMIT_DX, 0)).toBe(true);
-      expect(shouldCommit(200, 0)).toBe(true);
+    it('parks the row open once it is dragged past the threshold', () => {
+      expect(shouldReveal(REVEAL_DX, 0)).toBe(true);
+      expect(shouldReveal(200, 0)).toBe(true);
     });
 
-    it('commits a fast flick that never reached the threshold', () => {
+    it('reveals on a fast flick that never reached the threshold', () => {
       // Half the distance but thrown, not dragged — still an intent to finish.
-      expect(shouldCommit(COMMIT_DX / 2, 0.9)).toBe(true);
+      expect(shouldReveal(REVEAL_DX / 2, 0.9)).toBe(true);
     });
 
-    it('does not commit a slow half-hearted drag', () => {
-      expect(shouldCommit(COMMIT_DX / 2, 0.1)).toBe(false);
+    it('does not reveal on a slow half-hearted drag', () => {
+      expect(shouldReveal(REVEAL_DX / 2, 0.1)).toBe(false);
     });
 
-    it('never commits a leftward drag, however fast', () => {
-      expect(shouldCommit(-300, 2)).toBe(false);
+    it('never reveals on a leftward drag, however fast', () => {
+      expect(shouldReveal(-300, 2)).toBe(false);
     });
   });
 });

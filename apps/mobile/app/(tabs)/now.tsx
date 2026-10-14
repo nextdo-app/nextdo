@@ -38,7 +38,7 @@ import { FILTER_RULE_LABELS, REASON_LABELS } from '@/lib/reason-labels';
 import { KIND_LABELS } from '@/lib/kind-labels';
 import { formatLocalDateTime } from '@/lib/format';
 import { SnoozeSheet } from '@/components/snooze-sheet';
-import { useSwipeRight } from '@/hooks/use-swipe-right';
+import { useSwipeReveal } from '@/hooks/use-swipe-reveal';
 import { DeadlineChip } from '@/components/deadline-chip';
 import { AddSceneModal } from '@/components/add-scene-modal';
 import { EditActionModal } from '@/components/edit-action-modal';
@@ -476,58 +476,86 @@ const ActionRow = memo(function ActionRow({
   onEdit: (candidate: NextCandidate) => void;
 }) {
   const action = entry.action;
-  // Swipe right = 完成 (issue #17). The button below is the same action, so
-  // the gesture is an accelerator and never the only way to reach it.
-  const swipe = useSwipeRight(() => onComplete(action.kind, action.id));
+  // Swipe right reveals the 完成 button (issue #17, reworked by issue 27):
+  // the gesture is a shortcut to the CONFIRMATION, never past it — the
+  // action is completed only when that revealed button is pressed. The
+  // button below is the same action, and on web it is the ONLY path (the
+  // gesture is not registered there at all), so no platform needs a swipe.
+  const swipe = useSwipeReveal(() => onComplete(action.kind, action.id));
   return (
     <View className="overflow-hidden rounded-2xl">
-      {/* The affordance revealed by the swipe. Sits UNDER the card, so the
-          row slides off it rather than dragging a label along. */}
-      <View
-        pointerEvents="none"
-        className="absolute inset-y-0 left-0 items-center justify-center bg-accent/20 dark:bg-accent-dark/25"
-      >
-        <Text className="font-sans text-sm font-semibold text-accent dark:text-accent-dark">
-          ✓ 完成
-        </Text>
-      </View>
-      <Animated.View {...swipe.panHandlers} style={{ transform: [{ translateX: swipe.translateX }] }}>
-        <Card variant="outlined" className="gap-2 p-3.5">
-          <View className="flex-row items-start gap-2">
-            <View className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-accent/60 dark:bg-accent-dark/60" />
-            <Text className="flex-1 font-sans text-base font-medium text-ink dark:text-ink-dark">
-              {action.title}
+      {/* The affordance the swipe uncovers. Sits UNDER the card, so the row
+          slides off it rather than dragging a label along. `w-24` is the
+          hook's REVEAL_DX — the two must stay equal or the button is clipped. */}
+      <View className="absolute inset-y-0 left-0 w-24 items-center justify-center bg-accent/20 dark:bg-accent-dark/25">
+        {swipe.revealed ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`完成：${action.title}`}
+            onPress={swipe.confirm}
+            className="h-full w-full items-center justify-center active:bg-accent/30 dark:active:bg-accent-dark/35"
+          >
+            <Text className="font-sans text-sm font-semibold text-accent dark:text-accent-dark">
+              ✓ 完成
+            </Text>
+          </Pressable>
+        ) : (
+          // The idle hint — a live control only once the row is parked open.
+          <View pointerEvents="none" className="h-full w-full items-center justify-center">
+            <Text className="font-sans text-sm font-semibold text-accent dark:text-accent-dark">
+              ✓ 完成
             </Text>
           </View>
-          <View className="flex-row flex-wrap items-center gap-1.5">
-            {projectName !== undefined ? <Tag label={projectName} /> : null}
-            {action.contextIds.map((id) => (
-              <ContextChip key={id} name={contextName(id)} />
-            ))}
-            <View className="ml-auto flex-row items-center gap-1">
-              {action.kind === 'calendar' && action.startsAt !== undefined ? (
-                <Text className="font-sans text-xs text-muted dark:text-muted-dark">
-                  开始 {formatLocalDateTime(action.startsAt)}
-                </Text>
-              ) : action.deadline !== undefined ? (
-                /* Same chip the project screens use (issue #16) — the 待办
-                   view must say 已逾期 / 今天截止 / 还剩 N 天, not a bare date. */
-                <DeadlineChip deadline={action.deadline} now={now} />
-              ) : (
-                <Text className="font-sans text-xs text-muted dark:text-muted-dark">随时</Text>
-              )}
+        )}
+      </View>
+      <Pressable
+        onPress={() => {
+          // Tapping the row itself dismisses the exposed button.
+          if (swipe.revealed) swipe.close();
+        }}
+      >
+        <Animated.View
+          testID={`swipe-row-${action.id}`}
+          {...swipe.panHandlers}
+          style={{ transform: [{ translateX: swipe.translateX }] }}
+        >
+          <Card variant="outlined" className="gap-2 p-3.5">
+            <View className="flex-row items-start gap-2">
+              <View className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-accent/60 dark:bg-accent-dark/60" />
+              <Text className="flex-1 font-sans text-base font-medium text-ink dark:text-ink-dark">
+                {action.title}
+              </Text>
             </View>
-          </View>
-          <View className="flex-row justify-end gap-2">
-            <Button size="sm" label="完成" variant="ghost" onPress={() => onComplete(action.kind, action.id)} />
-            <Button size="sm" label="稍后" variant="ghost" onPress={() => onSnooze(action.kind, action.id)} />
-            {action.kind === 'next' ? (
-              <Button size="sm" label="编辑" variant="ghost" onPress={() => onEdit(action as NextCandidate)} />
-            ) : null}
-            <Button size="sm" label="删除" variant="ghost" onPress={() => onTrash(action.kind, action.id)} />
-          </View>
-        </Card>
-      </Animated.View>
+            <View className="flex-row flex-wrap items-center gap-1.5">
+              {projectName !== undefined ? <Tag label={projectName} /> : null}
+              {action.contextIds.map((id) => (
+                <ContextChip key={id} name={contextName(id)} />
+              ))}
+              <View className="ml-auto flex-row items-center gap-1">
+                {action.kind === 'calendar' && action.startsAt !== undefined ? (
+                  <Text className="font-sans text-xs text-muted dark:text-muted-dark">
+                    开始 {formatLocalDateTime(action.startsAt)}
+                  </Text>
+                ) : action.deadline !== undefined ? (
+                  /* Same chip the project screens use (issue #16) — the 待办
+                     view must say 已逾期 / 今天截止 / 还剩 N 天, not a bare date. */
+                  <DeadlineChip deadline={action.deadline} now={now} />
+                ) : (
+                  <Text className="font-sans text-xs text-muted dark:text-muted-dark">随时</Text>
+                )}
+              </View>
+            </View>
+            <View className="flex-row justify-end gap-2">
+              <Button size="sm" label="完成" variant="ghost" onPress={() => onComplete(action.kind, action.id)} />
+              <Button size="sm" label="稍后" variant="ghost" onPress={() => onSnooze(action.kind, action.id)} />
+              {action.kind === 'next' ? (
+                <Button size="sm" label="编辑" variant="ghost" onPress={() => onEdit(action as NextCandidate)} />
+              ) : null}
+              <Button size="sm" label="删除" variant="ghost" onPress={() => onTrash(action.kind, action.id)} />
+            </View>
+          </Card>
+        </Animated.View>
+      </Pressable>
     </View>
   );
 });
@@ -854,7 +882,7 @@ export default function NowScreen() {
         contentContainerStyle={{ paddingTop: topPadding, paddingHorizontal: 16, paddingBottom: 32 }}
         keyboardShouldPersistTaps="handled"
       >
-        <View className="w-full max-w-3xl mx-auto">
+        <View className="w-full max-w-5xl mx-auto">
         {/* Top Header */}
         <TopHeader />
 
@@ -1031,6 +1059,28 @@ export default function NowScreen() {
                 <View className="h-6 w-px bg-border/40 dark:bg-border-dark/40" />
                 <StatsCell label="认知负荷" value={cognitiveLoadLabel(totalEst)} />
               </View>
+
+              {/* The 已完成行动 window's entry (issue 27) — completion is a
+                  separate, reversible decision, so it needs a place to be
+                  reviewed and undone. */}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="查看已完成行动"
+                hitSlop={CHIP_HIT_SLOP}
+                onPress={() => router.push('/completed')}
+                className="flex-row items-center justify-between rounded-2xl border border-border/50 bg-surface/60 px-3.5 py-2.5 active:bg-surface-container dark:border-border-dark/50 dark:bg-surface-dark/60 dark:active:bg-surface-container-dark"
+              >
+                <View className="flex-row items-center gap-2">
+                  <Ionicons name="checkmark-done-outline" size={15} color="#716b64" />
+                  <Text className="font-sans text-sm font-medium text-ink dark:text-ink-dark">
+                    已完成行动
+                  </Text>
+                </View>
+                <View className="flex-row items-center gap-1">
+                  <Text className="font-sans text-xs text-muted dark:text-muted-dark">查看与恢复</Text>
+                  <Ionicons name="chevron-forward" size={13} color="#9b948a" />
+                </View>
+              </Pressable>
 
               {displayed !== null ? (
                 <>

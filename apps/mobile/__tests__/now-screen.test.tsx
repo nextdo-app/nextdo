@@ -481,6 +481,64 @@ describe('Now screen', () => {
     expect(completeCalls.args[0]).toMatchObject({ actionKind: 'next', actionId: 'a-1' });
   });
 
+  // The swipe promise of issue 27, pinned where it is actually made: the
+  // RELEASE of a committed swipe parks the row open and completes nothing.
+  // Simulating the real gesture (grant → move → release) rather than
+  // calling `shouldReveal` is what makes this a promise about the SCREEN —
+  // `shouldReveal`'s own tests cannot see `completeAction` at all.
+  it('a committed swipe reveals the 完成 button without completing the action', async () => {
+    setPool([nextAction({ id: 'a-1', title: '整理桌面', value: 2, contextIds: [] })]);
+    renderRouter('app', { initialUrl: '/(tabs)/now' });
+    await waitFor(() => expect(screen.getAllByText('整理桌面')).toHaveLength(2));
+
+    // The row is the only view carrying the swipe responder (the testID is
+    // how it is addressed — `ScrollView` and every `Pressable` under it
+    // have responder props too).
+    const handlers = screen.getByTestId('swipe-row-a-1').props;
+
+    // A real single-finger drag from x=200 to x=340 (140pt, well past the
+    // 96pt threshold) with a 16ms step — i.e. a fast flick. The touch
+    // history is built rather than stubbed because PanResponder derives
+    // dx/vx from it; `pageX` never approaches the 24pt edge guard.
+    const at = (x: number, timeStamp: number) => ({
+      nativeEvent: { pageX: x },
+      touchHistory: {
+        numberActiveTouches: 1,
+        indexOfSingleActiveTouch: 0,
+        mostRecentTimeStamp: timeStamp,
+        touchBank: [
+          {
+            touchActive: true,
+            currentPageX: x,
+            currentPageY: 400,
+            currentTimeStamp: timeStamp,
+            previousPageX: x === 200 ? 200 : 200,
+            previousPageY: 396,
+            previousTimeStamp: timeStamp - 16,
+          },
+        ],
+      },
+    });
+
+    act(() => {
+      handlers.onResponderGrant(at(200, 100));
+      handlers.onResponderMove(at(340, 116));
+      handlers.onResponderRelease(at(340, 116));
+    });
+
+    // The row parks open on a LIVE, labelled 完成 button…
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '完成：整理桌面' })).toBeTruthy(),
+    );
+    // …and the swipe itself completed NOTHING.
+    expect(completeCalls.count).toBe(0);
+
+    // Only that revealed button's tap runs the complete transaction.
+    fireEvent.press(screen.getByRole('button', { name: '完成：整理桌面' }));
+    await waitFor(() => expect(completeCalls.count).toBe(1));
+    expect(completeCalls.args[0]).toMatchObject({ actionKind: 'next', actionId: 'a-1' });
+  });
+
   it('the empty pool shows the capture hint', async () => {    setPool([]);
     renderRouter('app', { initialUrl: '/(tabs)/now' });
     await waitFor(() => expect(screen.getByText('执行池是空的')).toBeTruthy());

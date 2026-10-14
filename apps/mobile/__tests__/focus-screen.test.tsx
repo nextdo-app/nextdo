@@ -4,9 +4,9 @@
  * The db layer is mocked at the packages/db boundary with REAL session-row
  * state (a mutable array the mock functions read/write), covering the four
  * row states the screen must handle: no session (pick step), an active
- * session (live timer), a time-up session (banner), and terminal-only
- * rows (back to the pick step). The timer math itself is unit-tested in
- * lib/focus-timer.test.ts.
+ * session (live timer), a time-up session (banner), the post-session step
+ * (issue 27 — 专注结束 ≠ 行动完成), and terminal-only rows (back to the pick
+ * step). The timer math itself is unit-tested in lib/focus-timer.test.ts.
  */
 type Session = {
   id: string;
@@ -234,7 +234,7 @@ describe('Focus screen', () => {
     renderRouter('app', { initialUrl: '/focus/f-1?kind=next' });
 
     await waitFor(() => expect(screen.getByText('时间到')).toBeTruthy());
-    // The banner offers 完成 / 继续 (the controls row is replaced).
+    // The banner offers 结束专注 / 继续 (the controls row is replaced).
     expect(screen.queryByText('暂停')).toBeNull();
     fireEvent.press(screen.getByText('继续'));
     expect(screen.queryByText('时间到')).toBeNull();
@@ -242,17 +242,46 @@ describe('Focus screen', () => {
     expect(mockState.sessions[0]?.status).toBe('active');
   });
 
-  it('完成 closes the session AND completes the action (two transactions)', async () => {
+  it('结束专注 closes the session WITHOUT completing the action (issue 27)', async () => {
     seedActiveSession();
     const view = renderRouter('app', { initialUrl: '/focus/f-1?kind=next' });
-    await waitFor(() => expect(screen.getByText('完成')).toBeTruthy());
-    fireEvent.press(screen.getByText('完成'));
+    await waitFor(() => expect(screen.getByText('结束专注')).toBeTruthy());
+    fireEvent.press(screen.getByText('结束专注'));
 
     await waitFor(() => expect(mockDb.completeFocusSession).toHaveBeenCalledTimes(1));
+    expect(mockState.sessions[0]?.status).toBe('completed');
+    // The action is untouched — the follow-up step asks, it does not assume.
+    expect(mockDb.completeAction).not.toHaveBeenCalled();
+    // The screen stays put on the separate question instead of navigating.
+    await waitFor(() => expect(screen.getByText('专注已完成')).toBeTruthy());
+    expect(view.getPathname()).toBe('/focus/f-1');
+  });
+
+  it('the follow-up step completes the action only when 完成行动 is pressed', async () => {
+    seedActiveSession();
+    const view = renderRouter('app', { initialUrl: '/focus/f-1?kind=next' });
+    await waitFor(() => expect(screen.getByText('结束专注')).toBeTruthy());
+    fireEvent.press(screen.getByText('结束专注'));
+    await waitFor(() => expect(screen.getByText('完成行动')).toBeTruthy());
+
+    fireEvent.press(screen.getByText('完成行动'));
     await waitFor(() => expect(mockDb.completeAction).toHaveBeenCalledTimes(1));
     expect(mockDb.completeAction.mock.calls[0][1]).toMatchObject({ actionKind: 'next', actionId: 'f-1' });
     // Deep-loaded stack has no parent → goBack replaces to the Now tab.
     await waitFor(() => expect(view.getPathname()).toBe('/now'));
+  });
+
+  it('先不完成 banks the focus and leaves the action open in the pool', async () => {
+    seedActiveSession();
+    const view = renderRouter('app', { initialUrl: '/focus/f-1?kind=next' });
+    await waitFor(() => expect(screen.getByText('结束专注')).toBeTruthy());
+    fireEvent.press(screen.getByText('结束专注'));
+    await waitFor(() => expect(screen.getByText('先不完成')).toBeTruthy());
+
+    fireEvent.press(screen.getByText('先不完成'));
+    await waitFor(() => expect(view.getPathname()).toBe('/now'));
+    expect(mockDb.completeAction).not.toHaveBeenCalled();
+    expect(mockState.sessions[0]?.status).toBe('completed');
   });
 
   it('放弃 closes the session as abandoned and leaves the action untouched', async () => {

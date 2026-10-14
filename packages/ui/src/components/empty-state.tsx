@@ -10,12 +10,14 @@ export interface EmptyStateProps {
   hint?: string;
   /** Optional action slot (a `Button`). */
   children?: ReactNode;
+  /** Optional container style override. */
+  className?: string;
 }
 
 /** Centered empty state for list screens. */
-export function EmptyState({ title, hint, children }: EmptyStateProps) {
+export function EmptyState({ title, hint, children, className }: EmptyStateProps) {
   return (
-    <View className={cn('flex-1 items-center justify-center gap-2 p-8')}>
+    <View className={cn('flex-1 items-center justify-center gap-2 p-8', className)}>
       <Text className="text-base font-medium text-ink dark:text-ink-dark">{title}</Text>
       {hint !== undefined ? (
         <Text className="text-center text-sm text-muted dark:text-muted-dark">{hint}</Text>
