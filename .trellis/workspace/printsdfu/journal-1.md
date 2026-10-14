@@ -1177,3 +1177,44 @@ Released v0.1.2 with all 4 Android ABIs after fixing three consecutive blockers 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 39: 区分专注完成与行动完成、「已完成行动」可查看可恢复，并修复桌面留白与更新渠道显示 (#27/#28/#29)
+<!-- trellis-session: v=2 fp=a5f14cebb7527178 -->
+
+**Date**: 2026-10-14
+**Task**: 区分专注完成与行动完成、「已完成行动」可查看可恢复，并修复桌面留白与更新渠道显示 (#27/#28/#29)
+**Branch**: `feat/completed-actions-restore`
+
+### Summary
+
+把「结束一次专注」与「完成一个行动」彻底解耦：completeFocusSession 只写 FocusSession，结束后进入独立的追问步骤「行动也完成？」；新增「已完成行动」窗口列出所有已完成的 NextAction / CalendarAction / HabitDay 并支持逐条恢复为未完成；滑动手势从「滑动即完成」重写为「滑动露出完成按钮」；同时完成 #28 的桌面端内容列留白修复与 #29 的更新版本号渠道显示修复。
+
+### Main Changes
+
+- db: completedActionsQuery（三条 UNION，含 habit_days）+ listCompletedActions + reopenAction 恢复事务（done → open、软删 CompletionRecord、completed 母习惯回 active、提醒不复活、FocusSession 不动）
+- core: ACTION_TRANSITIONS done → open、HABIT_DAY_TRANSITIONS done → open、HABIT_TRANSITIONS completed → active；domain-model.md 同步新增 The Restore Transaction 小节
+- mobile: 新增 /completed 页面与 useCompletedActions / useReopenAction；focus 页改为「结束专注」+ 追问步骤；use-swipe-right → use-swipe-reveal（滑动只露出按钮，web 端不注册手势）
+- ui: 五个 Tab 与项目详情、澄清向导内容列 768px → 1024px，Tab 栏同步；EmptyState 支持 className；快速捕获弹层非 iOS 改 fade 并修遮罩吞点击
+- update: 无更高版本时按偏好渠道取展示版本，设置页显示「测试版/正式版」
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c74e6a6` | 区分专注完成与行动完成、新增「已完成行动」可查看可恢复，并修复桌面端留白与更新版本号显示 |
+
+### Testing
+
+- [OK] pnpm lint + pnpm typecheck + pnpm test 全绿（39 suites / 567 tests），build:web 通过
+- [OK] 浏览器实测（localhost:4180）：追问步骤、窗口列表与恢复、恢复后行动回到执行池、桌面端点按钮完成（不需滑动）
+- [OK] 手机端滑动路径无法在桌面浏览器模拟触摸，由 __tests__/swipe-reveal.test.ts 与 web 端不注册手势保证
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- PR #33 待评审合并（closes #27 / #28 / #29）
+- 未做版本 bump 与发布，合并后需同步根 package.json、apps/desktop（package.json / tauri.conf.json / Cargo.toml / Cargo.lock）与 apps/mobile/app.json
