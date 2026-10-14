@@ -124,7 +124,9 @@ A single concrete step (Proposal §5.3: "运行 baseline A", never "完成论文
 - `snoozedUntil?` (ISO datetime; set/cleared only by the snooze transaction),
   `lastSnoozedAt?` (set by the snooze transaction; feeds the engine's `waiting-time`),
 - `consecutiveSkips: number`, `lastSkippedAt?` (semantics in Next Action Engine),
-- `status: "open" | "done"`,
+- `status: "open" | "done"` (**`done → open` is legal** — the user-initiated restore of
+  a mis-completed action, issue 27; it is NOT a general un-complete and it never deletes
+  history),
 - `sourceInboxId?`, `replacesActionId?` (Clarify/re-clarify traceability).
 - **Invariant:** one sitting, no sub-list. Enforced softly by Clarify question 2; the
   engine never splits actions itself.
@@ -197,7 +199,10 @@ A rule generating a recurring action (Proposal §7).
   - Status transitions: `active → completed` (last day of the cycle done);
     `active → broken` (a day in the cycle missed — detected at the start of the next
     local day: a current-cycle HabitDay with `localDate < today` not done);
-    `broken → active` (user restarts the challenge — new cycle from today).
+    `broken → active` (user restarts the challenge — new cycle from today);
+    `completed → active` (**issue 27** — restoring one of its 打卡 from the
+    「已完成行动」 window; a day of the cycle is open again, so the challenge is
+    not finished).
 - `HabitDay`: one row per habit per **local calendar day** — the generated action
   instance.
   - **Deterministic id: `hd-<habitId>-<YYYYMMDD>`** (device-local date).
@@ -221,6 +226,9 @@ A rule generating a recurring action (Proposal §7).
     generation time; no server timezone is involved.
   - Persisted `status: "open" | "done"`. **`missed` is derived** (a past localDate
     whose row is not done) — computed at query time, never written.
+    **`done → open` is legal** — the issue-27 restore, the exact mirror of the
+    action rule, because a 打卡 is a pool row with its own 完成 button and
+    "完成即可逆" must hold for it too.
   - HabitDay rows also carry the execution columns (`snoozedUntil`,
     `lastSnoozedAt`, `consecutiveSkips`, `lastSkippedAt`) — see CalendarAction.
   - A `HabitDay` maps to the engine's `HabitCandidate` (see engine types) with
@@ -277,9 +285,10 @@ A rule generating a recurring action (Proposal §7).
   `startedAt`, `pausedSec`, `endedAt?` (set when the session leaves `active`, in
   **either** terminal state — elapsed = `endedAt − startedAt − pausedSec`),
   `status: "active" | "completed" | "abandoned"`.
-- `completed`: user finishes (or timer ends and user confirms) → row finalized;
-  **timer end ≠ task complete** — marking the action complete is a separate, explicit
-  user confirmation that runs the complete transaction.
+- `completed`: user finishes (or the timer ends and user confirms) → row finalized;
+  **timer end ≠ task complete** — since issue 27 the action is NOT completed here at
+  all; the screen shows a follow-up step and completing the action is a separate,
+  explicit tap that runs the complete transaction.
 - `abandoned`: user stops early; the row is kept (with `pausedSec` and elapsed) so
   time spent is visible in review. Abandon does not touch the action.
 - The live, in-progress session is the only focus-related value in UI state (see
@@ -340,6 +349,29 @@ the DB layer applies, atomically, in one transaction per user intent.
 All five steps in one local transaction (synced in the background — see
 app/state-management.md). Project action coverage is **not** updated here; it is
 derived on query.
+
+**Completing an action is ALWAYS a separate, explicit user action** (issue 27). A focus
+session reaching its end only writes the FocusSession row — `completeFocusSession`
+never touches the action (see FocusSession above). The action's own 完成 button is the
+only thing that runs the transaction above.
+
+### The Restore Transaction (issue 27)
+
+`reopenAction(db, { actionKind, actionId, now })` — the mirror of the complete
+transaction, run from the 「已完成行动」 window:
+1. `assertTransition(done → open)`;
+2. set `status = "open"`, clear `snoozedUntil`, reset `consecutiveSkips = 0`;
+3. **soft-delete** (`deleted_at` set, never a hard delete) the action's
+   `CompletionRecord`s — they asserted a completion that no longer holds, so they must
+   stop counting toward the review snapshots, while the rows themselves stay;
+4. reminders: the complete transaction cancelled them, and `cancelled` is terminal in
+   `REMINDER_TRANSITIONS` — they are NOT resurrected. A re-snooze mints a fresh one;
+5. habit only: the inverse of the complete transaction's step 5 — a 打卡 taken back
+   out of a `completed` habit puts that habit back `active` (its cycle is no longer
+   finished).
+
+Every FocusSession of the action is left untouched: the focus history the user actually
+performed survives a restore, which is the whole point of separating the two events.
 
 **Reminder-cancel is a property of every action-exit path** (task
 09-30-reminder-notification-delivery): any transaction that deletes or

@@ -21,8 +21,9 @@ describe('legal transitions pass', () => {
     assertTransition(PROJECT_TRANSITIONS, 'on-hold', 'dropped', NOW);
   });
 
-  it('action lifecycle (open → done, both action kinds share it)', () => {
+  it('action lifecycle (open → done, plus the issue-27 restore done → open)', () => {
     assertTransition(ACTION_TRANSITIONS, 'open', 'done', NOW);
+    assertTransition(ACTION_TRANSITIONS, 'done', 'open', NOW);
   });
 
   it('habit lifecycle (restart from broken allowed)', () => {
@@ -31,8 +32,15 @@ describe('legal transitions pass', () => {
     assertTransition(HABIT_TRANSITIONS, 'broken', 'active', NOW);
   });
 
-  it('habit day lifecycle', () => {
+  it('habit lifecycle — restoring a打卡 reopens a completed challenge (issue 27)', () => {
+    // The mirror of `active → completed`: the window's 恢复 undoes the last
+    // day, so the challenge is no longer finished.
+    assertTransition(HABIT_TRANSITIONS, 'completed', 'active', NOW);
+  });
+
+  it('habit day lifecycle (open → done, plus the issue-27 restore done → open)', () => {
     assertTransition(HABIT_DAY_TRANSITIONS, 'open', 'done', NOW);
+    assertTransition(HABIT_DAY_TRANSITIONS, 'done', 'open', NOW);
   });
 
   it('reminder lifecycle', () => {
@@ -51,10 +59,8 @@ describe('illegal transitions throw ValidationNextdoError with a stable code', (
     [PROJECT_TRANSITIONS, 'done', 'open'],
     [PROJECT_TRANSITIONS, 'done', 'active'],
     [PROJECT_TRANSITIONS, 'dropped', 'active'],
-    [ACTION_TRANSITIONS, 'done', 'open'],
-    [HABIT_TRANSITIONS, 'completed', 'active'],
+    [ACTION_TRANSITIONS, 'done', 'done'],
     [HABIT_TRANSITIONS, 'broken', 'completed'],
-    [HABIT_DAY_TRANSITIONS, 'done', 'open'],
     [REMINDER_TRANSITIONS, 'fired', 'scheduled'],
     [REMINDER_TRANSITIONS, 'cancelled', 'scheduled'],
     [FOCUS_SESSION_TRANSITIONS, 'completed', 'active'],

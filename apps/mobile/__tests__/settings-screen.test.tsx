@@ -761,6 +761,33 @@ describe('settings update-check block', () => {
     ]);
   });
 
+  it('issue 29: up-to-date message uses beta channel and version when beta channel preferred', async () => {
+    const atomXml = `
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <entry>
+          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.3-beta.2"/>
+          <updated>2026-10-13T12:00:00Z</updated>
+        </entry>
+        <entry>
+          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.2"/>
+          <updated>2026-10-10T12:00:00Z</updated>
+        </entry>
+      </feed>
+    `;
+    mockUpdateFetch.mockResolvedValue(atomFeedResponse(atomXml));
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+
+    // Switch preferred channel to beta
+    fireEvent.press(screen.getByRole('button', { name: '偏好测试版渠道' }));
+    await flush();
+
+    await pressCheckForUpdate();
+
+    expect(screen.getByText(/已是最新版本（测试版 0\.1\.3-beta\.2）/)).toBeTruthy();
+    expect(screen.getByText(/正式版：v0\.1\.2 · 测试版：v0\.1\.3-beta\.2/)).toBeTruthy();
+  });
+
   it('macOS desktop update download completion renders install-and-restart and manual open buttons', async () => {
     mockDownloadProgress = {
       state: 'done',

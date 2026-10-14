@@ -17,6 +17,7 @@ import {
   getReleaseChannel,
   getUpdateChannelPreference,
   installDesktopUpdateAndRestart,
+  isPrerelease,
   isTauriDesktop,
   openDownloadedInstaller,
   pickDownloads,
@@ -53,6 +54,8 @@ export type UpdateOutcome =
   | {
       kind: 'up-to-date';
       latestVersion: string;
+      channel?: ReleaseChannel;
+      channelLabel?: string;
       stableRelease: ReleaseInfo | null;
       betaRelease: ReleaseInfo | null;
     }
@@ -246,10 +249,37 @@ export function useAppUpdate(): UseAppUpdateResult {
 
       if (options.length === 0) {
         // 两个渠道均无更高新版本
-        const fallbackVersion = stable?.version ?? beta?.version ?? currentVersion;
+        const isBetaPreferred = preferredChannel === 'beta';
+        const targetRelease = isBetaPreferred ? (beta ?? stable) : (stable ?? beta);
+        const targetChannel: ReleaseChannel = isBetaPreferred
+          ? (beta?.channel ?? (isPrerelease(currentVersion) ? getReleaseChannel(currentVersion) : 'beta'))
+          : (stable?.channel ?? 'stable');
+        const targetChannelLabel = getChannelLabel(targetChannel);
+
+        let latestVersion = targetRelease?.version ?? currentVersion;
+        if (isBetaPreferred) {
+          if (beta !== null) {
+            latestVersion = beta.version;
+            if (isPrerelease(currentVersion) && compareVersions(currentVersion, latestVersion) > 0) {
+              latestVersion = currentVersion;
+            }
+          } else if (isPrerelease(currentVersion)) {
+            latestVersion = currentVersion;
+          }
+        } else {
+          if (stable !== null) {
+            latestVersion = stable.version;
+            if (!isPrerelease(currentVersion) && compareVersions(currentVersion, latestVersion) > 0) {
+              latestVersion = currentVersion;
+            }
+          }
+        }
+
         setOutcome({
           kind: 'up-to-date',
-          latestVersion: fallbackVersion,
+          latestVersion,
+          channel: targetChannel,
+          channelLabel: targetChannelLabel,
           stableRelease: stable,
           betaRelease: beta,
         });

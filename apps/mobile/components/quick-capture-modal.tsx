@@ -71,11 +71,12 @@ export function QuickCaptureModal({
     <Modal
       visible={visible}
       transparent
-      animationType="slide"
+      animationType={Platform.OS === 'ios' ? 'slide' : 'fade'}
       onRequestClose={handleClose}
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ pointerEvents: 'auto' }}
         className="flex-1 justify-end bg-black/40 md:items-center md:justify-center md:px-4"
       >
         {/* Backdrop dismiss */}

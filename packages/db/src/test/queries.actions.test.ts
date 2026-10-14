@@ -10,16 +10,22 @@ import { toIso, ulid, type NextAction, type Value } from '@nextdo/core';
 import {
   addNextAction,
   completeAction,
+  listCompletedActions,
   listNextActions,
+  reopenAction,
   skipAction,
   snoozeAction,
   trashAction,
   updateNextAction,
 } from '../queries/actions';
+import { listFocusSessions } from '../queries/focus';
+import { listCompletionRecords } from '../queries/reviews';
+import { queryEnginePool } from '../queries/pool';
 import { openTestDb, type TestDb } from './query-helpers';
-import { FIXTURE_IDS, FIXTURE_NOW } from './fixtures';
+import { FIXTURE_IDS, FIXTURE_NOW, fixtureHabitDayId } from './fixtures';
 
 const A = FIXTURE_IDS.actions;
+const C = FIXTURE_IDS.calendar;
 const H = FIXTURE_IDS.habits;
 const R = FIXTURE_IDS.reminders;
 
@@ -452,6 +458,210 @@ describe('trashAction', () => {
         .execute();
       expect(reminders).toHaveLength(1);
       expect(reminders[0]?.state).toBe('cancelled');
+    } finally {
+      await close();
+    }
+  });
+});
+
+describe('reopenAction — the restore transaction (issue 27)', () => {
+  it('puts a done action back to open, clearing snooze state and skips', async () => {
+    const { db, close } = await open(true);
+    try {
+      const target = new Date(FIXTURE_NOW.getTime() + 3600_000);
+      await snoozeAction(db, { actionKind: 'next', actionId: A.done, now: FIXTURE_NOW, snoozedUntil: target });
+      await db
+        .updateTable('next_actions')
+        .set({ consecutive_skips: 3 })
+        .where('id', '=', A.done)
+        .execute();
+
+      await reopenAction(db, { actionKind: 'next', actionId: A.done, now: FIXTURE_NOW });
+
+      const row = await db.selectFrom('next_actions').selectAll().where('id', '=', A.done).executeTakeFirst();
+      expect(row?.status).toBe('open');
+      expect(row?.snoozed_until).toBeNull();
+      expect(row?.consecutive_skips).toBe(0);
+      expect(row?.updated_at).toBe(toIso(FIXTURE_NOW));
+    } finally {
+      await close();
+    }
+  });
+
+  it('soft-deletes the CompletionRecords so the review snapshots stop counting it', async () => {
+    const { db, close } = await open(true);
+    try {
+      await reopenAction(db, { actionKind: 'next', actionId: A.done, now: FIXTURE_NOW });
+
+      expect(await listCompletionRecords(db, { actionIds: [A.done] })).toEqual([]);
+      // The row survives (soft delete — history is not destroyed).
+      const row = await db
+        .selectFrom('completion_records')
+        .selectAll()
+        .where('action_id', '=', A.done)
+        .executeTakeFirst();
+      expect(row?.deleted_at).toBe(toIso(FIXTURE_NOW));
+    } finally {
+      await close();
+    }
+  });
+
+  it('leaves the action FocusSessions untouched (the point of issue 27)', async () => {
+    const { db, close } = await open(true);
+    try {
+      const before = await listFocusSessions(db, { actionId: A.a });
+      await completeAction(db, { actionKind: 'next', actionId: A.a, now: FIXTURE_NOW });
+      await reopenAction(db, { actionKind: 'next', actionId: A.a, now: FIXTURE_NOW });
+
+      expect(await listFocusSessions(db, { actionId: A.a })).toEqual(before);
+    } finally {
+      await close();
+    }
+  });
+
+  it('the restored action is back in the engine pool', async () => {
+    const { db, close } = await open(true);
+    try {
+      await reopenAction(db, { actionKind: 'next', actionId: A.done, now: FIXTURE_NOW });
+      const pool = await queryEnginePool(db, FIXTURE_NOW);
+      expect(pool.actions.map((candidate) => candidate.id)).toContain(A.done);
+    } finally {
+      await close();
+    }
+  });
+
+  it('refuses an action that is not done (illegal transition open → open)', async () => {
+    const { db, close } = await open(true);
+    try {
+      await expect(
+        reopenAction(db, { actionKind: 'next', actionId: A.a, now: FIXTURE_NOW }),
+      ).rejects.toMatchObject({ code: 'invalid-transition:open:open' });
+    } finally {
+      await close();
+    }
+  });
+
+  it('refuses a soft-deleted action (not-found)', async () => {
+    const { db, close } = await open(true);
+    try {
+      await expect(
+        reopenAction(db, { actionKind: 'next', actionId: A.trashed, now: FIXTURE_NOW }),
+      ).rejects.toMatchObject({ code: 'action.not-found' });
+    } finally {
+      await close();
+    }
+  });
+
+  it('restores a habit 打卡 (the day row carries the title, the Habit the rest)', async () => {
+    const { db, close } = await open(true);
+    try {
+      const dayId = fixtureHabitDayId(H.mid, -1);
+      await reopenAction(db, { actionKind: 'habit', actionId: dayId, now: FIXTURE_NOW });
+
+      const day = await db.selectFrom('habit_days').selectAll().where('id', '=', dayId).executeTakeFirst();
+      expect(day?.status).toBe('open');
+      // The habit itself is untouched — only a `completed` one is reopened.
+      const habit = await db.selectFrom('habits').selectAll().where('id', '=', H.mid).executeTakeFirst();
+      expect(habit?.status).toBe('active');
+    } finally {
+      await close();
+    }
+  });
+
+  it('reopens a finished challenge when its last day is restored', async () => {
+    const { db, close } = await open(true);
+    try {
+      // H.last is on its final cycle day: completing it finishes the habit.
+      const lastDay = fixtureHabitDayId(H.last, 0);
+      await completeAction(db, { actionKind: 'habit', actionId: lastDay, now: FIXTURE_NOW });
+      const finished = await db.selectFrom('habits').selectAll().where('id', '=', H.last).executeTakeFirst();
+      expect(finished?.status).toBe('completed');
+
+      await reopenAction(db, { actionKind: 'habit', actionId: lastDay, now: FIXTURE_NOW });
+
+      const habit = await db.selectFrom('habits').selectAll().where('id', '=', H.last).executeTakeFirst();
+      expect(habit?.status).toBe('active');
+      const day = await db.selectFrom('habit_days').selectAll().where('id', '=', lastDay).executeTakeFirst();
+      expect(day?.status).toBe('open');
+    } finally {
+      await close();
+    }
+  });
+});
+
+describe('listCompletedActions — the 已完成行动 window read (issue 27)', () => {
+  it('returns the done next, calendar and habit actions, newest completion first', async () => {
+    const { db, close } = await open(true);
+    try {
+      const rows = await listCompletedActions(db);
+      const ids = rows.map((row) => row.id);
+      expect(ids).toContain(A.done);
+      expect(ids).toContain(C.done);
+      // A 打卡 is a pool row with its own 完成 button — it belongs here too.
+      expect(ids).toContain(fixtureHabitDayId(H.mid, -1));
+
+      const next = rows.find((row) => row.id === A.done);
+      expect(next).toMatchObject({ kind: 'next', estMinutes: 30 });
+      expect(next?.completedAt).not.toBeNull();
+      const calendar = rows.find((row) => row.id === C.done);
+      expect(calendar?.kind).toBe('calendar');
+      expect(calendar?.projectId).toBeNull();
+    } finally {
+      await close();
+    }
+  });
+
+  it('a habit row shows the parent Habit title, estimate and project', async () => {
+    const { db, close } = await open(true);
+    try {
+      const row = (await listCompletedActions(db)).find(
+        (entry) => entry.id === fixtureHabitDayId(H.mid, -1),
+      );
+      // The day row has none of these — the window must not show blanks.
+      expect(row).toMatchObject({
+        kind: 'habit',
+        title: '21 天力量训练',
+        estMinutes: 45,
+        projectId: FIXTURE_IDS.projects.empty,
+      });
+    } finally {
+      await close();
+    }
+  });
+
+  it('a 打卡 completed from the pool lands in the window with its instant', async () => {
+    const { db, close } = await open(true);
+    try {
+      const today = fixtureHabitDayId(H.today, 0);
+      expect((await listCompletedActions(db)).map((entry) => entry.id)).not.toContain(today);
+
+      await completeAction(db, { actionKind: 'habit', actionId: today, now: FIXTURE_NOW });
+
+      const row = (await listCompletedActions(db)).find((entry) => entry.id === today);
+      expect(row).toMatchObject({ kind: 'habit', title: '21 天晨读挑战' });
+      expect(row?.completedAt).toBe(toIso(FIXTURE_NOW));
+    } finally {
+      await close();
+    }
+  });
+
+  it('omits open and soft-deleted actions', async () => {
+    const { db, close } = await open(true);
+    try {
+      const ids = (await listCompletedActions(db)).map((row) => row.id);
+      expect(ids).not.toContain(A.a);
+      expect(ids).not.toContain(A.trashed);
+    } finally {
+      await close();
+    }
+  });
+
+  it('a restored action leaves the list', async () => {
+    const { db, close } = await open(true);
+    try {
+      expect((await listCompletedActions(db)).map((row) => row.id)).toContain(A.done);
+      await reopenAction(db, { actionKind: 'next', actionId: A.done, now: FIXTURE_NOW });
+      expect((await listCompletedActions(db)).map((row) => row.id)).not.toContain(A.done);
     } finally {
       await close();
     }

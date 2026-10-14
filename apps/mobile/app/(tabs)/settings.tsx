@@ -376,7 +376,7 @@ export default function SettingsScreen() {
         contentContainerStyle={{ paddingTop: topPadding, paddingHorizontal: 16, paddingBottom: 32 }}
         keyboardShouldPersistTaps="handled"
       >
-        <View className="w-full max-w-3xl mx-auto">
+        <View className="w-full max-w-5xl mx-auto">
         {/* Header block (matches the other tabs) */}
         <Text className="font-display text-3xl font-bold tracking-tight text-ink dark:text-ink-dark">
           设置
@@ -1014,7 +1014,7 @@ export default function SettingsScreen() {
           {update.outcome?.kind === 'up-to-date' ? (
             <View className="gap-1">
               <Text className="font-sans text-sm text-muted dark:text-muted-dark">
-                已是最新版本（{update.outcome.latestVersion}）。
+                已是最新版本（{update.outcome.channel === 'beta' ? `测试版 ${update.outcome.latestVersion}` : `正式版 ${update.outcome.latestVersion}`}）。
               </Text>
               {update.outcome.stableRelease || update.outcome.betaRelease ? (
                 <Text className="font-sans text-xs text-muted/80 dark:text-muted-dark/80">

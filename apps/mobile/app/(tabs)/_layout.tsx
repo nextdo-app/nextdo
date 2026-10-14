@@ -21,10 +21,10 @@ export default function TabsLayout() {
   const insets = useAppInsets();
   const { width } = useWindowDimensions();
   const bottomPadding = Math.max(insets.bottom, 8);
-  // Align the 5 tabs horizontally with the centered max-w-3xl (768px) content
+  // Align the 5 tabs horizontally with the centered max-w-5xl (1024px) content
   // column on wide desktop viewports while keeping the bar background & top
   // border full-width across the window.
-  const horizontalInset = Math.max(0, (width - 768) / 2);
+  const horizontalInset = Math.max(0, (width - 1024) / 2);
 
   const tabBarStyle: ViewStyle = {
     backgroundColor: isDark ? colors.surfaceDark : colors.surface,
