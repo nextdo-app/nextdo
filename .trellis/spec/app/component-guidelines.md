@@ -165,6 +165,32 @@
   `accessibilityRole="progressbar"` + `accessibilityValue` (width is never
   the only signal).
 
+## App update (Settings 「应用更新」 card + startup 「发现新版本」 dialog)
+
+- ONE flow behind two entry points: `apps/mobile/lib/app-update.ts` (feed fetch,
+  version compare, installer pick, Tauri IPC wrappers) →
+  `hooks/use-app-update.ts` (Settings card state machine) and
+  `components/auto-update-dialog.tsx` (startup notifier — at most one prompt per
+  version per session). Neither entry point owns a second copy of the version
+  rules; the dialog is not a second implementation of the hook.
+- The ChangeLog in both places is the GitHub release **body**, rendered as-is
+  (source contract: the release-notes pitfall in
+  `project/quality-guidelines.md`). Do not re-parse or re-format it.
+- **Desktop install goes through `install_update_and_restart`.** The Rust command
+  (`apps/desktop/src-tauri/src/lib.rs`) mounts the `.dmg`, spawns a detached
+  helper that waits for the app to exit, `ditto`s the new bundle over the running
+  one, clears quarantine and relaunches it; on Windows it launches the NSIS
+  installer and exits. The user never has to quit the app or drag the installer.
+  `open_downloaded_file` hands the file to the OS (Finder / NSIS) — that is the
+  manual FALLBACK only (the install-failure state and the Settings card's
+  「手动打开安装包」), never the primary 「立即安装并重启」 button.
+- After the install command resolves, clear the installing flag only on Linux
+  (system installer, no exit) — on macOS / Windows the process is already exiting
+  and the promise never settles.
+- Both entry points poll download progress with a 400 ms interval **plus one
+  immediate read** after `download_update`, so a finished download shows without
+  waiting a full interval.
+
 ## Forbidden
 
 - `console.*`, `alert()`, direct network calls, direct SQLite access in components.
