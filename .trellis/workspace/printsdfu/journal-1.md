@@ -1298,3 +1298,60 @@ NextAction / CalendarAction / HabitDay 并支持逐条恢复为未完成；顺�
 
 [OK] **Completed**
 
+
+## Session 41: 时间选择器视觉优化与习惯打卡多阶段提醒 (#31, #32)
+<!-- trellis-session: v=2 fp=86d52f36f903738b -->
+
+**Date**: 2026-10-15
+**Task**: 时间选择器交互体验与小屏紧凑布局优化，以及习惯打卡多阶段提前提醒机制 (#31, #32)
+**Branch**: `feat/habit-checkin-window-reminders`
+
+### Summary
+
+针对 Issue #31（时间选择器在移动端和小屏设备上交互拥挤、截断与难以精确定位）以及 Issue #32（习惯打卡提醒支持时间窗口开始前与结束前阶段提醒），彻底重构了 DateTimePicker 的时间选择模式布局并升级了提醒推导与同步引擎。
+
+### Main Changes
+
+- **mobile (DateTimePicker)**:
+  - `datetime-picker.tsx`:
+    - 重新设计时间选择器顶部大字时钟区域：在 12 小时制下将「上午 / 下午」胶囊切换放置在时钟左侧紧邻处，右侧专用于「24h / 12h」切换，彻底解决 360px 宽度下的文字截断和折行问题；
+    - 简化时/分滚轮表头为极简的「时」和「分」，去除滚轮项内挤占空间的冗余 `am/pm` 标记，两列滚轮更宽裕清晰；
+    - 增加滚轮上下边缘渐变淡出遮罩与居中高亮选框，使当前选中数值一目了然；
+    - 分钟快捷工具栏清晰分为左右两组并加竖向分割线：左侧为 `:00 / :15 / :30 / :45` 快速对齐键，右侧为 `-5m / +5m / -1m / +1m` 精细微调键，按键紧凑防溢出；
+    - 保持常用时段快捷横向滑动选择胶囊（如 07:30, 08:30, 09:00, 12:30, 21:00 等），点选即可直达。
+  - `datetime-picker.test.tsx`: 补充 12h 模式切换、快捷微调与小时分钟更新测试用例。
+- **mobile (Settings)**:
+  - `settings.tsx`: 智能感知当前活跃习惯；当所有习惯均已设置时间窗口时，给出友好提示说明将依据各自时间窗口开始前与结束前提醒，避免用户困惑。
+- **core & db (Habit Check-In Reminders)**:
+  - `habit-checkin.ts`: 新增 `habitCheckInReminderMoments`，支持按时间窗口提前 15 分钟（`leadMinutes`）生成窗口开始提醒（督促准备）与窗口结束前提醒（未打卡督促）；全天习惯维持用户设定的提醒时刻；
+  - `habit-reminders.ts`: `syncHabitCheckInReminders` 支持同步管理多个阶段的打卡提醒，打卡完成或过期后自动作废对应提醒；
+  - 测试用例完备覆盖提前提醒推导、极窄窗口保护与完成打卡后批量作废。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ad756dd` | feat(ui,reminders): 优化时间选择器小屏交互体验并支持习惯窗口多阶段提醒 (#31, #32) |
+
+### Testing
+
+- [OK] `pnpm lint` 通过（0 errors）
+- [OK] `pnpm typecheck` 全部 workspace 通过
+- [OK] `pnpm test` 全部 39 个测试套件（570 tests）全部通过
+- [OK] `pnpm verify:web --no-serve` 全 4 道门禁（lint → typecheck → test → build:web）全绿
+- [OK] 浏览器端在 `localhost:4180` 实测通过：
+  - 360px Android 手机视口与桌面视口实测 DateTimePicker
+  - 24 小时制、12 小时制、上午/下午切换、分微调工具栏与常用时段点击响应
+  - 深色模式正常
+  - 设置页习惯提醒时间选择器联动正常
+  - 实测截图保存在 `.verify/issue-31-datetime-picker/`
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 推送分支 `feat/habit-checkin-window-reminders` 并创建 PR（关联 closes #30, #31, #32）
+
+
