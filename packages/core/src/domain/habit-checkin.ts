@@ -110,16 +110,103 @@ function dayEnd(dayKey: string): Date {
   return new Date(year, month - 1, day, 23, 59, 59, 999);
 }
 
+/** Default lead-in minutes before a habit window starts or ends to fire a reminder. */
+export const HABIT_WINDOW_REMINDER_LEAD_MINUTES = 15;
+
+/** The reminder trigger stage for a habit day. */
+export type HabitReminderStage = 'start' | 'end' | 'all_day';
+
+export interface HabitReminderMomentSpec {
+  firesAt: Date;
+  stage: HabitReminderStage;
+}
+
 /**
- * The "该打卡了" reminder moment for a habit day (issue 32-A).
+ * Returns the reminder moments for a habit day.
  *
- * A habit WITH a window is reminded at its own `windowEnd` — the last
- * moment the 打卡 is still legal (see `assertHabitCheckInWindow`). An
- * all-day habit has no such moment, so it uses `allDayReminderHhmm`
- * (default 21:00, user-adjustable in Settings).
+ * Rules:
+ * 1. An all-day habit (no windowStart and no windowEnd) is reminded at
+ *    `allDayReminderHhmm` (default 21:00).
+ * 2. A habit with a time window is reminded:
+ *    - BEFORE the window starts (`windowStart` minus `leadMinutes`, e.g. 15m prior),
+ *    - BEFORE the window ends (`windowEnd` minus `leadMinutes`, e.g. 15m prior,
+ *      only needed if the habit has not been checked in yet).
  *
- * Returns null when the moment is malformed or already past `now` — a
- * reminder in the past is never created.
+ * Past moments are excluded (a reminder in the past is never created).
+ */
+export function habitCheckInReminderMoments(
+  habit: HabitWindowFields,
+  dayKey: string,
+  now: Date,
+  allDayReminderHhmm: string = DEFAULT_ALL_DAY_REMINDER_HHMM,
+  leadMinutes: number = HABIT_WINDOW_REMINDER_LEAD_MINUTES,
+): HabitReminderMomentSpec[] {
+  const year = Number(dayKey.slice(0, 4));
+  const month = Number(dayKey.slice(4, 6));
+  const day = Number(dayKey.slice(6, 8));
+
+  // Case 1: All-day habit (neither start nor end window specified)
+  if (!habit.windowStart && !habit.windowEnd) {
+    let hour: number;
+    let minute: number;
+    try {
+      ({ hour, minute } = parseHhmm(allDayReminderHhmm));
+    } catch {
+      return [];
+    }
+    const firesAt = new Date(year, month - 1, day, hour, minute, 0, 0);
+    if (firesAt.getTime() <= now.getTime()) return [];
+    return [{ firesAt, stage: 'all_day' }];
+  }
+
+  // Case 2: Windowed habit
+  const results: HabitReminderMomentSpec[] = [];
+
+  let startMoment: Date | null = null;
+  if (habit.windowStart) {
+    try {
+      const { hour, minute } = parseHhmm(habit.windowStart);
+      startMoment = new Date(year, month - 1, day, hour, minute, 0, 0);
+      const startFiresAt = new Date(startMoment.getTime() - leadMinutes * 60_000);
+      if (startFiresAt.getTime() > now.getTime()) {
+        results.push({ firesAt: startFiresAt, stage: 'start' });
+      }
+    } catch {
+      // ignore malformed windowStart
+    }
+  }
+
+  if (habit.windowEnd) {
+    try {
+      const { hour, minute } = parseHhmm(habit.windowEnd);
+      let endMoment = new Date(year, month - 1, day, hour, minute, 0, 0);
+      if (startMoment && endMoment.getTime() <= startMoment.getTime()) {
+        // Cross-midnight window
+        endMoment = new Date(endMoment.getTime() + 24 * 60 * 60_000);
+      }
+
+      let endFiresAt: Date;
+      if (startMoment && endMoment.getTime() - startMoment.getTime() <= leadMinutes * 60_000) {
+        // For very narrow windows (<= leadMinutes), remind midway or at start
+        const spanMs = endMoment.getTime() - startMoment.getTime();
+        endFiresAt = new Date(startMoment.getTime() + Math.max(0, Math.floor(spanMs / 2)));
+      } else {
+        endFiresAt = new Date(endMoment.getTime() - leadMinutes * 60_000);
+      }
+
+      if (endFiresAt.getTime() > now.getTime()) {
+        results.push({ firesAt: endFiresAt, stage: 'end' });
+      }
+    } catch {
+      // ignore malformed windowEnd
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Backward-compatible single moment resolver (returns the earliest upcoming moment).
  */
 export function habitCheckInReminderMoment(
   habit: HabitWindowFields,
@@ -127,20 +214,8 @@ export function habitCheckInReminderMoment(
   now: Date,
   allDayReminderHhmm: string = DEFAULT_ALL_DAY_REMINDER_HHMM,
 ): Date | null {
-  const hhmm = habit.windowEnd ?? allDayReminderHhmm;
-  let hour: number;
-  let minute: number;
-  try {
-    ({ hour, minute } = parseHhmm(hhmm));
-  } catch {
-    return null;
-  }
-  const year = Number(dayKey.slice(0, 4));
-  const month = Number(dayKey.slice(4, 6));
-  const day = Number(dayKey.slice(6, 8));
-  const moment = new Date(year, month - 1, day, hour, minute, 0, 0);
-  if (moment.getTime() <= now.getTime()) return null;
-  return moment;
+  const moments = habitCheckInReminderMoments(habit, dayKey, now, allDayReminderHhmm);
+  return moments[0]?.firesAt ?? null;
 }
 
 // ---------------------------------------------------------------------------

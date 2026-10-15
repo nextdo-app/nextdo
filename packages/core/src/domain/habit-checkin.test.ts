@@ -13,6 +13,7 @@ import {
   extendedCycleDays,
   habitCarryOverExtension,
   habitCheckInReminderMoment,
+  habitCheckInReminderMoments,
   isHabitCatchUpAvailable,
 } from './habit-checkin';
 
@@ -111,40 +112,81 @@ describe('isHabitCatchUpAvailable (issue 32-B 方案 3)', () => {
   });
 });
 
-describe('habitCheckInReminderMoment (issue 32-A)', () => {
-  it('a windowed habit is reminded at its own windowEnd', () => {
-    const moment = habitCheckInReminderMoment(
+describe('habitCheckInReminderMoments (issue 32-A)', () => {
+  it('a windowed habit has reminders before windowStart and before windowEnd', () => {
+    // Tomorrow: both moments are in the future
+    const moments = habitCheckInReminderMoments(
+      { windowStart: '08:00', windowEnd: '20:00' },
+      '20260922',
+      NOW,
+    );
+    expect(moments).toHaveLength(2);
+    expect(moments[0]?.stage).toBe('start');
+    expect(moments[0]?.firesAt.toISOString()).toBe('2026-09-22T07:45:00.000Z');
+    expect(moments[1]?.stage).toBe('end');
+    expect(moments[1]?.firesAt.toISOString()).toBe('2026-09-22T19:45:00.000Z');
+  });
+
+  it('drops past moments for today', () => {
+    // Today at 13:00, the 08:00 start (07:45 reminder) is past, only the 19:45 end reminder remains
+    const moments = habitCheckInReminderMoments(
       { windowStart: '08:00', windowEnd: '20:00' },
       '20260921',
       NOW,
     );
-    expect(moment?.toISOString()).toBe('2026-09-21T20:00:00.000Z');
+    expect(moments).toHaveLength(1);
+    expect(moments[0]?.stage).toBe('end');
+    expect(moments[0]?.firesAt.toISOString()).toBe('2026-09-21T19:45:00.000Z');
   });
 
-  it('an all-day habit falls back to the configurable default (21:00)', () => {
-    const moment = habitCheckInReminderMoment({}, '20260921', NOW);
-    expect(moment?.toISOString()).toBe('2026-09-21T21:00:00.000Z');
+  it('an all-day habit reminds at the configurable default (21:00)', () => {
+    const moments = habitCheckInReminderMoments({}, '20260921', NOW);
+    expect(moments).toHaveLength(1);
+    expect(moments[0]?.stage).toBe('all_day');
+    expect(moments[0]?.firesAt.toISOString()).toBe('2026-09-21T21:00:00.000Z');
     expect(DEFAULT_ALL_DAY_REMINDER_HHMM).toBe('21:00');
   });
 
   it('an all-day habit honours a user-picked time', () => {
-    // Tomorrow, because 08:30 TODAY is already past at the 13:00 fixture.
-    const moment = habitCheckInReminderMoment({}, '20260922', NOW, '08:30');
-    expect(moment?.toISOString()).toBe('2026-09-22T08:30:00.000Z');
+    const moments = habitCheckInReminderMoments({}, '20260922', NOW, '08:30');
+    expect(moments).toHaveLength(1);
+    expect(moments[0]?.stage).toBe('all_day');
+    expect(moments[0]?.firesAt.toISOString()).toBe('2026-09-22T08:30:00.000Z');
   });
 
   it('never returns a moment that is already past', () => {
     // windowEnd 12:00 has already gone by at 13:00.
-    expect(habitCheckInReminderMoment({ windowEnd: '12:00' }, '20260921', NOW)).toBeNull();
+    expect(habitCheckInReminderMoments({ windowEnd: '12:00' }, '20260921', NOW)).toEqual([]);
   });
 
   it('a malformed configured time yields no reminder rather than throwing', () => {
-    expect(habitCheckInReminderMoment({}, '20260921', NOW, 'not-a-time')).toBeNull();
+    expect(habitCheckInReminderMoments({}, '20260921', NOW, 'not-a-time')).toEqual([]);
   });
 
-  it('a future day is reminded at that own moment', () => {
-    const moment = habitCheckInReminderMoment({ windowEnd: '20:00' }, '20260922', NOW);
-    expect(moment?.toISOString()).toBe('2026-09-22T20:00:00.000Z');
+  it('narrow window clamps end reminder safely', () => {
+    // Window: 08:00–08:10 (span 10m <= 15m lead-in)
+    const moments = habitCheckInReminderMoments(
+      { windowStart: '08:00', windowEnd: '08:10' },
+      '20260922',
+      NOW,
+    );
+    expect(moments).toHaveLength(2);
+    expect(moments[0]?.stage).toBe('start');
+    expect(moments[0]?.firesAt.toISOString()).toBe('2026-09-22T07:45:00.000Z');
+    expect(moments[1]?.stage).toBe('end');
+    // Midpoint: 08:00 + 5m = 08:05
+    expect(moments[1]?.firesAt.toISOString()).toBe('2026-09-22T08:05:00.000Z');
+  });
+});
+
+describe('habitCheckInReminderMoment (backward compatibility)', () => {
+  it('returns the earliest upcoming moment', () => {
+    const moment = habitCheckInReminderMoment(
+      { windowStart: '08:00', windowEnd: '20:00' },
+      '20260922',
+      NOW,
+    );
+    expect(moment?.toISOString()).toBe('2026-09-22T07:45:00.000Z');
   });
 });
 

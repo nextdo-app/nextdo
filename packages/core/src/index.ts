@@ -113,14 +113,21 @@ export type { HabitStartDateCheck, HabitStartDateProblem } from './domain/habit-
 export {
   DEFAULT_ALL_DAY_REMINDER_HHMM,
   HABIT_CATCH_UP_MAX_DAYS,
+  HABIT_WINDOW_REMINDER_LEAD_MINUTES,
   assertHabitCheckInWindow,
   extendedCycleDays,
   habitCarryOverExtension,
   habitCatchUpDeadline,
   habitCheckInReminderMoment,
+  habitCheckInReminderMoments,
   isHabitCatchUpAvailable,
 } from './domain/habit-checkin';
-export type { CarryOverDay, HabitWindowFields } from './domain/habit-checkin';
+export type {
+  CarryOverDay,
+  HabitReminderMomentSpec,
+  HabitReminderStage,
+  HabitWindowFields,
+} from './domain/habit-checkin';
 export { DEADLINE_SOON_HOURS, deadlineStatus, formatDeadline } from './domain/deadline';
 export type { DeadlineStatus } from './domain/deadline';
 

@@ -1528,6 +1528,19 @@ describe('settings notifications block (task 09-30 R5)', () => {
 });
 
 /* ------------------------------------------------------------------ *
+ * Settings — habit reminders block (issue 32-A)
+ * ------------------------------------------------------------------ */
+describe('settings habit reminders block', () => {
+  it('renders habit check-in reminder card and shows all-day moment picker when habits are empty', async () => {
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+
+    expect(screen.getByText('习惯打卡提醒')).toBeTruthy();
+    expect(screen.getByText('全天习惯提醒时刻')).toBeTruthy();
+  });
+});
+
+/* ------------------------------------------------------------------ *
  * connect() input branches the button cannot reach (canSubmit requires
  * an address; the token is required but NOT button-gated) — driven
  * through the real hook, for BOTH input shapes.
@@ -1609,3 +1622,4 @@ describe('connect() input branches (button cannot reach)', () => {
   //  Settings screen, so a duplicate render-only harness here would assert
   //  the same thing with more moving parts.
 });
+

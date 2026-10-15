@@ -15,7 +15,7 @@
  */
 import {
   DEFAULT_ALL_DAY_REMINDER_HHMM,
-  habitCheckInReminderMoment,
+  habitCheckInReminderMoments,
   localDateKey,
   toIso,
   ulid,
@@ -106,7 +106,12 @@ export async function syncHabitCheckInReminders(
   }
 
   const armed: HabitDay[] = [];
-  const wanted = new Map<string, string>();
+  interface WantedItem {
+    dayId: string;
+    firesAt: string;
+  }
+  const wantedItems: WantedItem[] = [];
+  const wantedFiresAtByDayId = new Map<string, Set<string>>();
 
   if (options.enabled) {
     for (const habit of habits) {
@@ -114,18 +119,24 @@ export async function syncHabitCheckInReminders(
       const habitDays = (daysByHabit.get(habit.id) ?? []).sort((a, b) =>
         a.localDate.localeCompare(b.localDate),
       );
-      // Pick the earliest upcoming open day whose reminder moment is in the future.
+      // Pick the earliest upcoming open day that has upcoming reminder moments.
       for (const day of habitDays) {
-        const moment = habitCheckInReminderMoment(
+        const moments = habitCheckInReminderMoments(
           windowFieldsOf(habit),
           day.localDate,
           now,
           options.allDayReminderHhmm,
         );
-        if (moment !== null) {
+        if (moments.length > 0) {
           armed.push(day);
-          wanted.set(day.id, toIso(moment));
-          break; // At most one upcoming reminder armed per active habit.
+          const firesAtSet = new Set<string>();
+          for (const m of moments) {
+            const firesAtIso = toIso(m.firesAt);
+            wantedItems.push({ dayId: day.id, firesAt: firesAtIso });
+            firesAtSet.add(firesAtIso);
+          }
+          wantedFiresAtByDayId.set(day.id, firesAtSet);
+          break; // At most one upcoming armed day per active habit.
         }
       }
     }
@@ -160,8 +171,8 @@ export async function syncHabitCheckInReminders(
     //    moved, day completed, or feature disabled).
     for (const row of existing) {
       if (row.state !== 'scheduled') continue;
-      const keepFiresAt = wanted.get(row.action_id ?? '');
-      if (keepFiresAt === row.fires_at) continue;
+      const validMoments = wantedFiresAtByDayId.get(row.action_id ?? '');
+      if (validMoments && row.fires_at !== null && validMoments.has(row.fires_at)) continue;
       await tx
         .updateTable('reminders')
         .set({ state: 'cancelled', updated_at: nowIso })
@@ -171,11 +182,9 @@ export async function syncHabitCheckInReminders(
     }
 
     // 2. Create what is missing.
-    for (const day of armed) {
-      const keep = wanted.get(day.id);
-      if (keep === undefined) continue;
-      const rows = existingByAction.get(day.id) ?? [];
-      const hasExact = rows.some((row) => row.state === 'scheduled' && row.fires_at === keep);
+    for (const item of wantedItems) {
+      const rows = existingByAction.get(item.dayId) ?? [];
+      const hasExact = rows.some((row) => row.state === 'scheduled' && row.fires_at === item.firesAt);
       if (hasExact) continue;
       await tx
         .insertInto('reminders')
@@ -185,10 +194,8 @@ export async function syncHabitCheckInReminders(
           updated_at: nowIso,
           deleted_at: null,
           action_kind: 'habit',
-          action_id: day.id,
-          fires_at: keep,
-          // The 打卡 is the habit's daily commitment and this fires at the
-          // last legal moment — important, matching the calendar lead-in.
+          action_id: item.dayId,
+          fires_at: item.firesAt,
           intensity: 'important',
           state: 'scheduled',
         })

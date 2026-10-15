@@ -182,7 +182,7 @@ describe('syncHabitCheckInReminders (issue 32-A)', () => {
     return rows.filter((r) => dayIds.has(r.action_id ?? ''));
   }
 
-  it('a windowed habit is reminded at its own windowEnd', async () => {
+  it('a windowed habit is reminded before windowEnd (and before windowStart if in future)', async () => {
     const { db, close } = await open();
     try {
       const habit = makeHabit({ windowStart: '08:00', windowEnd: '20:00' });
@@ -195,10 +195,49 @@ describe('syncHabitCheckInReminders (issue 32-A)', () => {
       });
       expect(result.created).toBeGreaterThan(0);
       const rows = await remindersForHabit(db, habit.id);
-      const today = rows.find((r) => r.fires_at === '2026-09-21T20:00:00.000Z');
-      expect(today).toBeDefined();
-      expect(today?.intensity).toBe('important');
-      expect(today?.state).toBe('scheduled');
+      // WINDOW_NOW is 13:00, 07:45 start reminder has passed, 19:45 end reminder remains
+      const todayEnd = rows.find((r) => r.fires_at === '2026-09-21T19:45:00.000Z');
+      expect(todayEnd).toBeDefined();
+      expect(todayEnd?.intensity).toBe('important');
+      expect(todayEnd?.state).toBe('scheduled');
+    } finally {
+      await close();
+    }
+  });
+
+  it('a future windowed habit day arms both start and end reminders', async () => {
+    const { db, close } = await open();
+    try {
+      // 07:00 in the morning: both 07:45 (start) and 19:45 (end) are in the future
+      const MORNING_NOW = new Date('2026-09-21T07:00:00.000Z');
+      const habit = makeHabit({ windowStart: '08:00', windowEnd: '20:00' });
+      await startHabit(db, habit, MORNING_NOW);
+      const result = await syncHabitCheckInReminders(db, {
+        habits: await listHabits(db),
+        days: await listHabitDays(db),
+        now: MORNING_NOW,
+        options: DEFAULT_HABIT_REMINDER_OPTIONS,
+      });
+      expect(result.created).toBe(2);
+      const rows = await remindersForHabit(db, habit.id);
+      const startRem = rows.find((r) => r.fires_at === '2026-09-21T07:45:00.000Z');
+      const endRem = rows.find((r) => r.fires_at === '2026-09-21T19:45:00.000Z');
+      expect(startRem).toBeDefined();
+      expect(startRem?.state).toBe('scheduled');
+      expect(endRem).toBeDefined();
+      expect(endRem?.state).toBe('scheduled');
+
+      // Completing the habit cancels BOTH reminders so end reminder won't fire if already done
+      const days = await listHabitDays(db, { habitId: habit.id });
+      const todayDay = days.find((d) => d.localDate === '20260921');
+      await completeAction(db, {
+        actionKind: 'habit',
+        actionId: todayDay!.id,
+        now: new Date('2026-09-21T09:00:00.000Z'),
+      });
+      const rowsAfterComplete = await remindersForHabit(db, habit.id);
+      expect(rowsAfterComplete.filter((r) => r.state === 'scheduled')).toHaveLength(0);
+      expect(rowsAfterComplete.filter((r) => r.state === 'cancelled')).toHaveLength(2);
     } finally {
       await close();
     }

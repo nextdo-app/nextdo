@@ -53,6 +53,7 @@ import { useCloudSync } from '@/hooks/use-cloud-sync';
 import { useReminderPermission } from '@/hooks/use-reminder-permission';
 import { useAppClock } from '@/hooks/use-app-clock';
 import { useHabitReminders } from '@/hooks/use-habit-reminders';
+import { useHabits } from '@/hooks/use-habits';
 import { PickerField } from '@/components/picker-field';
 import { DateTimePicker } from '@/components/datetime-picker';
 import { useAppUpdate } from '@/hooks/use-app-update';
@@ -191,6 +192,12 @@ export default function SettingsScreen() {
   const { state: notificationPermission, openSystemSettings, requestPermission } =
     useReminderPermission();
   const now = useAppClock();
+  const { data: habitRows } = useHabits(now);
+  const activeHabits = (habitRows ?? []).map((r) => r.habit).filter(
+    (h) => h.deletedAt === null && h.status === 'active',
+  );
+  const hasAllDayHabits = activeHabits.some((h) => !h.windowStart || !h.windowEnd);
+  const allWindowedHabits = activeHabits.length > 0 && !hasAllDayHabits;
   const { options: habitReminderOptions, update: updateHabitReminders } = useHabitReminders(now);
   const [openHabitTimePicker, setOpenHabitTimePicker] = useState(false);
   const update = useAppUpdate();
@@ -540,24 +547,35 @@ export default function SettingsScreen() {
 
           {habitReminderOptions?.enabled ? (
             <View className="gap-2.5 border-t border-border/40 pt-2.5 dark:border-border-dark/40">
-              <View className="flex-row items-center justify-between">
-                <View className="flex-1 pr-2">
+              {allWindowedHabits ? (
+                <View className="gap-1">
                   <Text className="font-sans text-xs font-medium text-ink dark:text-ink-dark">
-                    全天习惯提醒时刻
+                    时间窗口提醒已就绪
                   </Text>
-                  <Text className="font-sans text-[11px] text-muted dark:text-muted-dark">
-                    无时间窗口的习惯在此刻提醒；有窗口的在窗口结束时提醒。
+                  <Text className="font-sans text-[11px] leading-relaxed text-muted dark:text-muted-dark">
+                    当前所有习惯均已设置时间窗口，将在各自时间窗口开始前与结束前（未打卡时）自动提醒，无需配置全天提醒时刻。
                   </Text>
                 </View>
-                <View className="w-28">
-                  <PickerField
-                    label="全天提醒时刻"
-                    value={habitReminderOptions.allDayReminderHhmm}
-                    placeholder="21:00"
-                    onPress={() => setOpenHabitTimePicker(true)}
-                  />
+              ) : (
+                <View className="flex-row items-center justify-between">
+                  <View className="flex-1 pr-2">
+                    <Text className="font-sans text-xs font-medium text-ink dark:text-ink-dark">
+                      全天习惯提醒时刻
+                    </Text>
+                    <Text className="font-sans text-[11px] leading-relaxed text-muted dark:text-muted-dark">
+                      无时间窗口的习惯在此刻提醒；有窗口的在窗口开始前与结束前（未打卡时）提醒。
+                    </Text>
+                  </View>
+                  <View className="w-28">
+                    <PickerField
+                      label="全天提醒时刻"
+                      value={habitReminderOptions.allDayReminderHhmm}
+                      placeholder="21:00"
+                      onPress={() => setOpenHabitTimePicker(true)}
+                    />
+                  </View>
                 </View>
-              </View>
+              )}
             </View>
           ) : null}
         </Card>
