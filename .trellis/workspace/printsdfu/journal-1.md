@@ -1247,3 +1247,54 @@ NextAction / CalendarAction / HabitDay 并支持逐条恢复为未完成；顺�
 - 待合并 PR（closes #27 / #28 / #29）；未做版本 bump 与发布
 - PR #33 待评审合并（closes #27 / #28 / #29）
 - 未做版本 bump 与发布，合并后需同步根 package.json、apps/desktop（package.json / tauri.conf.json / Cargo.toml / Cargo.lock）与 apps/mobile/app.json
+
+
+## Session 40: 习惯打卡时间窗口校验与确认、打卡提醒配置以及漏打补卡与挑战顺延 (#30, #32)
+<!-- trellis-session: v=2 fp=b3c82d41a87e593a -->
+
+**Date**: 2026-10-15
+**Task**: 习惯打卡时间窗口校验与确认、打卡提醒配置以及漏打补卡与挑战顺延 (#30 / #32)
+**Branch**: `feat/habit-checkin-window-reminders`
+
+### Summary
+
+实现了习惯打卡的时间窗口校验、非窗口期二次确认弹窗、打卡提醒配置与同步，以及针对未打卡日期的 24 小时内补卡和超过 24 小时自动顺延挑战天数机制，解决了 Issue #30 与 Issue #32。
+
+### Main Changes
+
+- **core**:
+  - `src/domain/habit-checkin.ts`: 纯函数 `assertHabitCheckInWindow`（窗口期外抛出 `ValidationNextdoError('habit.checkin-outside-window')`，支持 `overrideWindow` 强行通过）；`isHabitCatchUpAvailable`（24小时/昨日补卡判定）；`habitCarryOverExtension`（顺延天数计算）；`habitCheckInReminderMoment`（提醒时间推导，窗口习惯在 windowEnd、全天习惯在配置时刻）。
+- **db**:
+  - `completeAction`: 打卡当天习惯时校验时间窗口，未在窗口内抛异常，弹窗确认后传入 `overrideWindow: true` 允许打卡；昨日补卡跳过窗口校验。
+  - `carryOverMissedHabitDays` / `listHabitCarryOverCandidates`: 自动统计超出补卡窗口的漏打天数并延后补齐挑战天数，保证 21 天挑战完成次数不被凭空消耗。
+  - `syncHabitCheckInReminders`: 幂等同步生成习惯打卡提醒到 `reminders` 表，由提醒分发层统一投递。
+- **mobile**:
+  - `HabitWindowConfirmModal`: 窗口期外打卡弹出友好确认弹窗，说明不在时间窗口内，确认后继续打卡。
+  - `now.tsx`: 支持展示「顺延+N天」标签，提供「+ 补昨日卡」快捷操作，支持非窗口打卡拦截与确认。
+  - `projects/[id].tsx`: 项目详情习惯网格支持点击昨日未打卡格子进行补卡，以及窗口拦截确认。
+  - `settings.tsx`: 新增「习惯打卡提醒」设置，支持开关提醒与选择全天习惯默认提醒时刻（默认 21:00）。
+  - `use-complete-action.ts` / `error-messages.ts`: 适配 `habit.checkin-outside-window` 错误码静默处理与友好文案。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `19431e9` | feat(habits): 支持习惯打卡时间窗口校验与确认、打卡提醒配置以及漏打补卡与挑战顺延 (#30, #32) |
+
+### Testing
+
+- [OK] `pnpm lint` 通过（0 errors）
+- [OK] `pnpm typecheck` 全部 workspace 通过
+- [OK] `pnpm test` 全部 39 个测试套件（567 tests）通过
+- [OK] `pnpm verify:web --no-serve` 全 4 道门禁（lint → typecheck → test → build:web）全绿
+- [OK] 浏览器端在 `localhost:4180` 实测通过：
+  - 设置页习惯打卡提醒开关与 21:00 时间选择器弹窗确认
+  - 新建包含打卡时间窗口的习惯并在今日聚焦列表中正确展示
+  - 非窗口期点击打卡成功呼出二次确认弹窗
+  - 确认后正常打卡成功并刷新状态
+  - 截图已保存在 `.verify/habit-checkin-window/`
+
+### Status
+
+[OK] **Completed**
+
