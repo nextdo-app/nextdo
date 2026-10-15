@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 39
-- **Last Active**: 2026-10-14
+- **Total Sessions**: 41
+- **Last Active**: 2026-10-15
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1220 | Active |
+| `journal-1.md` | ~1360 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 41 | 2026-10-15 | 时间选择器视觉优化与习惯打卡多阶段提醒 (#31, #32) 及发版 0.1.6-beta.4 | `37744c0`, `176a8aa` | `feat/habit-checkin-window-reminders`, `main` |
+| 40 | 2026-10-15 | 习惯打卡时间窗口校验与确认、打卡提醒配置以及漏打补卡与挑战顺延 (#30, #32) | `d720017` | `feat/habit-checkin-window-reminders` |
 | 39 | 2026-10-14 | 区分专注完成与行动完成、「已完成行动」可查看可恢复，并修复桌面留白与更新渠道显示 (#27/#28/#29) | `c74e6a6` | `feat/completed-actions-restore` |
 | 37 | 2026-10-13 | 支持自动检查更新并在发现新版本时展示 ChangeLog (v0.1.6-beta.3) | `3c65da9` | `main` |
 | 36 | 2026-10-12 | 支持编辑行动、项目与习惯 (Issue #19) | `5b06f6c`, `c3642f5` | `feat/edit-action-project-habit` |

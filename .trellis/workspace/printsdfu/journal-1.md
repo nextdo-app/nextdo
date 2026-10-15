@@ -1352,6 +1352,9 @@ NextAction / CalendarAction / HabitDay 并支持逐条恢复为未完成；顺�
 
 ### Next Steps
 
-- 推送分支 `feat/habit-checkin-window-reminders` 并创建 PR（关联 closes #30, #31, #32）
+- [x] 推送分支 `feat/habit-checkin-window-reminders` 并创建 PR #34
+- [x] PR #34 CI 门禁全绿并通过合并入 `main`（关联关闭 #30, #31, #32）
+- [x] 版本 bump 至 `0.1.6-beta.4`（commit `176a8aa`），打 Tag `v0.1.6-beta.4` 并推送到 origin 触发 Release 构建 CI
+
 
 
