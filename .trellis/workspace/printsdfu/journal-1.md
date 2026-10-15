@@ -1358,3 +1358,27 @@ NextAction / CalendarAction / HabitDay 并支持逐条恢复为未完成；顺�
 
 
 
+
+
+## Session 42: 应用内 ChangeLog 与桌面端一键自动安装（release 说明改为生成式变更日志）
+<!-- trellis-session: v=2 fp=26b077aecc50194e -->
+
+**Date**: 2026-10-16
+**Task**: 应用内 ChangeLog 与桌面端一键自动安装（release 说明改为生成式变更日志）
+**Branch**: `fix/update-changelog-and-inapp-install`
+
+### Summary
+
+修两个线上问题：应用内 ChangeLog 显示成产物文件名清单（release.yml 把 --notes 写成了 Assets 列表，App 直接渲染 release 正文）；桌面端更新弹窗「立即安装并重启」只调 open_downloaded_file，用户仍需手动退出/拖拽。新增 scripts/build-release-notes.mjs 按提交历史生成分类变更日志，release.yml 改用 --notes-file（fetch-depth: 0，重跑会刷新既有正文）；弹窗改调 install_update_and_restart。线上 v0.1.6-beta.4 正文已修好并双侧校验；pnpm verify:web 全绿，截图在 .verify/update-changelog-and-inapp-install/。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `729cd20` | fix(release): Release 正文改由提交历史生成变更日志，应用内 ChangeLog 不再是产物清单 |
+| `a662abe` | fix(update): 更新弹窗「立即安装并重启」改走 install_update_and_restart，桌面端无需手动退出 |
+| `0dd6aeb` | docs(spec): 记录 release 正文=应用内 ChangeLog 与桌面端应用内安装的契约 |
+
+### Status
+
+[OK] **Completed**
