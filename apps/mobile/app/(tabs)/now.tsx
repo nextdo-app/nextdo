@@ -42,6 +42,7 @@ import { useSwipeReveal } from '@/hooks/use-swipe-reveal';
 import { DeadlineChip } from '@/components/deadline-chip';
 import { AddSceneModal } from '@/components/add-scene-modal';
 import { EditActionModal } from '@/components/edit-action-modal';
+import { HabitWindowConfirmModal } from '@/components/habit-window-confirm-modal';
 
 function candidateToNextAction(candidate: NextCandidate, now: Date): NextAction {
   return {
@@ -602,11 +603,13 @@ function EmptyExecutionPool() {
 const HabitBlockRow = memo(function HabitBlockRow({
   row,
   onComplete,
+  onCatchUp,
 }: {
   row: HabitWithProgress;
   onComplete: () => void;
+  onCatchUp?: () => void;
 }) {
-  const { habit, cycleDay, doneCount, today } = row;
+  const { habit, cycleDay, doneCount, today, yesterday, extendedDays } = row;
   const open = today !== null && today.status === 'open';
   const cycleLabel =
     cycleDay === null ? `本期 ${habit.cycleDays} 天` : `第 ${cycleDay}/${habit.cycleDays} 天`;
@@ -620,29 +623,48 @@ const HabitBlockRow = memo(function HabitBlockRow({
         >
           {habit.title}
         </Text>
+        {extendedDays > 0 ? (
+          <Tag label={`顺延+${extendedDays}天`} tone="neutral" />
+        ) : null}
         <Tag label={cycleLabel} tone="accent" />
       </View>
       <View className="flex-row items-center gap-2">
         <Text className="font-sans text-xs text-muted dark:text-muted-dark">
           本期已完成 {doneCount} 天
+          {habit.windowStart && habit.windowEnd ? ` · 窗口 ${habit.windowStart}–${habit.windowEnd}` : ''}
         </Text>
-        {open ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`完成习惯：${habit.title}`}
-            hitSlop={CHIP_HIT_SLOP}
-            className="ml-auto h-8 items-center justify-center rounded-full border border-border/80 bg-surface px-3.5 shadow-2xs active:bg-surface-container dark:border-border-dark dark:bg-surface-dark dark:active:bg-surface-container-dark"
-            onPress={onComplete}
-          >
-            <Text className="font-sans text-xs font-medium text-ink dark:text-ink-dark">
-              ✓ 打卡
+        <View className="ml-auto flex-row items-center gap-1.5">
+          {yesterday !== null && onCatchUp ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`补打卡昨天：${habit.title}`}
+              hitSlop={CHIP_HIT_SLOP}
+              className="h-8 items-center justify-center rounded-full border border-accent/60 bg-accent/10 px-3 shadow-2xs active:bg-accent/20 dark:border-accent-dark/60 dark:bg-accent-dark/20"
+              onPress={onCatchUp}
+            >
+              <Text className="font-sans text-xs font-medium text-accent dark:text-accent-dark">
+                + 补昨日卡
+              </Text>
+            </Pressable>
+          ) : null}
+          {open ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`完成习惯：${habit.title}`}
+              hitSlop={CHIP_HIT_SLOP}
+              className="h-8 items-center justify-center rounded-full border border-border/80 bg-surface px-3.5 shadow-2xs active:bg-surface-container dark:border-border-dark dark:bg-surface-dark dark:active:bg-surface-container-dark"
+              onPress={onComplete}
+            >
+              <Text className="font-sans text-xs font-medium text-ink dark:text-ink-dark">
+                ✓ 打卡
+              </Text>
+            </Pressable>
+          ) : (
+            <Text className="font-sans text-xs text-muted dark:text-muted-dark">
+              {today === null ? '今天无安排' : '今天已完成'}
             </Text>
-          </Pressable>
-        ) : (
-          <Text className="ml-auto font-sans text-xs text-muted dark:text-muted-dark">
-            {today === null ? '今天无安排' : '今天已完成'}
-          </Text>
-        )}
+          )}
+        </View>
       </View>
     </View>
   );
@@ -657,11 +679,13 @@ function TodayHabitSection({
   todayDone,
   todayRowsCount,
   onCompleteHabit,
+  onCatchUpHabit,
 }: {
   habits: HabitWithProgress[];
   todayDone: number;
   todayRowsCount: number;
-  onCompleteHabit: (habitDayId: string) => void;
+  onCompleteHabit: (habitDayId: string, habit?: HabitWithProgress['habit']) => void;
+  onCatchUpHabit: (habitDayId: string) => void;
 }) {
   return (
     <Card className="gap-3 p-4 shadow-sm">
@@ -699,9 +723,14 @@ function TodayHabitSection({
             row={row}
             onComplete={() => {
               if (row.today !== null) {
-                onCompleteHabit(row.today.id);
+                onCompleteHabit(row.today.id, row.habit);
               }
             }}
+            onCatchUp={
+              row.yesterday !== null
+                ? () => onCatchUpHabit(row.yesterday!.id)
+                : undefined
+            }
           />
         ))
       ) : (
@@ -758,6 +787,12 @@ export default function NowScreen() {
   const [snoozeTarget, setSnoozeTarget] = useState<{ kind: CandidateKind; id: string } | null>(null);
   const [editingAction, setEditingAction] = useState<NextAction | null>(null);
   const [skippedViewIds, setSkippedViewIds] = useState<string[]>([]);
+  const [windowConfirm, setWindowConfirm] = useState<{
+    habitDayId: string;
+    habitTitle: string;
+    windowStart: string;
+    windowEnd: string;
+  } | null>(null);
   const [selectedContextIds, setSelectedContextIds] = useState<string[]>([]);
   const [isListExpanded, setIsListExpanded] = useState(true);
   const insets = useAppInsets();
@@ -867,6 +902,24 @@ export default function NowScreen() {
   );
 
   const handleCompleteHabit = useCallback(
+    (habitDayId: string, habit?: HabitWithProgress['habit']) => {
+      void complete({ actionKind: 'habit', actionId: habitDayId }).then((ok) => {
+        if (ok) {
+          reloadHabits();
+        } else if (habit?.windowStart && habit?.windowEnd) {
+          setWindowConfirm({
+            habitDayId,
+            habitTitle: habit.title,
+            windowStart: habit.windowStart,
+            windowEnd: habit.windowEnd,
+          });
+        }
+      });
+    },
+    [complete, reloadHabits],
+  );
+
+  const handleCatchUpHabit = useCallback(
     (habitDayId: string) => {
       void complete({ actionKind: 'habit', actionId: habitDayId }).then((ok) => {
         if (ok) reloadHabits();
@@ -1168,6 +1221,7 @@ export default function NowScreen() {
               todayDone={todayDone}
               todayRowsCount={todayRows.length}
               onCompleteHabit={handleCompleteHabit}
+              onCatchUpHabit={handleCatchUpHabit}
             />
           ) : null}
         </View>
@@ -1194,6 +1248,22 @@ export default function NowScreen() {
         visible={editingAction !== null}
         onClose={() => setEditingAction(null)}
         onSaved={() => setEditingAction(null)}
+      />
+
+      <HabitWindowConfirmModal
+        visible={windowConfirm !== null}
+        habitTitle={windowConfirm?.habitTitle ?? ''}
+        windowStart={windowConfirm?.windowStart ?? ''}
+        windowEnd={windowConfirm?.windowEnd ?? ''}
+        onCancel={() => setWindowConfirm(null)}
+        onConfirm={() => {
+          if (!windowConfirm) return;
+          const { habitDayId } = windowConfirm;
+          setWindowConfirm(null);
+          void complete({ actionKind: 'habit', actionId: habitDayId, overrideWindow: true }).then((ok) => {
+            if (ok) reloadHabits();
+          });
+        }}
       />
     </View>
   );

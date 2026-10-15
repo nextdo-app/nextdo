@@ -80,7 +80,26 @@ export { listCalendarActions } from './queries/calendar';
 export { addContext, listContexts, seedDefaultContexts, trashContext } from './queries/contexts';
 // Habit reads (Now screen habit strip) + the start-challenge / trash / update
 // transactions (the habits screen, task 10-02, issue #19).
-export { addHabit, listHabits, listHabitDays, startHabit, trashHabit, updateHabit } from './queries/habits';
+export {
+  addHabit,
+  carryOverMissedHabitDays,
+  listHabitCarryOverCandidates,
+  listHabits,
+  listHabitDays,
+  startHabit,
+  trashHabit,
+  updateHabit,
+} from './queries/habits';
+// Habit 打卡提醒 rows (issue 32-A) — rebuilt from the current cycle days on
+// every app focus, then reconciled by the delivery layer like any reminder.
+export {
+  DEFAULT_HABIT_REMINDER_OPTIONS,
+  syncHabitCheckInReminders,
+} from './queries/habit-reminders';
+export type {
+  HabitReminderOptions,
+  HabitReminderSyncResult,
+} from './queries/habit-reminders';
 // Focus-session transactions + read (focus screen, re-entry recovery).
 export {
   abandonFocusSession,

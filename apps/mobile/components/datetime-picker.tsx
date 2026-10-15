@@ -1,16 +1,24 @@
 /**
  * DateTimePicker — modern cross-platform date/time selection modal.
  *
- * Design & UX inspired by modern productivity apps (Things 3, Linear, Apple Reminders):
- * - Clean elevated card container with smooth borders and subtle elevation
- * - Quick presets pill cards with contextual dates (今天, 明天, 下周一, 下月一日)
- * - Modern high-contrast calendar grid with month navigation and today return button
- * - Clean digital clock display and quick time chips (09:00, 14:00, 18:00, 21:00)
- * - Tactile scrollable wheel with glass selection lens
- * - 100% accessible with screen-reader friendly labels and test contracts.
+ * Enhanced for Issue 31:
+ * - Fixed footer buttons (always visible on compact screens without scrolling)
+ * - 12h / 24h format toggle with intuitive AM/PM indicators
+ * - Fine-tune minute adjusters (+5m, -5m, +1m, -1m) for precise time selection
+ * - Expanded quick time presets (07:30, 08:30, 09:00, 10:30, 12:30, 14:00, 18:00, 19:30, 21:00, 22:30)
+ * - Responsive compact screen layout (< 380px) with adaptive paddings
+ * - 100% pure React Native cross-platform implementation (Web, Tauri, iOS, Android)
  */
 import { useEffect, useRef, useState } from 'react';
-import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Button, cn } from '@nextdo/ui';
 
@@ -31,15 +39,25 @@ const WEEKDAY_NAMES = [
 ];
 
 const ITEM_HEIGHT = 40;
+const WHEEL_HEIGHT = 160;
+const WHEEL_PADDING = (WHEEL_HEIGHT - ITEM_HEIGHT) / 2; // 60
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const MINUTES = Array.from({ length: 60 }, (_, i) => i);
 
 const QUICK_TIME_PRESETS = [
+  { label: '07:30', period: '晨间', h: 7, m: 30 },
+  { label: '08:30', period: '早间', h: 8, m: 30 },
   { label: '09:00', period: '上午', h: 9, m: 0 },
+  { label: '10:30', period: '午前', h: 10, m: 30 },
+  { label: '12:30', period: '午间', h: 12, m: 30 },
   { label: '14:00', period: '下午', h: 14, m: 0 },
   { label: '18:00', period: '傍晚', h: 18, m: 0 },
-  { label: '21:00', period: '晚间', h: 21, m: 0 },
+  { label: '19:30', period: '晚间', h: 19, m: 30 },
+  { label: '21:00', period: '夜间', h: 21, m: 0 },
+  { label: '22:30', period: '睡前', h: 22, m: 30 },
 ];
+
+const MINUTE_PRESETS = [0, 15, 30, 45];
 
 export interface DateTimePickerProps {
   mode: 'date' | 'time' | 'datetime';
@@ -115,6 +133,9 @@ export function DateTimePicker({
   onConfirm,
   onClose,
 }: DateTimePickerProps) {
+  const { width: screenWidth } = useWindowDimensions();
+  const isCompact = screenWidth < 380;
+
   const dateMatch = mode === 'date' ? DATE_ONLY.exec(value) : null;
   const timeMatch = mode === 'time' ? HHMM.exec(value) : null;
   const dateTimeMatch = mode === 'datetime' ? DATETIME_LOCAL.exec(value) : null;
@@ -152,6 +173,9 @@ export function DateTimePicker({
     return now.getMinutes();
   });
 
+  // 12h vs 24h format state
+  const [is12Hour, setIs12Hour] = useState(false);
+
   const hourScrollRef = useRef<ScrollView>(null);
   const minuteScrollRef = useRef<ScrollView>(null);
 
@@ -163,7 +187,7 @@ export function DateTimePicker({
       minuteScrollRef.current?.scrollTo({ y: minute * ITEM_HEIGHT, animated: false });
     }, 50);
     return () => clearTimeout(timer);
-  }, []);
+  }, [mode]);
 
   const quickPresets = getQuickDatePresets(now);
   const selectedDateKey = `${selectedYear}-${pad(selectedMonth)}-${pad(selectedDay)}`;
@@ -213,6 +237,29 @@ export function DateTimePicker({
   function selectMinute(m: number) {
     setMinute(m);
     minuteScrollRef.current?.scrollTo({ y: m * ITEM_HEIGHT, animated: true });
+  }
+
+  function adjustMinute(delta: number) {
+    let total = hour * 60 + minute + delta;
+    total = ((total % 1440) + 1440) % 1440;
+    const newH = Math.floor(total / 60);
+    const newM = total % 60;
+    setHour(newH);
+    setMinute(newM);
+    hourScrollRef.current?.scrollTo({ y: newH * ITEM_HEIGHT, animated: true });
+    minuteScrollRef.current?.scrollTo({ y: newM * ITEM_HEIGHT, animated: true });
+  }
+
+  function toggleAmPm(targetPeriod: 'AM' | 'PM') {
+    if (targetPeriod === 'AM' && hour >= 12) {
+      const newH = hour - 12;
+      setHour(newH);
+      hourScrollRef.current?.scrollTo({ y: newH * ITEM_HEIGHT, animated: true });
+    } else if (targetPeriod === 'PM' && hour < 12) {
+      const newH = hour + 12;
+      setHour(newH);
+      hourScrollRef.current?.scrollTo({ y: newH * ITEM_HEIGHT, animated: true });
+    }
   }
 
   function confirm() {
@@ -268,9 +315,18 @@ export function DateTimePicker({
     calendarCells.push({ type: 'next', day: d, year: y, month: m, key: `${y}-${pad(m)}-${pad(d)}` });
   }
 
+  // 12-hour display calculations
+  const display12Hour = hour % 12 || 12;
+  const isPM = hour >= 12;
+
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
-      <View className="flex-1 items-center justify-center bg-black/60 px-3 py-6">
+      <View
+        className={cn(
+          'flex-1 items-center justify-center bg-black/60',
+          isCompact ? 'px-2 py-3' : 'px-3 py-6',
+        )}
+      >
         {/* Backdrop */}
         <Pressable
           accessibilityRole="button"
@@ -279,11 +335,16 @@ export function DateTimePicker({
           onPress={onClose}
         />
 
-        {/* Modal Window Container */}
-        <View className="relative z-10 w-full max-w-md max-h-[92vh] flex-col rounded-3xl border border-border/80 bg-surface p-5 shadow-2xl dark:border-border-dark dark:bg-surface-dark">
-          {/* Top Bar: Icon + Title + Close Button */}
-          <View className="mb-4 flex-row items-center justify-between">
-            <View className="flex-row items-center gap-2.5">
+        {/* Modal Window Container: Structured with flex-col & max-h to guarantee fixed footer */}
+        <View
+          className={cn(
+            'relative z-10 w-full max-w-md flex-col rounded-3xl border border-border/80 bg-surface shadow-2xl dark:border-border-dark dark:bg-surface-dark',
+            isCompact ? 'p-3.5 max-h-[92vh]' : 'p-5 max-h-[88vh]',
+          )}
+        >
+          {/* Top Bar (Fixed Header): Icon + Title + Close Button */}
+          <View className="mb-3 flex-shrink-0 flex-row items-center justify-between">
+            <View className="flex-1 flex-row items-center gap-2.5 pr-2">
               <View className="h-9 w-9 items-center justify-center rounded-xl bg-accent/15 dark:bg-accent-dark/20">
                 <Ionicons
                   name={mode === 'time' ? 'time-outline' : 'calendar-outline'}
@@ -291,11 +352,17 @@ export function DateTimePicker({
                   color="#c85a17"
                 />
               </View>
-              <View>
-                <Text className="font-sans text-base font-bold text-ink dark:text-ink-dark">
+              <View className="flex-1">
+                <Text
+                  numberOfLines={1}
+                  className="font-sans text-base font-bold text-ink dark:text-ink-dark"
+                >
                   {title}
                 </Text>
-                <Text className="font-sans text-[11px] text-muted dark:text-muted-dark">
+                <Text
+                  numberOfLines={1}
+                  className="font-sans text-[11px] text-muted dark:text-muted-dark"
+                >
                   {mode === 'date'
                     ? '快捷选择或点选日历'
                     : mode === 'time'
@@ -344,16 +411,17 @@ export function DateTimePicker({
             />
           </View>
 
-          {/* Scrollable Form Body */}
+          {/* Scrollable Form Body: Expands & scrolls smoothly inside modal */}
           <ScrollView
+            className="flex-1"
             showsVerticalScrollIndicator={false}
             nestedScrollEnabled
-            contentContainerStyle={{ paddingBottom: 4 }}
+            contentContainerStyle={{ paddingBottom: 6 }}
           >
             {/* Quick Date Presets (in date and datetime modes) */}
             {mode !== 'time' ? (
-              <View className="mb-3.5">
-                <View className="flex-row gap-2">
+              <View className="mb-3">
+                <View className="flex-row gap-1.5">
                   {quickPresets.map((preset) => {
                     const isSelected = selectedDateKey === preset.key;
                     return (
@@ -364,7 +432,7 @@ export function DateTimePicker({
                         accessibilityState={{ selected: isSelected }}
                         onPress={() => applyDate(preset.date)}
                         className={cn(
-                          'flex-1 flex-col items-center justify-center rounded-2xl py-2.5 px-1 border transition-all',
+                          'flex-1 flex-col items-center justify-center rounded-2xl py-2 px-1 border transition-all',
                           isSelected
                             ? 'border-accent bg-accent/15 shadow-sm dark:border-accent-dark dark:bg-accent-dark/20'
                             : 'border-border/60 bg-surface-container/40 active:bg-surface-container dark:border-border-dark/60 dark:bg-surface-container-dark/40',
@@ -403,11 +471,11 @@ export function DateTimePicker({
             ) : null}
 
             {/* Current Selection Status Banner */}
-            <View className="mb-3.5 flex-row items-center justify-between rounded-2xl border border-border/60 bg-surface-container/50 px-4 py-3 dark:border-border-dark/60 dark:bg-surface-container-dark/50">
+            <View className="mb-3 flex-row items-center justify-between rounded-2xl border border-border/60 bg-surface-container/50 px-3.5 py-2.5 dark:border-border-dark/60 dark:bg-surface-container-dark/50">
               {mode === 'date' ? (
                 <View className="w-full flex-row items-baseline justify-between">
                   <View className="flex-row items-baseline gap-2">
-                    <Text className="font-sans text-xl font-extrabold tracking-tight text-ink dark:text-ink-dark">
+                    <Text className="font-sans text-lg font-extrabold tracking-tight text-ink dark:text-ink-dark">
                       {selectedYear}年{pad(selectedMonth)}月{pad(selectedDay)}日
                     </Text>
                     {selectedDateKey === todayKey ? (
@@ -423,22 +491,140 @@ export function DateTimePicker({
                   </Text>
                 </View>
               ) : mode === 'time' ? (
-                <View className="w-full flex-row items-baseline justify-between">
-                  <View className="flex-row items-baseline gap-2">
-                    <Text className="font-sans text-3xl font-black tracking-tight text-ink dark:text-ink-dark">
-                      {pad(hour)}:{pad(minute)}
-                    </Text>
-                    <Text className="font-sans text-xs font-semibold text-accent dark:text-accent-dark">
-                      {hour < 12 ? '上午' : hour < 18 ? '下午' : '晚间'}
+                <View className="w-full flex-row items-center justify-between">
+                  {/* Left: Big Digital Clock + Contextual AM/PM selector (in 12h) */}
+                  <View className="flex-col">
+                    <View className="flex-row items-center gap-2">
+                      <Text
+                        accessibilityLabel="当前选中时间"
+                        className="font-sans text-3xl font-black tracking-tight text-ink dark:text-ink-dark"
+                      >
+                        {is12Hour
+                          ? `${pad(display12Hour)}:${pad(minute)}`
+                          : `${pad(hour)}:${pad(minute)}`}
+                      </Text>
+
+                      {is12Hour ? (
+                        <View className="flex-row items-center rounded-xl border border-border/70 bg-surface-container/90 p-0.5 dark:border-border-dark/70 dark:bg-surface-container-dark/90">
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="切换到上午"
+                            accessibilityState={{ selected: !isPM }}
+                            onPress={() => toggleAmPm('AM')}
+                            className={cn(
+                              'rounded-lg px-2 py-0.5 transition-all',
+                              !isPM
+                                ? 'bg-accent shadow-sm dark:bg-accent-dark'
+                                : 'bg-transparent',
+                            )}
+                          >
+                            <Text
+                              className={cn(
+                                'font-sans text-xs font-bold',
+                                !isPM
+                                  ? 'text-on-accent'
+                                  : 'text-muted dark:text-muted-dark',
+                              )}
+                            >
+                              上午
+                            </Text>
+                          </Pressable>
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="切换到下午"
+                            accessibilityState={{ selected: isPM }}
+                            onPress={() => toggleAmPm('PM')}
+                            className={cn(
+                              'rounded-lg px-2 py-0.5 transition-all',
+                              isPM
+                                ? 'bg-accent shadow-sm dark:bg-accent-dark'
+                                : 'bg-transparent',
+                            )}
+                          >
+                            <Text
+                              className={cn(
+                                'font-sans text-xs font-bold',
+                                isPM
+                                  ? 'text-on-accent'
+                                  : 'text-muted dark:text-muted-dark',
+                              )}
+                            >
+                              下午
+                            </Text>
+                          </Pressable>
+                        </View>
+                      ) : (
+                        <View className="rounded-full bg-accent/15 px-2 py-0.5 dark:bg-accent-dark/20">
+                          <Text className="font-sans text-xs font-bold text-accent dark:text-accent-dark">
+                            {hour < 6
+                              ? '凌晨'
+                              : hour < 12
+                                ? '上午'
+                                : hour < 18
+                                  ? '下午'
+                                  : '晚间'}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text className="mt-0.5 font-sans text-[11px] font-medium text-muted dark:text-muted-dark">
+                      {is12Hour ? '12小时制' : '24小时制'}
                     </Text>
                   </View>
-                  <Text className="font-sans text-xs font-semibold text-muted dark:text-muted-dark">
-                    指定时间
-                  </Text>
+
+                  {/* Right: 24h / 12h Switcher */}
+                  <View className="flex-row items-center rounded-xl border border-border/70 bg-surface-container/90 p-0.5 dark:border-border-dark/70 dark:bg-surface-container-dark/90">
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="24小时制"
+                      accessibilityState={{ selected: !is12Hour }}
+                      onPress={() => setIs12Hour(false)}
+                      className={cn(
+                        'rounded-lg px-2.5 py-1 transition-all',
+                        !is12Hour
+                          ? 'bg-accent shadow-sm dark:bg-accent-dark'
+                          : 'bg-transparent',
+                      )}
+                    >
+                      <Text
+                        className={cn(
+                          'font-sans text-[11px] font-bold',
+                          !is12Hour
+                            ? 'text-on-accent'
+                            : 'text-muted dark:text-muted-dark',
+                        )}
+                      >
+                        24h
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="12小时制"
+                      accessibilityState={{ selected: is12Hour }}
+                      onPress={() => setIs12Hour(true)}
+                      className={cn(
+                        'rounded-lg px-2.5 py-1 transition-all',
+                        is12Hour
+                          ? 'bg-accent shadow-sm dark:bg-accent-dark'
+                          : 'bg-transparent',
+                      )}
+                    >
+                      <Text
+                        className={cn(
+                          'font-sans text-[11px] font-bold',
+                          is12Hour
+                            ? 'text-on-accent'
+                            : 'text-muted dark:text-muted-dark',
+                        )}
+                      >
+                        12h
+                      </Text>
+                    </Pressable>
+                  </View>
                 </View>
               ) : (
                 <View className="w-full flex-row items-center justify-between">
-                  <View className="flex-row items-baseline gap-2">
+                  <View className="flex-row items-baseline gap-1.5">
                     <Text className="font-sans text-base font-bold text-ink dark:text-ink-dark">
                       {pad(selectedMonth)}月{pad(selectedDay)}日
                     </Text>
@@ -448,10 +634,12 @@ export function DateTimePicker({
                       </Text>
                     ) : null}
                   </View>
-                  <View className="flex-row items-baseline gap-1.5">
-                    <Ionicons name="time-outline" size={14} color="#c85a17" />
-                    <Text className="font-sans text-2xl font-black text-accent dark:text-accent-dark">
-                      {pad(hour)}:{pad(minute)}
+                  <View className="flex-row items-baseline gap-1">
+                    <Ionicons name="time-outline" size={13} color="#c85a17" />
+                    <Text className="font-sans text-xl font-black text-accent dark:text-accent-dark">
+                      {is12Hour
+                        ? `${pad(display12Hour)}:${pad(minute)} ${isPM ? 'PM' : 'AM'}`
+                        : `${pad(hour)}:${pad(minute)}`}
                     </Text>
                   </View>
                 </View>
@@ -460,16 +648,16 @@ export function DateTimePicker({
 
             {/* Modern Calendar Grid (in date & datetime modes) */}
             {mode !== 'time' ? (
-              <View className="mb-3.5 rounded-2xl border border-border/50 bg-surface-container/20 p-3.5 dark:border-border-dark/50 dark:bg-surface-container-dark/20">
+              <View className="mb-3 rounded-2xl border border-border/50 bg-surface-container/20 p-3 dark:border-border-dark/50 dark:bg-surface-container-dark/20">
                 {/* Month Navigation Strip */}
-                <View className="mb-2.5 flex-row items-center justify-between px-1">
+                <View className="mb-2 flex-row items-center justify-between px-1">
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="上个月"
                     onPress={prevMonth}
-                    className="h-8 w-8 items-center justify-center rounded-xl bg-surface-container/60 active:bg-surface-container dark:bg-surface-container-dark/60"
+                    className="h-7 w-7 items-center justify-center rounded-xl bg-surface-container/60 active:bg-surface-container dark:bg-surface-container-dark/60"
                   >
-                    <Ionicons name="chevron-back" size={16} color="#716b64" />
+                    <Ionicons name="chevron-back" size={15} color="#716b64" />
                   </Pressable>
 
                   <View className="flex-row items-center justify-center">
@@ -482,16 +670,16 @@ export function DateTimePicker({
                     accessibilityRole="button"
                     accessibilityLabel="下个月"
                     onPress={nextMonth}
-                    className="h-8 w-8 items-center justify-center rounded-xl bg-surface-container/60 active:bg-surface-container dark:bg-surface-container-dark/60"
+                    className="h-7 w-7 items-center justify-center rounded-xl bg-surface-container/60 active:bg-surface-container dark:bg-surface-container-dark/60"
                   >
-                    <Ionicons name="chevron-forward" size={16} color="#716b64" />
+                    <Ionicons name="chevron-forward" size={15} color="#716b64" />
                   </Pressable>
                 </View>
 
                 {/* Weekday Names Strip */}
-                <View className="mb-1.5 flex-row">
+                <View className="mb-1 flex-row">
                   {WEEKDAY_NAMES.map((col) => (
-                    <View key={col.label} className="flex-1 items-center py-1">
+                    <View key={col.label} className="flex-1 items-center py-0.5">
                       <Text
                         className={cn(
                           'font-sans text-[11px] font-bold',
@@ -514,7 +702,7 @@ export function DateTimePicker({
                     const isToday = cell.key === todayKey;
 
                     return (
-                      <View key={cell.key} style={{ width: '14.285%' }} className="items-center py-1">
+                      <View key={cell.key} style={{ width: '14.285%' }} className="items-center py-0.5">
                         <Pressable
                           accessibilityRole="button"
                           accessibilityLabel={`日 ${cell.day}`}
@@ -529,7 +717,7 @@ export function DateTimePicker({
                             }
                           }}
                           className={cn(
-                            'h-8 w-8 items-center justify-center rounded-xl transition-all',
+                            'h-7 w-7 items-center justify-center rounded-xl transition-all',
                             isSelected
                               ? 'bg-accent shadow-sm shadow-accent/40 dark:bg-accent-dark'
                               : isToday
@@ -561,103 +749,165 @@ export function DateTimePicker({
 
             {/* Time Configuration Section (in time & datetime modes) */}
             {mode !== 'date' ? (
-              <View className="rounded-2xl border border-border/50 bg-surface-container/20 p-3.5 dark:border-border-dark/50 dark:bg-surface-container-dark/20">
-                {/* Quick Period Presets */}
-                <View className="mb-2.5 flex-row items-center justify-between">
-                  <Text className="font-sans text-xs font-bold text-muted dark:text-muted-dark">
-                    常用时段
-                  </Text>
-                  <View className="flex-row items-center gap-1.5">
-                    {QUICK_TIME_PRESETS.map((p) => {
-                      const isPresetActive = hour === p.h && minute === p.m;
-                      return (
+              <View className="gap-2.5">
+                {/* Datetime mode specific format switch header */}
+                {mode === 'datetime' ? (
+                  <View className="flex-row items-center justify-between px-1">
+                    <Text className="font-sans text-xs font-bold text-muted dark:text-muted-dark">
+                      选择时间 ({is12Hour ? '12小时制' : '24小时制'})
+                    </Text>
+                    <View className="flex-row items-center gap-1.5">
+                      {is12Hour ? (
+                        <View className="flex-row items-center rounded-lg bg-surface-container/90 p-0.5 dark:bg-surface-container-dark/90">
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="切换到上午"
+                            accessibilityState={{ selected: !isPM }}
+                            onPress={() => toggleAmPm('AM')}
+                            className={cn(
+                              'rounded-md px-1.5 py-0.5',
+                              !isPM ? 'bg-accent dark:bg-accent-dark' : 'bg-transparent',
+                            )}
+                          >
+                            <Text
+                              className={cn(
+                                'font-sans text-[10px] font-bold',
+                                !isPM ? 'text-on-accent' : 'text-muted dark:text-muted-dark',
+                              )}
+                            >
+                              上午
+                            </Text>
+                          </Pressable>
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="切换到下午"
+                            accessibilityState={{ selected: isPM }}
+                            onPress={() => toggleAmPm('PM')}
+                            className={cn(
+                              'rounded-md px-1.5 py-0.5',
+                              isPM ? 'bg-accent dark:bg-accent-dark' : 'bg-transparent',
+                            )}
+                          >
+                            <Text
+                              className={cn(
+                                'font-sans text-[10px] font-bold',
+                                isPM ? 'text-on-accent' : 'text-muted dark:text-muted-dark',
+                              )}
+                            >
+                              下午
+                            </Text>
+                          </Pressable>
+                        </View>
+                      ) : null}
+
+                      <View className="flex-row items-center rounded-lg bg-surface-container/90 p-0.5 dark:bg-surface-container-dark/90">
                         <Pressable
-                          key={p.label}
                           accessibilityRole="button"
-                          accessibilityLabel={`时段 ${p.label}`}
-                          onPress={() => {
-                            selectHour(p.h);
-                            selectMinute(p.m);
-                          }}
+                          accessibilityLabel="24小时制"
+                          accessibilityState={{ selected: !is12Hour }}
+                          onPress={() => setIs12Hour(false)}
                           className={cn(
-                            'rounded-xl px-2.5 py-1 transition-all',
-                            isPresetActive
-                              ? 'bg-accent shadow-sm dark:bg-accent-dark'
-                              : 'bg-surface-container/70 active:bg-surface-container dark:bg-surface-container-dark/70',
+                            'rounded-md px-2 py-0.5',
+                            !is12Hour ? 'bg-accent dark:bg-accent-dark' : 'bg-transparent',
                           )}
                         >
                           <Text
                             className={cn(
-                              'font-sans text-xs',
-                              isPresetActive
-                                ? 'font-bold text-on-accent dark:text-on-accent-dark'
-                                : 'font-medium text-ink/80 dark:text-ink-dark/80',
+                              'font-sans text-[10px] font-bold',
+                              !is12Hour ? 'text-on-accent' : 'text-muted dark:text-muted-dark',
                             )}
                           >
-                            {p.label}
+                            24h
                           </Text>
                         </Pressable>
-                      );
-                    })}
-                  </View>
-                </View>
-
-                {/* Minute Chips */}
-                <View className="mb-3 flex-row items-center justify-between">
-                  <Text className="font-sans text-xs font-bold text-muted dark:text-muted-dark">
-                    整点/分段
-                  </Text>
-                  <View className="flex-row items-center gap-1.5">
-                    {[0, 15, 30, 45].map((m) => {
-                      const isMinActive = minute === m;
-                      return (
                         <Pressable
-                          key={m}
                           accessibilityRole="button"
-                          accessibilityLabel={`快捷 ${pad(m)}分`}
-                          onPress={() => selectMinute(m)}
+                          accessibilityLabel="12小时制"
+                          accessibilityState={{ selected: is12Hour }}
+                          onPress={() => setIs12Hour(true)}
                           className={cn(
-                            'rounded-xl px-2.5 py-1 transition-all',
-                            isMinActive
-                              ? 'bg-accent shadow-sm dark:bg-accent-dark'
-                              : 'bg-surface-container/70 active:bg-surface-container dark:bg-surface-container-dark/70',
+                            'rounded-md px-2 py-0.5',
+                            is12Hour ? 'bg-accent dark:bg-accent-dark' : 'bg-transparent',
                           )}
                         >
                           <Text
                             className={cn(
-                              'font-sans text-xs',
-                              isMinActive
-                                ? 'font-bold text-on-accent dark:text-on-accent-dark'
-                                : 'font-medium text-ink/80 dark:text-ink-dark/80',
+                              'font-sans text-[10px] font-bold',
+                              is12Hour ? 'text-on-accent' : 'text-muted dark:text-muted-dark',
                             )}
                           >
-                            :{pad(m)}
+                            12h
                           </Text>
                         </Pressable>
-                      );
-                    })}
+                      </View>
+                    </View>
+                  </View>
+                ) : null}
+
+                {/* Column Headers for Wheels */}
+                <View className="flex-row items-center px-4 py-1">
+                  <View className="flex-1 items-center">
+                    <Text className="font-sans text-xs font-bold tracking-widest text-muted/75 dark:text-muted-dark/75">
+                      时
+                    </Text>
+                  </View>
+                  <View className="w-8" />
+                  <View className="flex-1 items-center">
+                    <Text className="font-sans text-xs font-bold tracking-widest text-muted/75 dark:text-muted-dark/75">
+                      分
+                    </Text>
                   </View>
                 </View>
 
-                {/* Time Wheel Picker with Glass Selection Lens */}
-                <View className="relative h-[126px] overflow-hidden rounded-2xl border border-border/70 bg-surface-container/40 dark:border-border-dark/70 dark:bg-surface-container-dark/40">
+                {/* Tactile Time Wheel Picker with Selection Lens & Fade Masks */}
+                <View
+                  style={{
+                    height: WHEEL_HEIGHT,
+                    ...(Platform.OS === 'web'
+                      ? {
+                          WebkitMaskImage:
+                            'linear-gradient(to bottom, transparent 0%, black 24%, black 76%, transparent 100%)',
+                          maskImage:
+                            'linear-gradient(to bottom, transparent 0%, black 24%, black 76%, transparent 100%)',
+                        }
+                      : {}),
+                  }}
+                  className="relative overflow-hidden rounded-2xl border border-border/80 bg-surface-container/35 dark:border-border-dark/80 dark:bg-surface-container-dark/35"
+                >
                   {/* Selection Lens (highlight centered row) */}
                   <View
                     pointerEvents="none"
-                    className="absolute left-3 right-3 top-[43px] h-10 rounded-xl border border-accent/30 bg-accent/15 dark:border-accent-dark/35 dark:bg-accent-dark/20"
+                    style={{ top: WHEEL_PADDING, height: ITEM_HEIGHT }}
+                    className="absolute left-2.5 right-2.5 rounded-xl border border-accent/35 bg-accent/12 shadow-sm dark:border-accent-dark/40 dark:bg-accent-dark/20"
                   />
 
-                  <View className="h-[126px] flex-row items-stretch">
+                  {/* Fallback gradient overlay for non-web platforms */}
+                  {Platform.OS !== 'web' ? (
+                    <>
+                      <View
+                        pointerEvents="none"
+                        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 36, zIndex: 10 }}
+                        className="bg-surface/60 dark:bg-surface-dark/60"
+                      />
+                      <View
+                        pointerEvents="none"
+                        style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 36, zIndex: 10 }}
+                        className="bg-surface/60 dark:bg-surface-dark/60"
+                      />
+                    </>
+                  ) : null}
+
+                  <View style={{ height: WHEEL_HEIGHT }} className="flex-row items-stretch">
                     {/* Hour Scroll Column */}
                     <ScrollView
                       ref={hourScrollRef}
                       className="h-full flex-1"
-                      style={{ height: 126 }}
+                      style={{ height: WHEEL_HEIGHT }}
                       showsVerticalScrollIndicator={false}
                       nestedScrollEnabled
                       snapToInterval={ITEM_HEIGHT}
                       decelerationRate="fast"
-                      contentContainerStyle={{ paddingTop: 43, paddingBottom: 43 }}
+                      contentContainerStyle={{ paddingTop: WHEEL_PADDING, paddingBottom: WHEEL_PADDING }}
                       onScroll={(e) => {
                         const h = Math.min(
                           23,
@@ -668,6 +918,7 @@ export function DateTimePicker({
                     >
                       {HOURS.map((h) => {
                         const active = hour === h;
+                        const labelNumber = is12Hour ? h % 12 || 12 : h;
                         return (
                           <Pressable
                             key={h}
@@ -680,13 +931,13 @@ export function DateTimePicker({
                           >
                             <Text
                               className={cn(
-                                'font-sans',
+                                'font-sans transition-all',
                                 active
-                                  ? 'text-lg font-black text-accent dark:text-accent-dark scale-105'
-                                  : 'text-sm font-medium text-ink/40 dark:text-ink-dark/40',
+                                  ? 'text-2xl font-black text-accent dark:text-accent-dark scale-105'
+                                  : 'text-sm font-semibold text-ink/35 dark:text-ink-dark/35',
                               )}
                             >
-                              {pad(h)}
+                              {pad(labelNumber)}
                             </Text>
                           </Pressable>
                         );
@@ -695,7 +946,7 @@ export function DateTimePicker({
 
                     {/* Centered Colon Separator */}
                     <View className="w-8 items-center justify-center">
-                      <Text className="font-sans text-xl font-black text-ink/30 dark:text-ink-dark/30">
+                      <Text className="font-sans text-2xl font-black text-accent/50 dark:text-accent-dark/50">
                         :
                       </Text>
                     </View>
@@ -704,12 +955,12 @@ export function DateTimePicker({
                     <ScrollView
                       ref={minuteScrollRef}
                       className="h-full flex-1"
-                      style={{ height: 126 }}
+                      style={{ height: WHEEL_HEIGHT }}
                       showsVerticalScrollIndicator={false}
                       nestedScrollEnabled
                       snapToInterval={ITEM_HEIGHT}
                       decelerationRate="fast"
-                      contentContainerStyle={{ paddingTop: 43, paddingBottom: 43 }}
+                      contentContainerStyle={{ paddingTop: WHEEL_PADDING, paddingBottom: WHEEL_PADDING }}
                       onScroll={(e) => {
                         const m = Math.min(
                           59,
@@ -732,10 +983,10 @@ export function DateTimePicker({
                           >
                             <Text
                               className={cn(
-                                'font-sans',
+                                'font-sans transition-all',
                                 active
-                                  ? 'text-lg font-black text-accent dark:text-accent-dark scale-105'
-                                  : 'text-sm font-medium text-ink/40 dark:text-ink-dark/40',
+                                  ? 'text-2xl font-black text-accent dark:text-accent-dark scale-105'
+                                  : 'text-sm font-semibold text-ink/35 dark:text-ink-dark/35',
                               )}
                             >
                               {pad(m)}
@@ -746,12 +997,153 @@ export function DateTimePicker({
                     </ScrollView>
                   </View>
                 </View>
+
+                {/* Minute Presets + Fine-tune Steppers Toolbar */}
+                <View className="flex-row items-center justify-between rounded-2xl border border-border/70 bg-surface-container/40 p-1 dark:border-border-dark/70 dark:bg-surface-container-dark/40">
+                  {/* Left: Quick Minute Jumps (:00, :15, :30, :45) */}
+                  <View className="flex-row items-center gap-1">
+                    {MINUTE_PRESETS.map((m) => {
+                      const isMinActive = minute === m;
+                      return (
+                        <Pressable
+                          key={m}
+                          accessibilityRole="button"
+                          accessibilityLabel={`快捷 ${pad(m)}分`}
+                          onPress={() => selectMinute(m)}
+                          className={cn(
+                            'rounded-lg px-2 py-1 transition-all',
+                            isMinActive
+                              ? 'bg-accent shadow-sm dark:bg-accent-dark'
+                              : 'bg-surface/90 active:bg-surface-container dark:bg-surface-dark/90',
+                          )}
+                        >
+                          <Text
+                            className={cn(
+                              'font-sans text-[11px]',
+                              isMinActive
+                                ? 'font-bold text-on-accent dark:text-on-accent-dark'
+                                : 'font-semibold text-ink dark:text-ink-dark',
+                            )}
+                          >
+                            :{pad(m)}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+
+                  {/* Vertical Divider */}
+                  <View className="mx-0.5 h-4 w-px bg-border/80 dark:bg-border-dark/80" />
+
+                  {/* Right: Fine-tune Steppers (-5m, +5m, -1m, +1m) */}
+                  <View className="flex-row items-center gap-1">
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="微调 减5分钟"
+                      onPress={() => adjustMinute(-5)}
+                      className="rounded-lg bg-surface/90 px-1.5 py-1 active:bg-surface-container dark:bg-surface-dark/90"
+                    >
+                      <Text className="font-sans text-[11px] font-bold text-ink dark:text-ink-dark">
+                        -5m
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="微调 加5分钟"
+                      onPress={() => adjustMinute(5)}
+                      className="rounded-lg bg-surface/90 px-1.5 py-1 active:bg-surface-container dark:bg-surface-dark/90"
+                    >
+                      <Text className="font-sans text-[11px] font-bold text-ink dark:text-ink-dark">
+                        +5m
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="微调 减1分钟"
+                      onPress={() => adjustMinute(-1)}
+                      className="rounded-lg bg-surface/90 px-1.5 py-1 active:bg-surface-container dark:bg-surface-dark/90"
+                    >
+                      <Text className="font-sans text-[11px] font-bold text-ink dark:text-ink-dark">
+                        -1m
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="微调 加1分钟"
+                      onPress={() => adjustMinute(1)}
+                      className="rounded-lg bg-surface/90 px-1.5 py-1 active:bg-surface-container dark:bg-surface-dark/90"
+                    >
+                      <Text className="font-sans text-[11px] font-bold text-ink dark:text-ink-dark">
+                        +1m
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+
+                {/* Horizontal Quick Period Presets */}
+                <View className="mt-1">
+                  <View className="mb-1.5 flex-row items-center justify-between px-1">
+                    <Text className="font-sans text-xs font-bold text-muted dark:text-muted-dark">
+                      常用时段
+                    </Text>
+                    <Text className="font-sans text-[11px] text-muted/60 dark:text-muted-dark/60">
+                      快速点选
+                    </Text>
+                  </View>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ gap: 6, paddingHorizontal: 1 }}
+                  >
+                    {QUICK_TIME_PRESETS.map((p) => {
+                      const isPresetActive = hour === p.h && minute === p.m;
+                      return (
+                        <Pressable
+                          key={p.label}
+                          accessibilityRole="button"
+                          accessibilityLabel={`时段 ${p.label}`}
+                          onPress={() => {
+                            selectHour(p.h);
+                            selectMinute(p.m);
+                          }}
+                          className={cn(
+                            'flex-row items-center gap-1.5 rounded-xl border px-2.5 py-1.5 transition-all',
+                            isPresetActive
+                              ? 'border-accent bg-accent shadow-sm dark:border-accent-dark dark:bg-accent-dark'
+                              : 'border-border/60 bg-surface-container/60 active:bg-surface-container dark:border-border-dark/60 dark:bg-surface-container-dark/60',
+                          )}
+                        >
+                          <Text
+                            className={cn(
+                              'font-sans text-xs',
+                              isPresetActive
+                                ? 'font-bold text-on-accent dark:text-on-accent-dark'
+                                : 'font-medium text-ink/80 dark:text-ink-dark/80',
+                            )}
+                          >
+                            {p.label}
+                          </Text>
+                          <Text
+                            className={cn(
+                              'font-sans text-[10px]',
+                              isPresetActive
+                                ? 'text-on-accent/80'
+                                : 'text-muted dark:text-muted-dark',
+                            )}
+                          >
+                            {p.period}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
               </View>
             ) : null}
           </ScrollView>
 
-          {/* Modal Footer Buttons */}
-          <View className="mt-4 flex-row gap-3 pt-1">
+          {/* Fixed Footer Buttons: Always docked at bottom without needing scroll */}
+          <View className="mt-3 flex-shrink-0 flex-row gap-2.5 border-t border-border/40 pt-2.5 dark:border-border-dark/40">
             <View className="flex-1">
               <Button label="取消" variant="secondary" onPress={onClose} />
             </View>

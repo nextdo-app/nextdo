@@ -33,6 +33,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   'habit.not-found': '这个习惯不存在了',
   'focusSession.not-found': '这个专注会话不存在了',
   'focusSession.not-active': '会话已结束，不能记录暂停',
+  'habit.checkin-outside-window': '当前时间不在该习惯设定的时间窗口内',
 };
 
 /**

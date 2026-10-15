@@ -61,6 +61,8 @@ jest.mock('@nextdo/db', () => {
     addContext: async () => undefined,
     listHabits: async () => [],
     listHabitDays: async () => [],
+    DEFAULT_HABIT_REMINDER_OPTIONS: { enabled: true, allDayReminderHhmm: '21:00' },
+    syncHabitCheckInReminders: async () => ({ inserted: 0, removed: 0 }),
     getRecentUploadRejections: async () => [],
     subscribeToUploadRejections: () => () => undefined,
     clearUploadRejections: async () => undefined,

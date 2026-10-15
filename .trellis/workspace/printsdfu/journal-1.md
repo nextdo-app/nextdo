@@ -1184,6 +1184,11 @@ Released v0.1.2 with all 4 Android ABIs after fixing three consecutive blockers 
 
 **Date**: 2026-10-14
 **Task**: 区分专注完成与行动完成 + 已完成行动窗口（#27）、桌面端留白（#28）、更新版本号渠道显示（#29）
+## Session 39: 区分专注完成与行动完成、「已完成行动」可查看可恢复，并修复桌面留白与更新渠道显示 (#27/#28/#29)
+<!-- trellis-session: v=2 fp=a5f14cebb7527178 -->
+
+**Date**: 2026-10-14
+**Task**: 区分专注完成与行动完成、「已完成行动」可查看可恢复，并修复桌面留白与更新渠道显示 (#27/#28/#29)
 **Branch**: `feat/completed-actions-restore`
 
 ### Summary
@@ -1211,6 +1216,27 @@ NextAction / CalendarAction / HabitDay 并支持逐条恢复为未完成；顺�
 - [OK] `pnpm lint` + `pnpm typecheck` + `pnpm test` 全绿（39 suites / 567 tests），`build:web` 通过
 - [OK] 浏览器实测（localhost:4180）：追问步骤、窗口列表与恢复、恢复后回到执行池、桌面端点按钮完成
 - [!] 手机端滑动路径无法在桌面浏览器模拟，由 `__tests__/swipe-reveal.test.ts` 与 web 端不注册手势保证
+把「结束一次专注」与「完成一个行动」彻底解耦：completeFocusSession 只写 FocusSession，结束后进入独立的追问步骤「行动也完成？」；新增「已完成行动」窗口列出所有已完成的 NextAction / CalendarAction / HabitDay 并支持逐条恢复为未完成；滑动手势从「滑动即完成」重写为「滑动露出完成按钮」；同时完成 #28 的桌面端内容列留白修复与 #29 的更新版本号渠道显示修复。
+
+### Main Changes
+
+- db: completedActionsQuery（三条 UNION，含 habit_days）+ listCompletedActions + reopenAction 恢复事务（done → open、软删 CompletionRecord、completed 母习惯回 active、提醒不复活、FocusSession 不动）
+- core: ACTION_TRANSITIONS done → open、HABIT_DAY_TRANSITIONS done → open、HABIT_TRANSITIONS completed → active；domain-model.md 同步新增 The Restore Transaction 小节
+- mobile: 新增 /completed 页面与 useCompletedActions / useReopenAction；focus 页改为「结束专注」+ 追问步骤；use-swipe-right → use-swipe-reveal（滑动只露出按钮，web 端不注册手势）
+- ui: 五个 Tab 与项目详情、澄清向导内容列 768px → 1024px，Tab 栏同步；EmptyState 支持 className；快速捕获弹层非 iOS 改 fade 并修遮罩吞点击
+- update: 无更高版本时按偏好渠道取展示版本，设置页显示「测试版/正式版」
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c74e6a6` | 区分专注完成与行动完成、新增「已完成行动」可查看可恢复，并修复桌面端留白与更新版本号显示 |
+
+### Testing
+
+- [OK] pnpm lint + pnpm typecheck + pnpm test 全绿（39 suites / 567 tests），build:web 通过
+- [OK] 浏览器实测（localhost:4180）：追问步骤、窗口列表与恢复、恢复后行动回到执行池、桌面端点按钮完成（不需滑动）
+- [OK] 手机端滑动路径无法在桌面浏览器模拟触摸，由 __tests__/swipe-reveal.test.ts 与 web 端不注册手势保证
 
 ### Status
 
@@ -1219,3 +1245,113 @@ NextAction / CalendarAction / HabitDay 并支持逐条恢复为未完成；顺�
 ### Next Steps
 
 - 待合并 PR（closes #27 / #28 / #29）；未做版本 bump 与发布
+- PR #33 待评审合并（closes #27 / #28 / #29）
+- 未做版本 bump 与发布，合并后需同步根 package.json、apps/desktop（package.json / tauri.conf.json / Cargo.toml / Cargo.lock）与 apps/mobile/app.json
+
+
+## Session 40: 习惯打卡时间窗口校验与确认、打卡提醒配置以及漏打补卡与挑战顺延 (#30, #32)
+<!-- trellis-session: v=2 fp=b3c82d41a87e593a -->
+
+**Date**: 2026-10-15
+**Task**: 习惯打卡时间窗口校验与确认、打卡提醒配置以及漏打补卡与挑战顺延 (#30 / #32)
+**Branch**: `feat/habit-checkin-window-reminders`
+
+### Summary
+
+实现了习惯打卡的时间窗口校验、非窗口期二次确认弹窗、打卡提醒配置与同步，以及针对未打卡日期的 24 小时内补卡和超过 24 小时自动顺延挑战天数机制，解决了 Issue #30 与 Issue #32。
+
+### Main Changes
+
+- **core**:
+  - `src/domain/habit-checkin.ts`: 纯函数 `assertHabitCheckInWindow`（窗口期外抛出 `ValidationNextdoError('habit.checkin-outside-window')`，支持 `overrideWindow` 强行通过）；`isHabitCatchUpAvailable`（24小时/昨日补卡判定）；`habitCarryOverExtension`（顺延天数计算）；`habitCheckInReminderMoment`（提醒时间推导，窗口习惯在 windowEnd、全天习惯在配置时刻）。
+- **db**:
+  - `completeAction`: 打卡当天习惯时校验时间窗口，未在窗口内抛异常，弹窗确认后传入 `overrideWindow: true` 允许打卡；昨日补卡跳过窗口校验。
+  - `carryOverMissedHabitDays` / `listHabitCarryOverCandidates`: 自动统计超出补卡窗口的漏打天数并延后补齐挑战天数，保证 21 天挑战完成次数不被凭空消耗。
+  - `syncHabitCheckInReminders`: 幂等同步生成习惯打卡提醒到 `reminders` 表，由提醒分发层统一投递。
+- **mobile**:
+  - `HabitWindowConfirmModal`: 窗口期外打卡弹出友好确认弹窗，说明不在时间窗口内，确认后继续打卡。
+  - `now.tsx`: 支持展示「顺延+N天」标签，提供「+ 补昨日卡」快捷操作，支持非窗口打卡拦截与确认。
+  - `projects/[id].tsx`: 项目详情习惯网格支持点击昨日未打卡格子进行补卡，以及窗口拦截确认。
+  - `settings.tsx`: 新增「习惯打卡提醒」设置，支持开关提醒与选择全天习惯默认提醒时刻（默认 21:00）。
+  - `use-complete-action.ts` / `error-messages.ts`: 适配 `habit.checkin-outside-window` 错误码静默处理与友好文案。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `19431e9` | feat(habits): 支持习惯打卡时间窗口校验与确认、打卡提醒配置以及漏打补卡与挑战顺延 (#30, #32) |
+
+### Testing
+
+- [OK] `pnpm lint` 通过（0 errors）
+- [OK] `pnpm typecheck` 全部 workspace 通过
+- [OK] `pnpm test` 全部 39 个测试套件（567 tests）通过
+- [OK] `pnpm verify:web --no-serve` 全 4 道门禁（lint → typecheck → test → build:web）全绿
+- [OK] 浏览器端在 `localhost:4180` 实测通过：
+  - 设置页习惯打卡提醒开关与 21:00 时间选择器弹窗确认
+  - 新建包含打卡时间窗口的习惯并在今日聚焦列表中正确展示
+  - 非窗口期点击打卡成功呼出二次确认弹窗
+  - 确认后正常打卡成功并刷新状态
+  - 截图已保存在 `.verify/habit-checkin-window/`
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 41: 时间选择器视觉优化与习惯打卡多阶段提醒 (#31, #32)
+<!-- trellis-session: v=2 fp=86d52f36f903738b -->
+
+**Date**: 2026-10-15
+**Task**: 时间选择器交互体验与小屏紧凑布局优化，以及习惯打卡多阶段提前提醒机制 (#31, #32)
+**Branch**: `feat/habit-checkin-window-reminders`
+
+### Summary
+
+针对 Issue #31（时间选择器在移动端和小屏设备上交互拥挤、截断与难以精确定位）以及 Issue #32（习惯打卡提醒支持时间窗口开始前与结束前阶段提醒），彻底重构了 DateTimePicker 的时间选择模式布局并升级了提醒推导与同步引擎。
+
+### Main Changes
+
+- **mobile (DateTimePicker)**:
+  - `datetime-picker.tsx`:
+    - 重新设计时间选择器顶部大字时钟区域：在 12 小时制下将「上午 / 下午」胶囊切换放置在时钟左侧紧邻处，右侧专用于「24h / 12h」切换，彻底解决 360px 宽度下的文字截断和折行问题；
+    - 简化时/分滚轮表头为极简的「时」和「分」，去除滚轮项内挤占空间的冗余 `am/pm` 标记，两列滚轮更宽裕清晰；
+    - 增加滚轮上下边缘渐变淡出遮罩与居中高亮选框，使当前选中数值一目了然；
+    - 分钟快捷工具栏清晰分为左右两组并加竖向分割线：左侧为 `:00 / :15 / :30 / :45` 快速对齐键，右侧为 `-5m / +5m / -1m / +1m` 精细微调键，按键紧凑防溢出；
+    - 保持常用时段快捷横向滑动选择胶囊（如 07:30, 08:30, 09:00, 12:30, 21:00 等），点选即可直达。
+  - `datetime-picker.test.tsx`: 补充 12h 模式切换、快捷微调与小时分钟更新测试用例。
+- **mobile (Settings)**:
+  - `settings.tsx`: 智能感知当前活跃习惯；当所有习惯均已设置时间窗口时，给出友好提示说明将依据各自时间窗口开始前与结束前提醒，避免用户困惑。
+- **core & db (Habit Check-In Reminders)**:
+  - `habit-checkin.ts`: 新增 `habitCheckInReminderMoments`，支持按时间窗口提前 15 分钟（`leadMinutes`）生成窗口开始提醒（督促准备）与窗口结束前提醒（未打卡督促）；全天习惯维持用户设定的提醒时刻；
+  - `habit-reminders.ts`: `syncHabitCheckInReminders` 支持同步管理多个阶段的打卡提醒，打卡完成或过期后自动作废对应提醒；
+  - 测试用例完备覆盖提前提醒推导、极窄窗口保护与完成打卡后批量作废。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ad756dd` | feat(ui,reminders): 优化时间选择器小屏交互体验并支持习惯窗口多阶段提醒 (#31, #32) |
+
+### Testing
+
+- [OK] `pnpm lint` 通过（0 errors）
+- [OK] `pnpm typecheck` 全部 workspace 通过
+- [OK] `pnpm test` 全部 39 个测试套件（570 tests）全部通过
+- [OK] `pnpm verify:web --no-serve` 全 4 道门禁（lint → typecheck → test → build:web）全绿
+- [OK] 浏览器端在 `localhost:4180` 实测通过：
+  - 360px Android 手机视口与桌面视口实测 DateTimePicker
+  - 24 小时制、12 小时制、上午/下午切换、分微调工具栏与常用时段点击响应
+  - 深色模式正常
+  - 设置页习惯提醒时间选择器联动正常
+  - 实测截图保存在 `.verify/issue-31-datetime-picker/`
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 推送分支 `feat/habit-checkin-window-reminders` 并创建 PR（关联 closes #30, #31, #32）
+
+

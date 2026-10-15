@@ -103,4 +103,78 @@ describe('DateTimePicker', () => {
     expect(onConfirm).toHaveBeenCalledWith('2026-09-26T09:30');
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('supports 12h/24h toggle, AM/PM switching, and minute fine-tuning (Issue 31)', () => {
+    render(
+      <DateTimePicker
+        mode="time"
+        title="习惯提醒时间"
+        value="08:30"
+        now={now}
+        onConfirm={onConfirm}
+        onClose={onClose}
+      />,
+    );
+
+    // Initial 24h mode
+    expect(screen.getByLabelText('当前选中时间').props.children).toBe('08:30');
+    expect(screen.getByLabelText('24小时制')).toBeTruthy();
+    expect(screen.getByLabelText('12小时制')).toBeTruthy();
+
+    // Switch to 12h mode
+    fireEvent.press(screen.getByLabelText('12小时制'));
+    expect(screen.getByText('12小时制')).toBeTruthy();
+    expect(screen.getByLabelText('切换到下午')).toBeTruthy();
+    expect(screen.getByLabelText('切换到上午')).toBeTruthy();
+    expect(screen.getByLabelText('当前选中时间').props.children).toBe('08:30');
+
+    // Fine-tune minute +5m -> 08:35
+    fireEvent.press(screen.getByLabelText('微调 加5分钟'));
+    expect(screen.getByLabelText('当前选中时间').props.children).toBe('08:35');
+
+    // Fine-tune minute +1m -> 08:36
+    fireEvent.press(screen.getByLabelText('微调 加1分钟'));
+    expect(screen.getByLabelText('当前选中时间').props.children).toBe('08:36');
+
+    // Fine-tune minute -5m -> 08:31
+    fireEvent.press(screen.getByLabelText('微调 减5分钟'));
+    expect(screen.getByLabelText('当前选中时间').props.children).toBe('08:31');
+
+    // Switch to PM -> 20:31 (08:31 PM)
+    fireEvent.press(screen.getByLabelText('切换到下午'));
+    expect(screen.getByLabelText('当前选中时间').props.children).toBe('08:31');
+
+    // Confirm and verify 24h formatted string output
+    fireEvent.press(screen.getByText('确定'));
+    expect(onConfirm).toHaveBeenCalledWith('20:31');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('supports expanded quick time presets like 07:30, 19:30, 22:30 (Issue 31)', () => {
+    render(
+      <DateTimePicker
+        mode="time"
+        title="选择时段"
+        value="10:00"
+        now={now}
+        onConfirm={onConfirm}
+        onClose={onClose}
+      />,
+    );
+
+    // Select expanded preset 19:30 (晚间)
+    expect(screen.getByLabelText('时段 19:30')).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('时段 19:30'));
+    expect(screen.getByLabelText('当前选中时间').props.children).toBe('19:30');
+
+    // Select expanded preset 07:30 (晨间)
+    expect(screen.getByLabelText('时段 07:30')).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('时段 07:30'));
+    expect(screen.getByLabelText('当前选中时间').props.children).toBe('07:30');
+
+    // Close on cancel
+    fireEvent.press(screen.getByText('取消'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
 });

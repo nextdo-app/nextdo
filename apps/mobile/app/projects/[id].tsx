@@ -24,7 +24,7 @@ import { Button, Card, ContextChip, EmptyState, Tag, ValueChips, cn, type TagTon
 import { DateTimePicker } from '@/components/datetime-picker';
 import { PickerField } from '@/components/picker-field';
 import { DeadlineChip } from '@/components/deadline-chip';
-import { localDateKey, type NextAction, type Project, type ProjectStatus, type Value } from '@nextdo/core';
+import { localDateKey, type Habit, type NextAction, type Project, type ProjectStatus, type Value } from '@nextdo/core';
 import { useProjects } from '@/hooks/use-projects';
 import { useProjectActions } from '@/hooks/use-project-actions';
 import { useProjectHabits, type ProjectHabitEntry } from '@/hooks/use-project-habits';
@@ -45,6 +45,7 @@ import { endOfLocalDayIso } from '@/lib/clarify-flow';
 import { goBack } from '@/lib/go-back';
 import { SnoozeSheet } from '@/components/snooze-sheet';
 import { EditHabitForm } from '@/components/edit-habit-form';
+import { HabitWindowConfirmModal } from '@/components/habit-window-confirm-modal';
 
 const STATUS_TONES: Record<ProjectStatus, TagTone> = {
   active: 'accent',
@@ -488,7 +489,7 @@ function ProjectHabitRow({
   onReload,
 }: {
   entry: ProjectHabitEntry;
-  onComplete: (dayId: string) => void;
+  onComplete: (dayId: string, habit?: Habit) => void;
   onTrash?: (habitId: string) => void;
   onReload?: () => void;
 }) {
@@ -549,11 +550,27 @@ function ProjectHabitRow({
                 key={cell.dayNumber}
                 accessibilityRole="button"
                 accessibilityLabel={`第 ${cell.dayNumber} 天 今日打卡`}
-                onPress={() => onComplete(todayDay.id)}
+                onPress={() => onComplete(todayDay.id, habit)}
                 className="h-6 w-6 items-center justify-center rounded border-2 border-accent bg-accent/20 dark:border-accent-dark dark:bg-accent-dark/20"
               >
                 <Text className="text-xs font-bold text-accent dark:text-accent-dark">
                   {cell.dayNumber}
+                </Text>
+              </Pressable>
+            );
+          }
+
+          if (cell.status === 'catchup' && cell.day) {
+            return (
+              <Pressable
+                key={cell.dayNumber}
+                accessibilityRole="button"
+                accessibilityLabel={`第 ${cell.dayNumber} 天 补打卡`}
+                onPress={() => onComplete(cell.day!.id, habit)}
+                className="h-6 w-6 items-center justify-center rounded border border-dashed border-accent bg-accent/10 dark:border-accent-dark dark:bg-accent-dark/10"
+              >
+                <Text className="text-[10px] font-bold text-accent dark:text-accent-dark">
+                  补
                 </Text>
               </Pressable>
             );
@@ -625,7 +642,7 @@ function ProjectHabitRow({
             size="sm"
             label="今日打卡"
             variant="secondary"
-            onPress={() => onComplete(todayDay.id)}
+            onPress={() => onComplete(todayDay.id, habit)}
           />
         ) : null}
       </View>
@@ -654,6 +671,12 @@ export default function ProjectDetailScreen() {
   const [showEditProject, setShowEditProject] = useState(false);
   const [armedProjectTrash, setArmedProjectTrash] = useState(false);
   const [snoozeTarget, setSnoozeTarget] = useState<string | null>(null);
+  const [windowConfirm, setWindowConfirm] = useState<{
+    habitDayId: string;
+    habitTitle: string;
+    windowStart: string;
+    windowEnd: string;
+  } | null>(null);
   // One open action edit at a time (R4).
   const [editingActionId, setEditingActionId] = useState<string | null>(null);
   const { update: updateProject, error: updateProjectError } = useUpdateProject();
@@ -904,14 +927,18 @@ export default function ProjectDetailScreen() {
                       if (ok) reloadHabits();
                     });
                   }}
-                  onComplete={(dayId) => {
+                  onComplete={(dayId, habit) => {
                     void complete({ actionKind: 'habit', actionId: dayId }).then((ok) => {
-                      // 理由同 Now 屏的习惯块：`useProjectHabits` 是查询式 hook
-                      // （没有 watch query），不重读就一直显示写入前的计数。
-                      // 只在成功时重读 —— 失败后重读拿到的是同一批行，是一次
-                      // 浪费的查询，还会顺手清掉 `useProjectHabits` 自己的错误状态。
-                      // 写入错误不受影响，`completeError` 由 `useCompleteAction` 持有。
-                      if (ok) reloadHabits();
+                      if (ok) {
+                        reloadHabits();
+                      } else if (habit?.windowStart && habit?.windowEnd) {
+                        setWindowConfirm({
+                          habitDayId: dayId,
+                          habitTitle: habit.title,
+                          windowStart: habit.windowStart,
+                          windowEnd: habit.windowEnd,
+                        });
+                      }
                     });
                   }}
                 />
@@ -945,6 +972,22 @@ export default function ProjectDetailScreen() {
       >
         <Ionicons name="add" size={28} color="#ffffff" />
       </Pressable>
+
+      <HabitWindowConfirmModal
+        visible={windowConfirm !== null}
+        habitTitle={windowConfirm?.habitTitle ?? ''}
+        windowStart={windowConfirm?.windowStart ?? ''}
+        windowEnd={windowConfirm?.windowEnd ?? ''}
+        onCancel={() => setWindowConfirm(null)}
+        onConfirm={() => {
+          if (!windowConfirm) return;
+          const { habitDayId } = windowConfirm;
+          setWindowConfirm(null);
+          void complete({ actionKind: 'habit', actionId: habitDayId, overrideWindow: true }).then((ok) => {
+            if (ok) reloadHabits();
+          });
+        }}
+      />
 
       <SnoozeSheet
         open={snoozeTarget !== null}
