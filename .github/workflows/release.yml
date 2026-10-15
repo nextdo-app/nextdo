@@ -336,8 +336,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # gh release create shells out to git, so the workspace must be a
-      # checkout.
+      # checkout. `fetch-depth: 0` because the release notes come from
+      # `git log <prevTag>..<tag>` — a depth-1 clone has neither the history
+      # nor the older tags.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       # If a prior run_id is supplied, download its artifacts into bundles first
       # (e.g. reusing previously built macOS/Linux/Android artifacts).
       - name: Download artifacts from previous run
@@ -374,25 +378,34 @@ jobs:
           # "latest release" badge or the non-prerelease download list.
           if [[ "$TAG" == *-* ]]; then
             PRERELEASE="--prerelease"
-            KIND="Prerelease"
             LATEST_FLAG="--latest=false"
           else
             PRERELEASE=""
-            KIND="Release"
             LATEST_FLAG="--latest"
           fi
+          # The release BODY is what the app renders as its 「更新说明 (ChangeLog)」
+          # (releases.atom carries the body verbatim), so it has to read like a
+          # changelog — never like the list of uploaded files.
+          node scripts/build-release-notes.mjs \
+            --tag "$TAG" \
+            --repo "${{ github.repository }}" \
+            --output notes.md
+          echo "Release notes:"
+          cat notes.md
           FILES=$(find bundles -type f | sort)
           echo "Found bundles to publish:"
           echo "$FILES"
           [ -n "$FILES" ] || { echo "No bundle files found in bundles directory!" >&2; exit 1; }
           if gh release view "$TAG" >/dev/null 2>&1; then
             # Release already exists (e.g. this tag was re-run after a
-            # pipeline fix) — just (re)upload the assets.
+            # pipeline fix) — (re)upload the assets AND refresh the body, so a
+            # release published with a bad body is repaired by the re-run
+            # instead of needing a hand edit on github.com.
             gh release upload "$TAG" $FILES --clobber
             if [ -n "$PRERELEASE" ]; then
-              gh release edit "$TAG" $PRERELEASE $LATEST_FLAG
+              gh release edit "$TAG" $PRERELEASE $LATEST_FLAG --notes-file notes.md
             else
-              gh release edit "$TAG" $LATEST_FLAG
+              gh release edit "$TAG" $LATEST_FLAG --notes-file notes.md
             fi
           else
             gh release create "$TAG" \
@@ -400,6 +413,6 @@ jobs:
               $PRERELEASE \
               $LATEST_FLAG \
               --title "Nextdo $TAG" \
-              --notes "Nextdo $TAG — $KIND. Assets: $(cd bundles && find . -type f | sed 's#^\./##' | sort | paste -sd', ' -)." \
+              --notes-file notes.md \
               $FILES
           fi

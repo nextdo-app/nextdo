@@ -25,6 +25,7 @@ import {
   formatReleaseDate,
   getAutoUpdateCheckPreference,
   getUpdateChannelPreference,
+  installDesktopUpdateAndRestart,
   isTauriDesktop,
   openDownloadedInstaller,
   openExternalUrl,
@@ -152,7 +153,8 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
     });
 
     stopPolling();
-    pollTimerRef.current = setInterval(() => {
+
+    const checkProgress = () => {
       void pollDesktopDownloadProgress().then((p: DesktopDownloadProgress) => {
         if (p.state === 'downloading') {
           setDownloadState({
@@ -168,7 +170,11 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
           stopPolling();
         }
       });
-    }, 400);
+    };
+
+    pollTimerRef.current = setInterval(checkProgress, 400);
+    // 与设置页一致：立刻取一次进度，完成态不必等第一个 400ms 周期。
+    checkProgress();
   }, [activeDownloadUrl, activeRelease, isDesktop, stopPolling]);
 
   const handleInstallAndRestart = useCallback(async () => {
@@ -176,12 +182,18 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
     setInstalling(true);
     setInstallError(null);
     try {
-      await openDownloadedInstaller(downloadState.filePath);
+      // Tauri 侧的自动安装命令：macOS 静默挂载 DMG、由后台脚本在本进程退出后
+      // 覆盖 /Applications 下的 .app 并重启，Windows 直接启动 NSIS 安装程序。
+      // 两条路都会由 Rust 优雅退出本应用 —— 用户不必再手动关闭应用。
+      await installDesktopUpdateAndRestart(downloadState.filePath);
+      // macOS / Windows 上进程已经退出（这个 Promise 不会再回来）；Linux 只是
+      // 用系统安装器打开安装包、不退出应用，所以要把按钮从「正在安装并重启…」恢复。
+      if (platform !== 'macos' && platform !== 'windows') setInstalling(false);
     } catch (e) {
       setInstallError(String(e));
       setInstalling(false);
     }
-  }, [downloadState]);
+  }, [downloadState, platform]);
 
   if (!visible || !activeRelease) return null;
 
@@ -352,9 +364,27 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
           ) : null}
 
           {installError ? (
-            <Text className="pb-3 font-sans text-xs text-danger dark:text-danger-dark">
-              安装启动失败：{installError}
-            </Text>
+            <View className="gap-1 pb-3">
+              <Text className="font-sans text-xs text-danger dark:text-danger-dark">
+                安装启动失败：{installError}
+              </Text>
+              {/* 覆盖 /Applications 需要写权限，静默替换可能失败；失败时留一条
+                  与设置页一致的兜底通道，而不是把用户卡在弹窗里。 */}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="手动打开安装包"
+                onPress={() => {
+                  if (downloadState.kind === 'done') {
+                    void openDownloadedInstaller(downloadState.filePath);
+                  }
+                }}
+                className="self-start"
+              >
+                <Text className="font-sans text-xs font-semibold text-accent dark:text-accent-dark">
+                  手动打开安装包 →
+                </Text>
+              </Pressable>
+            </View>
           ) : null}
 
           {/* Footer 按钮操作区 */}

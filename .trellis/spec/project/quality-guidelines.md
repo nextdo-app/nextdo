@@ -79,6 +79,20 @@ index.html 回落 —— 直接访问 `/settings` 这类深层路由不会 404�
   therefore resolves the latest release through the `…/releases/latest`
   redirect (CDN-served, un-metered) and reads the tag from the final URL
   instead. See `apps/mobile/lib/app-update.ts`.
+- **The release BODY is the in-app ChangeLog — never write a file list into it.**
+  The app renders exactly what `releases.atom` carries in `<content>`, which is the
+  GitHub release *body* verbatim (`apps/mobile/lib/app-update.ts` →
+  `parseAtomFeedEntries`). `release.yml` used to pass `--notes "Nextdo $TAG —
+  $KIND. Assets: …"`, so users on older builds saw `.apk` / `.dmg` / `worker.js`
+  file names under 「更新说明 (ChangeLog)」 (v0.1.6-beta.4 shipped that way). The
+  body now comes from `scripts/build-release-notes.mjs` — commit subjects between
+  the previous and the current tag, grouped into sections — and the release job
+  checks out with `fetch-depth: 0`, because that script walks `git log`.
+  Repairing a published body takes BOTH sides: `gh release view <tag> --json body`
+  for the API view, and the feed the app actually reads
+  (`https://proxyd.picpi.top/https://github.com/nextdo-app/nextdo/releases.atom`)
+  for the rendered ChangeLog. Re-running the release workflow refreshes an
+  existing release's body too (`gh release edit … --notes-file notes.md`).
 
 ## Review Standards (what a checker looks for)
 
