@@ -43,7 +43,7 @@
  * boundary); this screen owns only the form's transient state.
  */
 import { useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import { useAppInsets } from '@/lib/use-app-insets';
@@ -51,6 +51,10 @@ import { useAppTheme, type ThemePreference } from '@/lib/theme';
 import { Button, Card, cn } from '@nextdo/ui';
 import { useCloudSync } from '@/hooks/use-cloud-sync';
 import { useReminderPermission } from '@/hooks/use-reminder-permission';
+import { useAppClock } from '@/hooks/use-app-clock';
+import { useHabitReminders } from '@/hooks/use-habit-reminders';
+import { PickerField } from '@/components/picker-field';
+import { DateTimePicker } from '@/components/datetime-picker';
 import { useAppUpdate } from '@/hooks/use-app-update';
 import { formatReleaseDate, openExternalUrl, type UpdateFailureReason } from '@/lib/app-update';
 import {
@@ -186,6 +190,9 @@ export default function SettingsScreen() {
   const { state, storedConfig, ownerToken, connect, disconnect } = useCloudSync();
   const { state: notificationPermission, openSystemSettings, requestPermission } =
     useReminderPermission();
+  const now = useAppClock();
+  const { options: habitReminderOptions, update: updateHabitReminders } = useHabitReminders(now);
+  const [openHabitTimePicker, setOpenHabitTimePicker] = useState(false);
   const update = useAppUpdate();
   // The deep-link route (`app/sync.tsx`) hands a failed connect back here
   // as `?syncError=…` so the user SEES the reason instead of a silent
@@ -510,6 +517,49 @@ export default function SettingsScreen() {
               尚未授权 — 首次「稍后」或创建限时日历行动时，会请求通知权限。
             </Text>
           )}
+        </Card>
+
+        {/* Habit Check-in Reminders (issue 32-A) */}
+        <Card className="mt-4 gap-3 p-3.5">
+          <View className="flex-row items-center justify-between">
+            <View className="flex-1 pr-2">
+              <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+                习惯打卡提醒
+              </Text>
+              <Text className="mt-0.5 font-sans text-xs text-muted dark:text-muted-dark">
+                未完成习惯到点提醒，避免漏打卡。
+              </Text>
+            </View>
+            <Switch
+              accessibilityLabel="开启习惯打卡提醒"
+              value={habitReminderOptions?.enabled ?? true}
+              onValueChange={(val) => void updateHabitReminders({ enabled: val })}
+              trackColor={{ false: '#716b64', true: '#c85a17' }}
+            />
+          </View>
+
+          {habitReminderOptions?.enabled ? (
+            <View className="gap-2.5 border-t border-border/40 pt-2.5 dark:border-border-dark/40">
+              <View className="flex-row items-center justify-between">
+                <View className="flex-1 pr-2">
+                  <Text className="font-sans text-xs font-medium text-ink dark:text-ink-dark">
+                    全天习惯提醒时刻
+                  </Text>
+                  <Text className="font-sans text-[11px] text-muted dark:text-muted-dark">
+                    无时间窗口的习惯在此刻提醒；有窗口的在窗口结束时提醒。
+                  </Text>
+                </View>
+                <View className="w-28">
+                  <PickerField
+                    label="全天提醒时刻"
+                    value={habitReminderOptions.allDayReminderHhmm}
+                    placeholder="21:00"
+                    onPress={() => setOpenHabitTimePicker(true)}
+                  />
+                </View>
+              </View>
+            </View>
+          ) : null}
         </Card>
 
         {/* Cloud sync block (R6) */}
@@ -1266,6 +1316,19 @@ export default function SettingsScreen() {
         </Card>
         </View>
       </ScrollView>
+          {openHabitTimePicker && habitReminderOptions ? (
+        <DateTimePicker
+          mode="time"
+          title="选择全天习惯提醒时刻"
+          value={habitReminderOptions.allDayReminderHhmm}
+          now={now}
+          onConfirm={(val) => {
+            void updateHabitReminders({ allDayReminderHhmm: val });
+            setOpenHabitTimePicker(false);
+          }}
+          onClose={() => setOpenHabitTimePicker(false)}
+        />
+      ) : null}
     </KeyboardAvoidingView>
   );
 }

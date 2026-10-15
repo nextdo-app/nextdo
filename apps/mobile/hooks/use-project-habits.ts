@@ -17,6 +17,7 @@ import { usePowerSync } from '@powersync/react';
 import { habitCycleDay, listHabits, listHabitDays, wrapDb } from '@nextdo/db';
 import {
   daysBetweenDateKeys,
+  isHabitCatchUpAvailable,
   localDateKey,
   logger,
   parseIso,
@@ -24,7 +25,7 @@ import {
   type HabitDay,
 } from '@nextdo/core';
 
-export type HabitCellStatus = 'done' | 'today' | 'missed' | 'future';
+export type HabitCellStatus = 'done' | 'today' | 'catchup' | 'missed' | 'future';
 
 export interface HabitGridDay {
   /** 1-based day in the cycle (1 to cycleDays). */
@@ -133,7 +134,11 @@ export function useProjectHabits(projectId: string | null, now: Date): UseProjec
                 todayDay = dayRow;
               }
             } else if (dateKey < todayKey) {
-              status = 'missed';
+              if (dayRow?.status === 'open' && isHabitCatchUpAvailable(dateKey, now)) {
+                status = 'catchup';
+              } else {
+                status = 'missed';
+              }
             } else {
               status = 'future';
             }

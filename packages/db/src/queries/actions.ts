@@ -8,6 +8,7 @@
  */
 import {
   ACTION_TRANSITIONS,
+  assertHabitCheckInWindow,
   assertTransition,
   assertValidNextAction,
   localDateKey,
@@ -240,10 +241,23 @@ export async function updateNextAction(
  *    was the last day of the cycle, set the habit status = "completed".
  *
  * Project action coverage is NOT updated here — it is derived on query.
+ *
+ * `overrideWindow` (issue 30) is the escape hatch for the confirmation UX:
+ * a habit 打卡 outside its time window throws `habit.checkin-outside-window`
+ * by default, and the UI catches that code, asks the user, then retries with
+ * the flag set. The DB is the enforcement point — every habit completion in
+ * the app goes through this transaction, so a windowed habit cannot be
+ * completed out of window except through a deliberate confirmation.
  */
 export async function completeAction(
   db: NextdoDb,
-  args: { actionKind: ActionKind; actionId: string; now: Date },
+  args: {
+    actionKind: ActionKind;
+    actionId: string;
+    now: Date;
+    /** Issue 30: skip the habit time-window assert (the user confirmed). */
+    overrideWindow?: boolean;
+  },
 ): Promise<void> {
   const { actionKind, actionId, now } = args;
   const nowIso = toIso(now);
@@ -270,6 +284,23 @@ export async function completeAction(
       lastCycleDayKey = localDateKey(
         new Date(startedAtMs + ((habit.cycle_days as number) - 1) * DAY_MS),
       );
+
+      // Issue 30: the time window gates the 打卡 itself, not only the
+      // recommendation. A 补卡 (issue 32-B) targets a PAST day, so the
+      // window check is skipped for it — completing yesterday's habit after
+      // yesterday's window has closed is exactly what the catch-up is for,
+      // and the 1-day catch-up bound is the only limit that applies there.
+      if ((row.local_date as string) === localDateKey(now)) {
+        assertHabitCheckInWindow(
+          now,
+          {
+            windowStart: habit.window_start ?? undefined,
+            windowEnd: habit.window_end ?? undefined,
+            windowDays: parseJson<number[] | null>(habit.window_days, null) ?? undefined,
+          },
+          { overrideWindow: args.overrideWindow },
+        );
+      }
     }
   }
   const estMinutes = actionKind === 'habit' ? habitEstMinutes : row.est_minutes;

@@ -19,6 +19,7 @@ import { usePowerSync } from '@powersync/react';
 import { habitCycleDay, listHabits, listHabitDays, wrapDb } from '@nextdo/db';
 import {
   daysBetweenDateKeys,
+  isHabitCatchUpAvailable,
   localDateKey,
   logger,
   parseIso,
@@ -45,6 +46,16 @@ export interface HabitWithProgress {
    * is why the block renders "today has nothing to do" rather than a chip.
    */
   today: HabitDay | null;
+  /**
+   * Yesterday's HabitDay if still open and within the 24h catch-up window
+   * (issue 32-B 方案 3: 允许补卡前一天).
+   */
+  yesterday: HabitDay | null;
+  /**
+   * How many days the challenge has been extended due to past permanently-missed
+   * days (issue 32-B 方案 1: 顺延).
+   */
+  extendedDays: number;
 }
 
 export interface UseHabitsResult {
@@ -88,9 +99,14 @@ export function useHabits(now: Date): UseHabitsResult {
           // `listHabitDays` is read unfiltered (the cycle count needs every
           // day, not just today's), so today's row is picked out here.
           const today = habitDays.find((day) => day.localDate === localDate) ?? null;
+          const yesterdayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12, 0, 0, 0);
+          const yesterdayKey = localDateKey(yesterdayDate);
+          const yesterdayRow = habitDays.find((day) => day.localDate === yesterdayKey && day.status === 'open') ?? null;
+          const yesterday = yesterdayRow !== null && isHabitCatchUpAvailable(yesterdayKey, now) ? yesterdayRow : null;
+          const extendedDays = Math.max(0, habit.cycleDays - 21);
           const gap = daysBetweenDateKeys(localDate, localDateKey(parseIso(habit.startedAt)));
           const startsInDays = gap > 0 ? gap : null;
-          rows.push({ habit, cycleDay, doneCount, startsInDays, today });
+          rows.push({ habit, cycleDay, doneCount, startsInDays, today, yesterday, extendedDays });
         }
         setData(rows);
         setError(null);

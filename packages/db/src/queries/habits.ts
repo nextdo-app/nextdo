@@ -17,7 +17,9 @@ import {
   assertTransition,
   assertValidHabit,
   assertValidHabitDay,
+  habitCarryOverExtension,
   habitDayId,
+  isHabitCatchUpAvailable,
   localDateKey,
   parseIso,
   toIso,
@@ -238,4 +240,111 @@ export async function startHabit(
     today = await seedHabitDays(tx, habit, now);
   });
   return { habit, today };
+}
+
+// ---------------------------------------------------------------------------
+// 顺延 — carry a missed day into the challenge (issue 32-B 方案 1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Extend a habit's challenge by one day per permanently-missed day, and lay
+ * the new days down.
+ *
+ * Issue 32-B: a 21-day challenge used to advance on the CALENDAR, so a
+ * forgotten morning silently consumed one of the 21 chances and the habit
+ * ended with fewer days actually practised. The challenge is a run of
+ * completions, so a day that has aged out of the catch-up window
+ * (`HABIT_CATCH_UP_MAX_DAYS`, core's `habitCarryOverExtension`) buys a fresh
+ * day at the end of the cycle instead.
+ *
+ * Idempotent and stable: the extension is derived from the CURRENT day rows,
+ * and the days it creates are `open` rows dated in the FUTURE — never
+ * themselves missed — so a second run computes the same extension rather
+ * than compounding. Re-running is a no-op, which matters because the caller
+ * runs this on app focus and from a second device (idempotent generation is
+ * the same guarantee `seedHabitDays` makes).
+ *
+ * Only OPEN habits are touched: a `broken` habit's cycle is the user's to
+ * restart (`broken → active`), and a `completed` one is finished.
+ *
+ * Returns the habit's new cycle length, or the unchanged one when nothing
+ * was carried over.
+ */
+export async function carryOverMissedHabitDays(
+  db: NextdoDb,
+  args: { habitId: string; now: Date; initialCycleDays?: number },
+): Promise<number> {
+  const habitRow = await loadHabitRow(db, args.habitId);
+  const habit = habitFromRow(habitRow);
+  if (habit.status !== 'active') return habit.cycleDays;
+
+  const days = await listHabitDays(db, { habitId: habit.id });
+  const todayKey = localDateKey(args.now);
+  // How many days are permanently missed (past, open, outside catch-up).
+  const permanentlyMissed = days.filter(
+    (d) => d.status === 'open' && d.localDate < todayKey && !isHabitCatchUpAvailable(d.localDate, args.now),
+  ).length;
+
+  // The 21-day challenge (issue 32-B 方案 1): each permanently-missed day
+  // adds one fresh day to the challenge so forgetting one morning never
+  // consumes one of the 21 completion chances.
+  const initial = args.initialCycleDays ?? 21;
+  const targetCycleDays = initial + permanentlyMissed;
+  if (habit.cycleDays >= targetCycleDays) return habit.cycleDays;
+
+  const extended: Habit = {
+    ...habit,
+    cycleDays: targetCycleDays,
+    updatedAt: toIso(args.now),
+  };
+  assertValidHabit(extended);
+
+  const nowIso = toIso(args.now);
+  await db.transaction().execute(async (tx) => {
+    await tx
+      .updateTable('habits')
+      .set({ cycle_days: extended.cycleDays, updated_at: nowIso })
+      .where('id', '=', habit.id)
+      .execute();
+    // The same seeder the start/update paths use — the new days are ordinary
+    // cycle days (weekday mask applies, ids stay deterministic).
+    await seedHabitDays(tx, extended, args.now);
+  });
+  return extended.cycleDays;
+}
+
+/**
+ * Every OPEN habit whose challenge would gain days from a carry-over, with
+ * the day count each would gain.
+ *
+ * A READ counterpart to `carryOverMissedHabitDays` so the UI can show
+ * 「本期已顺延 N 天」 without minting ULIDs or writing rows on render — the
+ * carry-over itself only happens when the user acts on it.
+ */
+export async function listHabitCarryOverCandidates(
+  db: NextdoDb,
+  now: Date,
+): Promise<{ habit: Habit; extension: number; cycleDays: number }[]> {
+  const habits = await listHabits(db);
+  const days = await listHabitDays(db);
+  const daysByHabit = new Map<string, HabitDay[]>();
+  for (const day of days) {
+    const bucket = daysByHabit.get(day.habitId);
+    if (bucket === undefined) daysByHabit.set(day.habitId, [day]);
+    else bucket.push(day);
+  }
+
+  const candidates: { habit: Habit; extension: number; cycleDays: number }[] = [];
+  for (const habit of habits) {
+    if (habit.status !== 'active') continue;
+    const extension = habitCarryOverExtension(
+      (daysByHabit.get(habit.id) ?? []).map((day) => ({
+        localDate: day.localDate,
+        status: day.status,
+      })),
+      now,
+    );
+    if (extension > 0) candidates.push({ habit, extension, cycleDays: habit.cycleDays });
+  }
+  return candidates;
 }
