@@ -20,6 +20,11 @@ export interface WorkerEnv {
   DATABASE_URL: string;
   JWT_SECRET: string;
   NEXTDO_SYNC_ENDPOINT: string;
+  /** Optional. The `kid` this deployment's PowerSync keystore holds, when it
+   *  is not the default `nextdo-dev` (PowerSync CLOUD auto-names its HS256
+   *  entries). The value to use is printed by the service on a rejection as
+   *  `Known keys: <kid: …>`. */
+  NEXTDO_JWT_KID?: string;
   NEXTDO_OWNER_TOKEN?: string;
   NEXTDO_CLAIM_SECRET?: string;
   HYPERDRIVE?: { connectionString: string };
@@ -89,6 +94,8 @@ async function initApp(env: WorkerEnv): Promise<ReturnType<typeof createApp>> {
     logger.info('claim secret: configured');
   }
 
+  const jwtKid = env.NEXTDO_JWT_KID?.trim();
+
   const app = createApp({
     pool,
     claimState,
@@ -101,6 +108,9 @@ async function initApp(env: WorkerEnv): Promise<ReturnType<typeof createApp>> {
     // NEXTDO_SYNC_ENDPOINT, so the audience is derived from it rather than
     // asking the operator to keep a second setting in agreement.
     audience: cloudJwtAudience(env.NEXTDO_SYNC_ENDPOINT),
+    // Same reasoning for the kid: Cloud names the key itself, so the token
+    // must carry whatever that name is. Unset keeps the shared default.
+    ...(jwtKid === undefined || jwtKid === '' ? {} : { kid: jwtKid }),
   });
 
   cachedConnectionString = connectionString;

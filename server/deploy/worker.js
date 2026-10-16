@@ -9177,7 +9177,8 @@ function createApp(config) {
       const token = await mintPowerSyncJwt({
         secret: config.jwtSecret,
         now: now(),
-        ...config.audience === void 0 ? {} : { audience: config.audience }
+        ...config.audience === void 0 ? {} : { audience: config.audience },
+        ...config.kid === void 0 ? {} : { kid: config.kid }
       });
       return c.json({ token, endpoint: config.syncEndpoint });
     }
@@ -9594,6 +9595,7 @@ async function initApp(env) {
   if (claimSecret !== null) {
     logger.info("claim secret: configured");
   }
+  const jwtKid = env.NEXTDO_JWT_KID?.trim();
   const app = createApp({
     pool,
     claimState,
@@ -9605,7 +9607,10 @@ async function initApp(env) {
     // which never runs this entry point. The URL is already here as
     // NEXTDO_SYNC_ENDPOINT, so the audience is derived from it rather than
     // asking the operator to keep a second setting in agreement.
-    audience: cloudJwtAudience(env.NEXTDO_SYNC_ENDPOINT)
+    audience: cloudJwtAudience(env.NEXTDO_SYNC_ENDPOINT),
+    // Same reasoning for the kid: Cloud names the key itself, so the token
+    // must carry whatever that name is. Unset keeps the shared default.
+    ...jwtKid === void 0 || jwtKid === "" ? {} : { kid: jwtKid }
   });
   cachedConnectionString = connectionString;
   cachedApp = app;
