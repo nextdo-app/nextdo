@@ -179,8 +179,9 @@ Nextdo 支持极简配对，无需手敲任何复杂的配置项：
   2. **KID 是否对得上** —— 注意不是看你填了什么，而是看实例**实际**持有什么：同步报错里会写 `Known keys: <kid: …>`（PowerSync Cloud 会自己给条目命名，形如 `hs256-key-1`）。两边字面不同就必然 `PSYNC_S2101`。最省事的做法是把这个名字填到 Cloudflare 的 `NEXTDO_JWT_KID`；也可以反过来把实例里的键改名成 `nextdo-dev`；
   3. **Secret 是不是 base64url、且与 Cloudflare 的 `JWT_SECRET` 完全一致**；
   4. **JWT Audience**：这一栏为空时只接受实例 URL。用 beta.7 之前的 `worker.js` 就在这里 **+ Add** 一条 `nextdo`；换了 beta.7 的 `worker.js` 则无需此项。
+  5. **若上面四项看着全对却始终不生效：把那条 HS256 条目删掉，重新加一条。** 实测过的一种情况是——界面上 KID 填的是 `nextdo-dev`，实例里生效的却仍是先前自动命名的 `hs256-key-1`；此类「旧条目的名字没被覆盖」只能靠删除重建解决。复核方式仍是复现一次，看报错里的 `Known keys` 有没有变成你填的那个值。
 
-  四项都确认后回 App 点 **「立即同步」** 即可，不需要重新配对或重装。
+  五项都确认后回 App 点 **「立即同步」** 即可，不需要重新配对或重装。
 - 若显示 `PSYNC_S2102`（签名无法验证）：KID 对上了但密钥内容不同，常见原因是末尾多了空格，或 Shared Secret 填的不是 base64url 形式的那份。
 - 若两者都核对过仍报错：确认 App 里显示的 **同步流地址** 与你刚才改配置的实例是同一个（Cloudflare 的 `NEXTDO_SYNC_ENDPOINT` 要填 PowerSync 控制台 Connect 弹窗里那个 Instance URL）。改到了另一个实例上同样会一直 401。
 - 若显示 `PSYNC_S2103`（凭据过期）：点一下 **「立即同步」** 重新取一次凭据即可。
