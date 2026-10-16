@@ -41,6 +41,9 @@ function row(overrides: Partial<ScheduledReminderRow> & { id: string }): Schedul
 function input(overrides: Partial<ReconcileInput> & { rows: ScheduledReminderRow[] }): ReconcileInput {
   return {
     mode: 'native',
+    // The in-app master switch defaults ON — only the #24 cases below turn it
+    // off, so every pre-existing case keeps asserting its original behavior.
+    enabled: true,
     now: NOW,
     pendingIds: new Set<string>(),
     ...overrides,
@@ -156,5 +159,43 @@ describe('computeReconcile — tauri mode', () => {
     const out = computeReconcile(input({ mode: 'tauri', rows: [r], pendingIds: new Set(['stale']) }));
     expect(out.toCancel).toEqual([]);
     expect(out.toFireNow).toHaveLength(1);
+  });
+});
+
+describe('computeReconcile — the in-app master switch (issue #24 R2)', () => {
+  it('withdraws every armed notification and schedules nothing when off (native)', () => {
+    const r1 = row({ id: 'r1' });
+    const r2 = row({ id: 'r2', firesAt: new Date(NOW.getTime() + 90 * MIN).toISOString() });
+    const out = computeReconcile(
+      input({ rows: [r1, r2], pendingIds: new Set(['r1', 'r2']), enabled: false }),
+    );
+    expect(out.toSchedule).toEqual([]);
+    expect(out.toCancel).toEqual(['r1', 'r2']);
+    expect(out.toFireNow).toEqual([]);
+  });
+
+  it('withdraws even when the business row is already gone (id is all it needs)', () => {
+    const out = computeReconcile(
+      input({ rows: [], pendingIds: new Set(['ghost']), enabled: false }),
+    );
+    expect(out).toEqual({ toSchedule: [], toCancel: ['ghost'], toFireNow: [] });
+  });
+
+  it('never fires a due row on desktop while off (tauri has no OS-side state)', () => {
+    const due = row({ id: 'r1', firesAt: new Date(NOW.getTime() - MIN).toISOString() });
+    const out = computeReconcile(input({ mode: 'tauri', rows: [due], enabled: false }));
+    expect(out).toEqual({ toSchedule: [], toCancel: [], toFireNow: [] });
+  });
+
+  it('is idempotent while off: a second pass after the cancels applied yields nothing', () => {
+    const r1 = row({ id: 'r1' });
+    const first = computeReconcile(
+      input({ rows: [r1], pendingIds: new Set(['r1']), enabled: false }),
+    );
+    expect(first.toCancel).toEqual(['r1']);
+    const second = computeReconcile(
+      input({ rows: [r1], pendingIds: new Set(), enabled: false }),
+    );
+    expect(second).toEqual({ toSchedule: [], toCancel: [], toFireNow: [] });
   });
 });

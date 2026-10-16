@@ -39,6 +39,11 @@ import { logger } from '@nextdo/core';
 import { getDeliveryAdapter, type ReminderPermissionState } from '@/lib/reminders/adapters';
 import { postDebugLog } from '@/lib/reminders/debug-log';
 import { computeReconcile } from '@/lib/reminders/reminder-scheduler';
+import {
+  DEFAULT_NOTIFICATION_SETTINGS,
+  loadNotificationSettings,
+  subscribeToNotificationSettings,
+} from '@/lib/notification-settings';
 
 /** The tables whose rows feed `listScheduledReminders` or its title joins
  *  (design §5.2 — the onChange watchlist). */
@@ -79,6 +84,10 @@ export function useReminderDelivery(): UseReminderDeliveryResult {
   // flight (design §3 — "reconcile 走单条 promise 链").
   const queueRef = useRef<Promise<unknown>>(Promise.resolve());
 
+  // The in-app master switch (issue #24 R2). Held in a ref so a reconcile
+  // queued by a poke reads the value AT RUN TIME, not the render-time closure.
+  const masterEnabledRef = useRef(DEFAULT_NOTIFICATION_SETTINGS.masterEnabled);
+
   const runReconcile = useCallback((): Promise<unknown> => {
     const mode = adapter.platform === 'web' ? null : adapter.platform;
     if (mode === null) return Promise.resolve();
@@ -89,6 +98,7 @@ export function useReminderDelivery(): UseReminderDeliveryResult {
         const tauriContext = adapter.tauriContext?.();
         const output = computeReconcile({
           mode,
+          enabled: masterEnabledRef.current,
           // A FRESH clock per reconcile (see the module doc — the
           // sanctioned exception to Rule 4).
           now: new Date(),
@@ -143,6 +153,21 @@ export function useReminderDelivery(): UseReminderDeliveryResult {
         );
       }
       if (disposed) return;
+      // Load the in-app master switch BEFORE the first reconcile: with the
+      // switch off, scheduling and immediately withdrawing would leave the OS
+      // briefly holding a notification the user has switched off (R2).
+      try {
+        const settings = await loadNotificationSettings();
+        if (disposed) return;
+        masterEnabledRef.current = settings.masterEnabled;
+      } catch (error) {
+        // Keep the default (ON) — a preference-read failure must never stop
+        // delivery.
+        logger.warn(
+          'notification settings read failed',
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      }
       void runReconcile();
       void adapter
         .permission()
@@ -204,10 +229,23 @@ export function useReminderDelivery(): UseReminderDeliveryResult {
     };
   }, [adapter, runReconcile]);
 
+  // The in-app master switch (issue #24 R2): follow the stored preference and
+  // re-reconcile on every change — that pass is what withdraws an armed OS
+  // schedule the moment the switch goes off.
+  useEffect(() => {
+    return subscribeToNotificationSettings((settings) => {
+      masterEnabledRef.current = settings.masterEnabled;
+      void runReconcile();
+    });
+  }, [runReconcile]);
+
   // The desktop tick (tauri only — in-session delivery, design §4.2).
   useEffect(() => {
     if (adapter.platform !== 'tauri') return;
     const intervalId = setInterval(() => {
+      // R2: with the switch off there is nothing to deliver, and tauri holds
+      // no OS-side schedule to withdraw — skip the DB read entirely.
+      if (!masterEnabledRef.current) return;
       void runReconcile();
     }, TAURI_TICK_MS);
     return () => {

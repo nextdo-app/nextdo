@@ -44,6 +44,13 @@ export type ReconcileMode = 'native' | 'tauri';
 
 export interface ReconcileInput {
   mode: ReconcileMode;
+  /**
+   * The in-app notification master switch (issue #24 R2). `false` suppresses
+   * delivery entirely: the pass withdraws every armed OS notification and
+   * schedules / fires nothing, so the Settings toggle takes effect on the next
+   * reconcile instead of waiting for the OS to drop a stale schedule.
+   */
+  enabled: boolean;
   /** The reconcile moment (injected — never read from the wall clock here). */
   now: Date;
   /** Live scheduled reminder rows, including orphans (title null). */
@@ -85,7 +92,13 @@ export interface ReconcileOutput {
 export const TAURI_FIRE_GRACE_MS = 5 * 60 * 1000;
 
 export function computeReconcile(input: ReconcileInput): ReconcileOutput {
-  const { mode, now, rows, pendingIds, firedIds } = input;
+  const { enabled, mode, now, rows, pendingIds, firedIds } = input;
+  // R2: the in-app master switch is a hard gate ABOVE both modes. WITHDRAWING
+  // (rather than merely skipping) is what makes the toggle immediate — the OS
+  // still holds the schedules a previous pass created.
+  if (!enabled) {
+    return { toSchedule: [], toCancel: [...pendingIds], toFireNow: [] };
+  }
   const nowMs = now.getTime();
   const toSchedule: ReconcileItem[] = [];
   const toCancel: string[] = [];
