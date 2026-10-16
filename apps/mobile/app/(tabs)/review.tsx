@@ -6,6 +6,7 @@
  */
 import { Card, EmptyState, Tag } from '@nextdo/ui';
 import { FlatList, Pressable, Text, View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { router } from 'expo-router';
 import type { ReviewRecord } from '@nextdo/core';
@@ -37,7 +38,7 @@ export default function ReviewScreen() {
       style={{ paddingTop: topPadding }}
       className="flex-1 w-full bg-canvas px-4 pb-4 dark:bg-canvas-dark"
     >
-      <View className="flex-1 w-full max-w-5xl mx-auto">
+      <View className="flex-1 w-full max-w-2xl mx-auto">
       <Text className="mb-4 text-2xl font-bold tracking-tight text-ink dark:text-ink-dark">
         回顾
       </Text>
@@ -51,14 +52,19 @@ export default function ReviewScreen() {
           className="flex-1 rounded-2xl border border-border/80 bg-surface p-3.5 shadow-2xs active:bg-surface-container dark:border-border-dark dark:bg-surface-dark dark:active:bg-surface-container-dark"
         >
           <View className="flex-row items-center justify-between">
-            <Text className="font-sans text-base font-semibold text-ink dark:text-ink-dark">
-              今日回顾
-            </Text>
-            <View className="h-5 w-5 items-center justify-center rounded-full bg-accent/10 dark:bg-accent-dark/20">
-              <Text className="text-xs font-bold text-accent dark:text-accent-dark">→</Text>
+            <View className="flex-row items-center gap-2">
+              <View className="h-7 w-7 rounded-lg bg-accent/15 dark:bg-accent-dark/20 items-center justify-center">
+                <Ionicons name="sunny-outline" size={15} color="#c85a17" />
+              </View>
+              <Text className="font-sans text-base font-semibold text-ink dark:text-ink-dark">
+                今日回顾
+              </Text>
+            </View>
+            <View className="h-6 w-6 items-center justify-center rounded-full bg-accent/10 dark:bg-accent-dark/20">
+              <Ionicons name="chevron-forward" size={13} color="#c85a17" />
             </View>
           </View>
-          <Text className="mt-1 font-sans text-xs text-muted dark:text-muted-dark">
+          <Text className="mt-2 font-sans text-xs text-muted dark:text-muted-dark">
             清点完成 · 规划明日
           </Text>
         </Pressable>
@@ -70,14 +76,19 @@ export default function ReviewScreen() {
           className="flex-1 rounded-2xl border border-border/80 bg-surface p-3.5 shadow-2xs active:bg-surface-container dark:border-border-dark dark:bg-surface-dark dark:active:bg-surface-container-dark"
         >
           <View className="flex-row items-center justify-between">
-            <Text className="font-sans text-base font-semibold text-ink dark:text-ink-dark">
-              本周回顾
-            </Text>
-            <View className="h-5 w-5 items-center justify-center rounded-full bg-accent/10 dark:bg-accent-dark/20">
-              <Text className="text-xs font-bold text-accent dark:text-accent-dark">→</Text>
+            <View className="flex-row items-center gap-2">
+              <View className="h-7 w-7 rounded-lg bg-accent/15 dark:bg-accent-dark/20 items-center justify-center">
+                <Ionicons name="calendar-outline" size={15} color="#c85a17" />
+              </View>
+              <Text className="font-sans text-base font-semibold text-ink dark:text-ink-dark">
+                本周回顾
+              </Text>
+            </View>
+            <View className="h-6 w-6 items-center justify-center rounded-full bg-accent/10 dark:bg-accent-dark/20">
+              <Ionicons name="chevron-forward" size={13} color="#c85a17" />
             </View>
           </View>
-          <Text className="mt-1 font-sans text-xs text-muted dark:text-muted-dark">
+          <Text className="mt-2 font-sans text-xs text-muted dark:text-muted-dark">
             纵览项目 · 检视等待
           </Text>
         </Pressable>

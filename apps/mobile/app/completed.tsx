@@ -55,16 +55,18 @@ function CompletedRow({
           </Text>
         ) : null}
       </View>
-      <View className="flex-row items-center justify-between">
-        <Text className="font-sans text-xs text-muted dark:text-muted-dark">
+      <View className="flex-row items-center justify-between gap-2 mt-1">
+        <Text className="flex-1 font-sans text-xs text-muted dark:text-muted-dark">
           {entry.completedAt === null ? '完成时间未知' : `完成于 ${formatLocalDateTime(entry.completedAt)}`}
         </Text>
-        <Button
-          size="sm"
-          label="恢复为未完成"
-          variant="secondary"
-          onPress={onRestore}
-        />
+        <View className="shrink-0">
+          <Button
+            size="sm"
+            label="恢复为未完成"
+            variant="secondary"
+            onPress={onRestore}
+          />
+        </View>
       </View>
     </Card>
   );
@@ -84,7 +86,7 @@ export default function CompletedScreen() {
       style={{ paddingTop: topPadding }}
       className="flex-1 bg-canvas px-4 pb-4 dark:bg-canvas-dark"
     >
-      <View className="w-full max-w-5xl mx-auto">
+      <View className="w-full max-w-2xl mx-auto flex-1">
         <View className="mb-4 flex-row items-center justify-between">
           <Button label="← 现在" variant="ghost" onPress={() => goBack('/(tabs)/now')} />
           <Text className="text-lg font-semibold text-ink dark:text-ink-dark">已完成行动</Text>

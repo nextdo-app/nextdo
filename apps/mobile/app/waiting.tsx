@@ -138,6 +138,7 @@ export default function WaitingScreen() {
       contentContainerStyle={{ paddingTop: topPadding, paddingHorizontal: 16, paddingBottom: 40 }}
       keyboardShouldPersistTaps="handled"
     >
+      <View className="w-full max-w-2xl mx-auto flex-1">
       <View className="mb-2 flex-row items-center justify-between">
         <Button label="← 收件箱" variant="ghost" onPress={() => goBack('/(tabs)/inbox')} />
       </View>
@@ -186,6 +187,7 @@ export default function WaitingScreen() {
             />
           ))
         )}
+      </View>
       </View>
     </ScrollView>
   );
