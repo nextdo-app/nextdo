@@ -14,7 +14,8 @@
  * clear the read's error state).
  */
 import { useState } from 'react';
-import { ScrollView, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { Button, Card, EmptyState } from '@nextdo/ui';
 import { useContexts } from '@/hooks/use-contexts';
@@ -28,13 +29,24 @@ const INPUT_CLASS =
 function ContextRow({ name, onTrash }: { name: string; onTrash: () => void }) {
   return (
     <Card className="gap-2 p-3.5">
-      <Text className="font-sans text-base font-semibold text-ink dark:text-ink-dark">{name}</Text>
-      <View className="flex-row justify-end">
-        <Button size="sm" label="删除" variant="ghost" onPress={onTrash} />
+      <View className="flex-row items-center justify-between gap-2">
+        <View className="flex-row items-center gap-2.5 flex-1 min-w-0 pr-2">
+          <View className="h-8 w-8 rounded-lg bg-surface-container/60 dark:bg-surface-container-dark/60 items-center justify-center shrink-0">
+            <Ionicons name="shapes-outline" size={16} color="#716b64" />
+          </View>
+          <Text className="font-sans text-base font-semibold text-ink dark:text-ink-dark" numberOfLines={1}>
+            {name}
+          </Text>
+        </View>
+        <View className="shrink-0">
+          <Button size="sm" label="删除" variant="ghost" onPress={onTrash} />
+        </View>
       </View>
     </Card>
   );
 }
+
+const PRESET_SCENES = ['电脑', '办公室', '电话', '家里', '外出'];
 
 /**
  * The quick-create row. An empty name is a no-op — the form stays OPEN so
@@ -78,6 +90,20 @@ function ContextForm({
         accessibilityLabel="新场景名称"
         onSubmitEditing={submit}
       />
+      <View className="flex-row flex-wrap items-center gap-1.5 pt-0.5">
+        <Text className="font-sans text-xs text-muted dark:text-muted-dark">常用推荐：</Text>
+        {PRESET_SCENES.map((scene) => (
+          <Pressable
+            key={scene}
+            accessibilityRole="button"
+            accessibilityLabel={`推荐场景：${scene}`}
+            onPress={() => setName(scene)}
+            className="rounded-full border border-border/80 bg-surface px-2.5 py-1 active:bg-surface-container dark:border-border-dark dark:bg-surface-dark dark:active:bg-surface-container-dark"
+          >
+            <Text className="font-sans text-xs text-ink dark:text-ink-dark">{scene}</Text>
+          </Pressable>
+        ))}
+      </View>
       <View className="flex-row justify-end">
         <Button size="sm" label="添加场景" disabled={!canSubmit} onPress={submit} />
       </View>
@@ -97,6 +123,7 @@ export default function ContextsScreen() {
       contentContainerStyle={{ paddingTop: topPadding, paddingHorizontal: 16, paddingBottom: 40 }}
       keyboardShouldPersistTaps="handled"
     >
+      <View className="w-full max-w-2xl mx-auto flex-1">
       <View className="mb-2 flex-row items-center justify-between">
         <Button label="← 返回" variant="ghost" onPress={() => goBack('/(tabs)/now')} />
       </View>
@@ -138,6 +165,7 @@ export default function ContextsScreen() {
 
       <View className="mt-4">
         <ContextForm add={add} onAdded={() => undefined} />
+      </View>
       </View>
     </ScrollView>
   );

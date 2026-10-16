@@ -392,6 +392,7 @@ export default function HabitsScreen() {
         contentContainerStyle={{ paddingTop: topPadding, paddingHorizontal: 16, paddingBottom: 40 }}
         keyboardShouldPersistTaps="handled"
       >
+        <View className="w-full max-w-2xl mx-auto flex-1">
         <View className="mb-2 flex-row items-center justify-between">
           <Button label="← 现在" variant="ghost" onPress={() => goBack('/(tabs)/now')} />
         </View>
@@ -436,6 +437,7 @@ export default function HabitsScreen() {
 
         <View className="mt-4">
           <HabitForm onStarted={reload} />
+        </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
