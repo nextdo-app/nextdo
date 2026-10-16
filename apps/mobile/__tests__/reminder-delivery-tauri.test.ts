@@ -6,7 +6,9 @@
  * grace row reaches the `plugin:notification|notify` IPC command with
  * the right title/body, and the session dedupe keeps it from re-firing.
  * Also covers the hardening: a FAILED invoke is NOT marked delivered, so
- * the next tick retries within the grace window.
+ * the next tick retries within the grace window. Finally, the in-app
+ * master switch (issue #24 R2): while it is off nothing is delivered, and
+ * flipping it back on delivers on the poke's reconcile — not on a poll.
  *
  * Platform.OS is forced to 'web' AT RUNTIME for this file only (the
  * jest-expo preset default is iOS → the native adapter) — via
@@ -52,10 +54,32 @@ jest.mock('@nextdo/db', () => ({
 
 import { useReminderDelivery } from '@/hooks/use-reminder-delivery';
 import { __resetDeliveryAdapterForTests, getDeliveryAdapter } from '@/lib/reminders/adapters';
+import {
+  __setNotificationSettingsStoreForTests,
+  DEFAULT_NOTIFICATION_SETTINGS,
+  saveNotificationSettings,
+  type NotificationSettings,
+} from '@/lib/notification-settings';
 
 const flush = async (): Promise<void> => {
   await act(async () => {});
 };
+
+/** The preference-store backend the delivery hook reads (issue #24 R2). */
+function memoryStoreWith(settings: NotificationSettings): {
+  getItem(key: string): Promise<string | null>;
+  setItem(key: string, value: string): Promise<void>;
+} {
+  let raw: string | null = JSON.stringify(settings);
+  return {
+    async getItem() {
+      return raw;
+    },
+    async setItem(_key, value) {
+      raw = value;
+    },
+  };
+}
 
 function seedPastRow(reminderId: string): void {
   mockRowsRef.current = [
@@ -84,6 +108,9 @@ describe('desktop (tauri) delivery wiring', () => {
     };
     // The module-singleton adapter survives across tests.
     __resetDeliveryAdapterForTests();
+    // A working preference store at the default (switch ON, R4) — the cases
+    // below are the only ones that flip it, and every mount starts clean.
+    __setNotificationSettingsStoreForTests(memoryStoreWith(DEFAULT_NOTIFICATION_SETTINGS));
     // Flip the platform to the webview surface (see the module doc).
     originalOS = Platform.OS;
     Object.defineProperty(Platform, 'OS', { value: 'web', configurable: true });
@@ -135,5 +162,44 @@ describe('desktop (tauri) delivery wiring', () => {
     });
     await flush();
     expect(mockTauriInvoke).toHaveBeenCalledTimes(2);
+  });
+
+  it('delivers nothing while the in-app master switch is off (issue #24 R2)', async () => {
+    seedPastRow('r-switch-off');
+    __setNotificationSettingsStoreForTests(
+      memoryStoreWith({ masterEnabled: false, optInPromptSeen: true }),
+    );
+
+    renderHook(() => useReminderDelivery());
+    await flush();
+    // The row is due — the app-level switch is the only thing stopping it.
+    expect(mockTauriInvoke).not.toHaveBeenCalled();
+
+    // …and the 30 s tick does not sneak one through either.
+    act(() => {
+      jest.advanceTimersByTime(60_000);
+    });
+    await flush();
+    expect(mockTauriInvoke).not.toHaveBeenCalled();
+  });
+
+  it('delivers on the reconcile the switch-on poke triggers (即时生效)', async () => {
+    seedPastRow('r-switch-on');
+    __setNotificationSettingsStoreForTests(
+      memoryStoreWith({ masterEnabled: false, optInPromptSeen: true }),
+    );
+
+    renderHook(() => useReminderDelivery());
+    await flush();
+    expect(mockTauriInvoke).not.toHaveBeenCalled();
+
+    // The Settings switch writes the preference; that poke is what re-runs the
+    // reconcile — no polling, no restart.
+    await act(async () => {
+      await saveNotificationSettings({ masterEnabled: true });
+    });
+    await flush();
+
+    expect(mockTauriInvoke).toHaveBeenCalledTimes(1);
   });
 });

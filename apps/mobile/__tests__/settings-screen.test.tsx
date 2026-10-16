@@ -212,6 +212,23 @@ jest.mock('@nextdo/db', () => {
   };
 });
 
+/**
+ * The PowerSync status the cloud-sync card reads (issue #22). Reset in
+ * `beforeEach`; the status cases mutate it before mounting.
+ */
+let mockSyncStatus: {
+  connected: boolean;
+  connecting: boolean;
+  downloading: boolean;
+  uploading: boolean;
+  downloadError: Error | undefined;
+  uploadError: Error | undefined;
+  lastSyncedAt: Date | undefined;
+};
+
+/** Upload-queue depth reported by the mocked SDK. */
+let mockUploadQueueCount = 0;
+
 jest.mock('@powersync/react', () => {
   const React = jest.requireActual('react');
   const powersync = {
@@ -221,6 +238,15 @@ jest.mock('@powersync/react', () => {
     // The delivery hook subscribes to local changes (task 09-30) — a
     // no-op subscription in tests (the mocked queries never fire it).
     onChange: () => () => undefined,
+    // The cloud-sync card (issue #22): queue depth + the settle wait that
+    // 「立即同步」 performs. Both read the state declared above at CALL time
+    // (the method/getter bodies run long after module init, so referencing
+    // those let-bindings here is safe under jest's mock hoisting).
+    getUploadQueueStats: async () => ({ count: mockUploadQueueCount, size: null }),
+    waitForStatus: async () => undefined,
+    get currentStatus() {
+      return mockSyncStatus;
+    },
   };
   // Stable identity across renders (the useQuery mock must not loop
   // recompute effects — same note as tabs.smoke.test.tsx).
@@ -235,7 +261,7 @@ jest.mock('@powersync/react', () => {
     PowerSyncContext: React.createContext(powersync),
     usePowerSync: () => powersync,
     useQuery: () => queryResult,
-    useStatus: () => ({ status: 'synced', isSynced: true }),
+    useStatus: () => mockSyncStatus,
   };
 });
 
@@ -313,6 +339,16 @@ async function flush(rounds = 10): Promise<void> {
 }
 
 beforeEach(() => {
+  mockSyncStatus = {
+    connected: true,
+    connecting: false,
+    downloading: false,
+    uploading: false,
+    downloadError: undefined,
+    uploadError: undefined,
+    lastSyncedAt: undefined,
+  };
+  mockUploadQueueCount = 0;
   mockAuth.storedToken = null;
   mockAuth.storedConfig = null;
   mockAuth.claimStatus = true;
@@ -907,7 +943,9 @@ describe('settings cloud-sync block', () => {
     // …and the same change notification that drives the provider's connect()
     // flips the block: connected view, read-only addresses, inputs gone.
     expect(screen.getByRole('button', { name: '断开连接' })).toBeTruthy();
-    expect(screen.getByText(/已连接/)).toBeTruthy();
+    // The status line is the SDK's own state now (issue #22) — 已同步, not the
+    // blanket 「已连接」 copy the card used to print.
+    expect(screen.getByText(/已同步/)).toBeTruthy();
     expect(screen.getByText(/后端地址：/)).toBeTruthy();
     expect(screen.getByText(/同步流地址：/)).toBeTruthy();
     expect(screen.queryByPlaceholderText(TOKEN_PLACEHOLDER)).toBeNull();
@@ -965,7 +1003,7 @@ describe('settings cloud-sync block', () => {
     expect(mockAuth.storedConfig).toEqual(VALID_CONFIG);
 
     // Transitions to connected block with pairing affordances
-    expect(screen.getByText(/已连接/)).toBeTruthy();
+    expect(screen.getByText(/已同步/)).toBeTruthy();
     expect(screen.getByRole('button', { name: '复制连接串' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '扫码配对' })).toBeTruthy();
   });
@@ -1045,7 +1083,7 @@ describe('settings cloud-sync block', () => {
 
     expect(mockAuth.storedToken).toBe('server-generated-claim-token-123');
     expect(mockAuth.storedConfig).toEqual(VALID_CONFIG);
-    expect(screen.getByText(/已连接/)).toBeTruthy();
+    expect(screen.getByText(/已同步/)).toBeTruthy();
   });
 
   it('user directly pastes plain Workers URL into primary token input → adaptively detects server address and connects via auto-claim', async () => {
@@ -1068,7 +1106,7 @@ describe('settings cloud-sync block', () => {
     // Connects via auto-claim and stores the token and config
     expect(mockAuth.storedToken).toBe('server-generated-claim-token-adaptive');
     expect(mockAuth.storedConfig).toEqual(VALID_CONFIG);
-    expect(screen.getByText(/已连接/)).toBeTruthy();
+    expect(screen.getByText(/已同步/)).toBeTruthy();
   });
 
   it('401 → inline 「token 不正确」, stays disconnected, nothing is stored, retry is possible', async () => {
@@ -1524,6 +1562,73 @@ describe('settings notifications block (task 09-30 R5)', () => {
     expect(screen.getByText(/通知已被拒绝/)).toBeTruthy();
     // iOS under jest: the button (not the Android text guidance) renders.
     expect(screen.getByRole('button', { name: '去系统设置' })).toBeTruthy();
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 云同步状态卡（issue #22）：四态文案 + 「立即同步」 + 上次同步时间。
+ * ------------------------------------------------------------------ */
+describe('settings cloud-sync status card (issue #22)', () => {
+  /** Open the connected view (a stored token + config). */
+  async function renderConnected(): Promise<void> {
+    mockAuth.storedToken = 'good-token';
+    mockAuth.storedConfig = { ...VALID_CONFIG };
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+  }
+
+  it('connected and idle → 已同步, with 立即同步 available (AC1)', async () => {
+    await renderConnected();
+
+    expect(screen.getByText(/已同步/)).toBeTruthy();
+    const button = screen.getByRole('button', { name: '立即同步' });
+    expect(button.props.accessibilityState?.disabled).toBeFalsy();
+  });
+
+  it('says 尚未完成过同步 when the SDK has no lastSyncedAt (AC2/AC3)', async () => {
+    await renderConnected();
+
+    expect(screen.getByText('尚未完成过同步')).toBeTruthy();
+  });
+
+  it('renders 上次同步时间 once the SDK reports one (AC2)', async () => {
+    mockSyncStatus.lastSyncedAt = new Date(2026, 9, 16, 14, 32);
+    await renderConnected();
+
+    expect(screen.getByText(/上次同步时间：10月16日 14:32/)).toBeTruthy();
+    expect(screen.queryByText('尚未完成过同步')).toBeNull();
+  });
+
+  it('reports 同步中 and disables the button while the SDK is downloading (AC1)', async () => {
+    mockSyncStatus.downloading = true;
+    await renderConnected();
+
+    expect(screen.getByText('同步中…')).toBeTruthy();
+    const button = screen.getByRole('button', { name: '正在同步…' });
+    expect(button.props.accessibilityState?.disabled).toBe(true);
+  });
+
+  it('reports 有未同步改动 while the upload queue is not empty (AC5)', async () => {
+    mockUploadQueueCount = 3;
+    await renderConnected();
+
+    expect(screen.getByText('有 3 条改动待上传。')).toBeTruthy();
+  });
+
+  it('reports 同步失败 with the SDK reason (AC1/AC4)', async () => {
+    mockSyncStatus.downloadError = new Error('Connection refused');
+    await renderConnected();
+
+    expect(screen.getByText('同步失败：Connection refused')).toBeTruthy();
+  });
+
+  it('pressing 立即同步 reports success without inventing a failure (AC1)', async () => {
+    await renderConnected();
+
+    fireEvent.press(screen.getByRole('button', { name: '立即同步' }));
+    await flush();
+
+    expect(screen.getByText('✓ 同步完成')).toBeTruthy();
   });
 });
 

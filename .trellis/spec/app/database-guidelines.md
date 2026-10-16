@@ -347,6 +347,30 @@ UI:
   instance — handler takes the `{ onChange }` object form, returns a dispose
   function owned by the mounting hook (precedent: `use-reminder-delivery.ts`,
   mounted at the root layout for reminder delivery).
+  - **Sync status is read with `useStatus()`** (issue #22) — it subscribes to
+    `registerListener({ statusChanged })` internally, so a card re-renders on
+    every SDK transition. Useful members: `connected` / `connecting` /
+    `downloading` / `uploading` / `downloadError` / `uploadError` /
+    `lastSyncedAt` / `hasSynced`. `getUploadQueueStats()` on the instance
+    supplies the local pending-upload count (「有未同步改动」).
+  - **There is no "sync now" API — do not invent one.** PowerSync is a
+    long-lived streaming connection. Re-entering
+    `connect(createPowerSyncConnector(config))` re-establishes the stream and
+    flushes the local upload queue (uploads are flushed on (re)connect), which
+    is the only public, STABLE way to force a pass. `requestCheckpoint()` is
+    `@alpha` and additionally requires `checkpointMode: 'requests'` (the SDK
+    default is `'legacy'`) plus a PowerSync service ≥ 1.24.0 — wiring it would
+    make a UI feature depend on a deployment upgrade, and it throws against
+    the current stack. `connect()` does NOT reject on a dead network (the SDK
+    retries internally), so any force-a-sync flow needs its OWN timeout or the
+    button sticks on 「同步中…」 forever.
+  - **A jest double for `usePowerSync()` must model the members the mounted
+    screens actually call.** The status card reads `getUploadQueueStats()`,
+    `currentStatus` and `waitForStatus()` as soon as a stored token makes the
+    app "configured" — a double carrying only `connect` / `close` / `onChange`
+    fails with `getUploadQueueStats is not a function` the moment a test lands
+    on a connected Settings tab. `now-screen.test.tsx` and
+    `settings-screen.test.tsx` carry the full double.
 - **Offline from first launch**: the client schema exists locally before the first
   successful sync; the full app works with no network; queued uploads flush on
   reconnect.
