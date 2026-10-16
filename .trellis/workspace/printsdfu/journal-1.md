@@ -1439,3 +1439,25 @@ NextAction / CalendarAction / HabitDay 并支持逐条恢复为未完成；顺�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 45: 核心页面 UI 细节与视宽质感优化
+<!-- trellis-session: v=2 fp=41d0e378a7215486 -->
+
+**Date**: 2026-10-16
+**Task**: 核心页面 UI 细节与视宽质感优化
+**Branch**: `feat/settings-ui-redesign`
+
+### Summary
+
+优化回顾页面双卡片图标、场景管理快捷推荐、已完成行动恢复按钮与多页面 max-w-2xl 桌面视宽收敛
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b529b11` | feat(ui): 优化回顾、已完成、场景及等待页面的视觉细节与视宽规范 |
+
+### Status
+
+[OK] **Completed**
