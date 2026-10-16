@@ -1461,3 +1461,25 @@ NextAction / CalendarAction / HabitDay 并支持逐条恢复为未完成；顺�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 46: 安卓端应用内安装更新与桌面端设置页宽度统一
+<!-- trellis-session: v=2 fp=6c91801237860dba -->
+
+**Date**: 2026-10-16
+**Task**: 安卓端应用内安装更新与桌面端设置页宽度统一
+**Branch**: `main`
+
+### Summary
+
+实现安卓端 ABI 识别、应用内下载与静默调起系统安装更新；统一桌面端 5 个 tab 容器宽度为 max-w-5xl 消除设置页与回顾页的大量留白
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6891dbd` | fix(desktop): harmonize settings and review tab container width to max-w-5xl |
+
+### Status
+
+[OK] **Completed**

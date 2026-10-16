@@ -529,7 +529,6 @@ const DOWNLOADS_BY_PLATFORM = {
     { suffix: '_amd64.deb', label: 'Linux · deb' },
     { suffix: '_amd64.AppImage', label: 'Linux · AppImage' },
   ],
-  android: [{ suffix: '_android_arm64-v8a.apk', label: 'Android 安装包' }],
 } as const satisfies Record<string, ReadonlyArray<{ suffix: string; label: string }>>;
 
 /** macOS 的两个 CPU 架构各自对应的文件后缀。 */
@@ -538,8 +537,24 @@ const MAC_SUFFIX: Record<MacArch, { suffix: string; label: string }> = {
   x86_64: { suffix: '_x64.dmg', label: 'macOS 安装包（Intel）' },
 };
 
-/** 有安装包可下的平台；`macos` 不在其中（它按架构单独挑，见 `pickDownloads`）。 */
-export type DownloadPlatform = keyof typeof DOWNLOADS_BY_PLATFORM;
+/**
+ * Android 的 CPU ABI。release 流水线给每个 ABI 单独产出一个 .apk
+ * （`.github/workflows/release.yml` 的 build-android 矩阵），而单个 APK 里
+ * 只有它自己那份原生库 —— 下错 ABI 的产物是「解析软件包时出现问题」，
+ * 不是慢一点。所以安卓和 macOS 一样按机器挑，绝不把几个 ABI 并列给用户猜。
+ */
+export type AndroidAbi = 'arm64-v8a' | 'armeabi-v7a' | 'x86' | 'x86_64';
+
+/** Android 各 ABI 对应的安装包后缀。 */
+const ANDROID_SUFFIX: Record<AndroidAbi, { suffix: string; label: string }> = {
+  'arm64-v8a': { suffix: '_android_arm64-v8a.apk', label: 'Android 安装包' },
+  'armeabi-v7a': { suffix: '_android_armeabi-v7a.apk', label: 'Android 安装包（32 位）' },
+  x86: { suffix: '_android_x86.apk', label: 'Android 安装包（x86）' },
+  x86_64: { suffix: '_android_x86_64.apk', label: 'Android 安装包（x86_64）' },
+};
+
+/** 有安装包可下的平台；`macos` / `android` 不在其中（它们按机器架构单独挑，见 `pickDownloads`）。 */
+export type DownloadPlatform = keyof typeof DOWNLOADS_BY_PLATFORM | 'android';
 
 /** 运行平台（用于挑选安装包）。 */
 export type UpdatePlatform = DownloadPlatform | 'macos' | 'ios' | 'web';
@@ -555,6 +570,7 @@ export function pickDownloads(
   release: LatestRelease,
   platform: UpdatePlatform,
   macArch: MacArch | null = null,
+  androidAbi: AndroidAbi = 'arm64-v8a',
 ): ReleaseDownload[] {
   const version = release.version;
   if (platform === 'macos') {
@@ -567,7 +583,20 @@ export function pickDownloads(
       },
     ];
   }
-  const rules = DOWNLOADS_BY_PLATFORM[platform as DownloadPlatform];
+  if (platform === 'android') {
+    // 与 macOS 同理：探测不到 ABI 时给最常见的 arm64（现实中的机器绝大多数是它），
+    // 而不是把四个架构一起丢给用户。
+    const rule = ANDROID_SUFFIX[androidAbi];
+    return [
+      {
+        label: rule.label,
+        url: viaProxy(`${RELEASE_DOWNLOAD}/${release.tag}/Nextdo_${version}${rule.suffix}`),
+      },
+    ];
+  }
+  // macos / android 已在上面各自分支处理，剩下能查表的就是 windows / linux；
+  // ios / web 查不到（undefined）→ 空数组，由屏幕退化成 release 页入口。
+  const rules = DOWNLOADS_BY_PLATFORM[platform as keyof typeof DOWNLOADS_BY_PLATFORM];
   if (rules === undefined) return [];
   return rules.map((rule) => ({
     label: rule.label,
@@ -969,4 +998,176 @@ export async function installDesktopUpdateAndRestart(filePath: string): Promise<
     throw new Error('Not running in Tauri desktop shell');
   }
   await bridge.invoke('install_update_and_restart', { filePath });
+}
+
+/* ------------------------------------------------------------------ *
+ * Android 应用内安装
+ *
+ * 安卓过去只能「跳到浏览器下 APK」：下载交给我不知情的浏览器，回来后用户还得
+ * 自己在文件管理器里找到那个文件点安装，而浏览器还常常直接把 APK 拦下来。
+ * 这里把两件事搬进应用：
+ *
+ * 1. `downloadAndroidUpdate()` —— 用 expo-file-system 把 APK 下到应用缓存目录（带进度）；
+ * 2. `installAndroidUpdate()` —— 用 expo-intent-launcher 把 APK 交给系统安装器。
+ *
+ * 系统安装器仍会弹确认框，首次还要用户允许「安装未知应用」—— 这是 Android
+ * 的安全边界，任何应用都绕不过去；除此之外用户不必再动手。
+ * 两个原生模块都按需 `require`：web / 桌面壳 / jest 里根本不会加载它们。
+ * ------------------------------------------------------------------ */
+
+/** expo-file-system 里我们用到的部分（`File` / `Paths`）的最小形状。 */
+interface ExpoFileSystemFile {
+  uri: string;
+  /** Android：可交给外部应用读取的 content:// URI。 */
+  contentUri: string;
+}
+
+interface ExpoFileSystemApi {
+  File: (new (...uris: unknown[]) => ExpoFileSystemFile) & {
+    downloadFileAsync(
+      url: string,
+      destination: ExpoFileSystemFile,
+      options?: {
+        /** 目标文件已存在时覆盖而不是报错 —— 重试一次下载不该先手动清缓存。 */
+        idempotent?: boolean;
+        onProgress?: (data: { bytesWritten: number; totalBytes: number }) => void;
+      },
+    ): Promise<ExpoFileSystemFile>;
+  };
+  Paths: { cache: unknown };
+}
+
+/** expo-intent-launcher 里我们用到的部分。 */
+interface ExpoIntentLauncherApi {
+  startActivityAsync(
+    activityAction: string,
+    params?: { data?: string; type?: string; flags?: number },
+  ): Promise<{ resultCode: number }>;
+}
+
+function loadFileSystemModule(): ExpoFileSystemApi | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('expo-file-system') as ExpoFileSystemApi;
+  } catch {
+    return null;
+  }
+}
+
+function loadIntentLauncherModule(): ExpoIntentLauncherApi | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('expo-intent-launcher') as ExpoIntentLauncherApi;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 本机能否走「应用内下载 + 系统安装器」这条路。
+ *
+ * 三个条件都必须成立：安卓运行环境，且两个原生模块真的能加载。
+ *（Expo Go / 纯 web / 桌面壳里 `Platform.OS` 就不是 `android`；将来若某个构建
+ * 没有带上模块，这里也会如实返回 false，调用方据此退回浏览器下载。）
+ */
+export function canInstallUpdateInApp(): boolean {
+  return (
+    Platform.OS === 'android' &&
+    loadFileSystemModule() !== null &&
+    loadIntentLauncherModule() !== null
+  );
+}
+
+/** 下载后的 APK 固定落在缓存目录，同名幂等覆盖（重试不会越堆越大）。 */
+const ANDROID_APK_FILENAME = 'nextdo-update.apk';
+
+/**
+ * 从设备支持的 ABI 列表里挑我们能提供的那个。
+ *
+ * `expo-device` 在 64 位机器上回的是按优先级排的列表（如
+ * `['arm64-v8a', 'armeabi-v7a', 'armeabi']`），但列表里也可能出现
+ * `'arm64 v8'` 这种人类可读写法，所以这里只做「包含判断」，不假设顺序。
+ * 一个都没有（探测不到 / web）时按 arm64-v8a —— 现实中绝大多数机器都是它。
+ */
+export function pickAndroidAbi(supported: readonly string[] | null | undefined): AndroidAbi {
+  if (supported === null || supported === undefined) return 'arm64-v8a';
+  const normalized = supported.map((abi) => abi.trim().toLowerCase());
+  // 顺序即优先级：64 位的 arm64 优先，其次 32 位 arm，最后才是模拟器用的 x86。
+  const preference: readonly AndroidAbi[] = ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'];
+  for (const abi of preference) {
+    if (normalized.includes(abi)) return abi;
+  }
+  return 'arm64-v8a';
+}
+
+/** 本机 CPU ABI（供挑选安装包）；非安卓或探测失败按 arm64-v8a。 */
+export async function detectAndroidAbi(): Promise<AndroidAbi> {
+  if (Platform.OS !== 'android') return 'arm64-v8a';
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const device = require('expo-device') as { supportedCpuArchitectures?: string[] | null };
+    return pickAndroidAbi(device.supportedCpuArchitectures ?? null);
+  } catch {
+    return 'arm64-v8a';
+  }
+}
+
+/** 下载进度（`totalBytes` 为 -1 表示服务端没给 Content-Length）。 */
+export interface AndroidDownloadProgress {
+  downloadedBytes: number;
+  totalBytes: number;
+}
+
+/**
+ * 把安卓安装包下载到应用缓存目录，返回本地 `file://` 地址。
+ *
+ * 失败（网络 / 非 2xx / 落盘失败）会 reject —— 调用方按下载失败展示，
+ * 不在这里吞掉。
+ */
+export async function downloadAndroidUpdate(
+  url: string,
+  onProgress?: (progress: AndroidDownloadProgress) => void,
+): Promise<string> {
+  const fs = loadFileSystemModule();
+  if (fs === null) {
+    throw new Error('expo-file-system is unavailable');
+  }
+  const target = new fs.File(fs.Paths.cache, ANDROID_APK_FILENAME);
+  const file = await fs.File.downloadFileAsync(url, target, {
+    idempotent: true,
+    ...(onProgress === undefined
+      ? {}
+      : {
+          onProgress: (data: { bytesWritten: number; totalBytes: number }) => {
+            onProgress({ downloadedBytes: data.bytesWritten, totalBytes: data.totalBytes });
+          },
+        }),
+  });
+  return file.uri;
+}
+
+/**
+ * 调起系统安装器安装已下载的 APK。
+ *
+ * 三处不能改：
+ * - 必须传 `content://` URI（直接给 `file://` 会触发 FileUriExposedException），
+ *   由 `File.contentUri` 经 FileProvider 暴露；
+ * - `flags = 1`（FLAG_GRANT_READ_URI_PERMISSION）把该文件的读权限授给安装器；
+ * - MIME 为 `application/vnd.android.package-archive`，否则没有应用能处理这个 Intent。
+ *
+ * 注意这个 Promise 要等系统安装界面关闭才 resolve：它只代表「安装器已在台上」，
+ * 不代表装成了 —— 装成功时本应用进程会被替换掉。
+ */
+export async function installAndroidUpdate(fileUri: string): Promise<void> {
+  const fs = loadFileSystemModule();
+  const launcher = loadIntentLauncherModule();
+  if (fs === null || launcher === null) {
+    throw new Error('native modules are unavailable');
+  }
+  const contentUri = new fs.File(fileUri).contentUri;
+  await launcher.startActivityAsync('android.intent.action.VIEW', {
+    data: contentUri,
+    type: 'application/vnd.android.package-archive',
+    flags: 1,
+  });
 }

@@ -63,6 +63,11 @@
   `HH:mm` inputs until issue #13 and had to be converted. A text input for a
   value the picker already owns is a defect, not a shortcut.
 
+## 桌面端视口与主 Tab 容器宽度规范（Desktop / Web Layout）
+
+- 所有 5 个主 Tab 页面（`inbox.tsx`, `now.tsx`, `projects.tsx`, `review.tsx`, `settings.tsx`）在宽屏桌面端（视口宽度 ≥ 1024px）下，主内容容器必须统一使用 `w-full max-w-5xl mx-auto`（或 `flex-1 w-full max-w-5xl mx-auto`）。
+- 底部标签栏在 `apps/mobile/app/(tabs)/_layout.tsx` 中通过 `horizontalInset = Math.max(0, (width - 1024) / 2)` 与 1024px 列宽居中对齐。若个别页面（如原先的 `settings.tsx` 或 `review.tsx`）随意缩小为 `max-w-2xl`（672px），宽屏下两侧会出现巨大空隙且与底部标签栏错位。统一为 `max-w-5xl` 保证全应用视觉骨架的一致性。
+
 ## Cloud sync (Settings tab, `apps/mobile/app/(tabs)/settings.tsx`)
 
 - Cloud sync is OPTIONAL and USER-CONFIGURED (prod-deploy R6 + OSS

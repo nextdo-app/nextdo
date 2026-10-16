@@ -7,15 +7,19 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  canInstallUpdateInApp,
   compareVersions,
   currentAppVersion,
+  detectAndroidAbi,
   detectMacArch,
   detectUpdatePlatform,
+  downloadAndroidUpdate,
   fetchDualChannelReleases,
   getAutoUpdateCheckPreference,
   getChannelLabel,
   getReleaseChannel,
   getUpdateChannelPreference,
+  installAndroidUpdate,
   installDesktopUpdateAndRestart,
   isPrerelease,
   isTauriDesktop,
@@ -26,6 +30,7 @@ import {
   setAutoUpdateCheckPreference,
   setUpdateChannelPreference,
   startDesktopDownload,
+  type AndroidAbi,
   type DesktopDownloadProgress,
   type MacArch,
   type ReleaseChannel,
@@ -108,6 +113,8 @@ export interface UseAppUpdateResult {
   pageUrl: string;
   /** 是否运行在 Tauri 桌面壳中（决定是否显示应用内下载按钮）。 */
   isDesktop: boolean;
+  /** 是否能走应用内安装（桌面壳或带原生模块的安卓构建）。 */
+  canInstallInApp: boolean;
   /** 桌面端应用内下载状态。 */
   download: DownloadState;
   /** 桌面端启动应用内下载（传入安装包 URL）。 */
@@ -141,6 +148,8 @@ export function useAppUpdate(): UseAppUpdateResult {
   const channelLabel = getChannelLabel(channel);
   const platform = detectUpdatePlatform();
   const isDesktop = isTauriDesktop();
+  // 安卓构建：下载 APK 后直接调起系统安装器（模块缺失时退回浏览器下载）。
+  const canInstallInApp = canInstallUpdateInApp();
 
   const [preferredChannel, setPreferredChannelState] = useState<UpdateChannelPreference>(
     channel !== 'stable' ? 'beta' : 'stable',
@@ -149,6 +158,8 @@ export function useAppUpdate(): UseAppUpdateResult {
 
   // 架构要问系统（桌面壳走 IPC，浏览器走 UA 高熵字段），是异步的，所以是 state。
   const [macArch, setMacArch] = useState<MacArch | null>(null);
+  // 安卓的 CPU ABI（决定下载哪个 .apk）；探测前默认 arm64-v8a。
+  const [androidAbi, setAndroidAbi] = useState<AndroidAbi>('arm64-v8a');
   const [checking, setChecking] = useState(false);
   const [outcome, setOutcome] = useState<UpdateOutcome | null>(null);
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
@@ -171,6 +182,14 @@ export function useAppUpdate(): UseAppUpdateResult {
       stopDesktopUpdatePolling();
     };
   }, []);
+
+  useEffect(() => {
+    if (platform === 'android') {
+      void detectAndroidAbi().then((abi) => {
+        if (mountedRef.current) setAndroidAbi(abi);
+      });
+    }
+  }, [platform]);
 
   useEffect(() => {
     if (platform !== 'macos') return;
@@ -211,8 +230,10 @@ export function useAppUpdate(): UseAppUpdateResult {
       }
 
       const { stable, beta } = result.releases;
-      const stableDownloads = stable !== null ? pickDownloads(stable, platform, resolvedArch) : [];
-      const betaDownloads = beta !== null ? pickDownloads(beta, platform, resolvedArch) : [];
+      const stableDownloads =
+        stable !== null ? pickDownloads(stable, platform, resolvedArch, androidAbi) : [];
+      const betaDownloads =
+        beta !== null ? pickDownloads(beta, platform, resolvedArch, androidAbi) : [];
 
       const stableIsNewer =
         stable !== null && (currentVersion === '' || compareVersions(stable.version, currentVersion) > 0);
@@ -303,7 +324,7 @@ export function useAppUpdate(): UseAppUpdateResult {
         betaRelease: beta,
       });
     });
-  }, [checking, currentVersion, macArch, platform, preferredChannel]);
+  }, [androidAbi, checking, currentVersion, macArch, platform, preferredChannel]);
 
   const selectVersion = useCallback(
     (targetVersion: string) => {
@@ -323,12 +344,37 @@ export function useAppUpdate(): UseAppUpdateResult {
     [],
   );
 
-  /** 开始桌面端应用内下载，并启动进度轮询。 */
+  /** 开始应用内下载：桌面端轮询 Tauri 的进度，安卓走 expo-file-system 的回调。 */
   const startDownload = useCallback(
     (url: string) => {
-      if (!isDesktop) return;
+      if (!isDesktop && !canInstallInApp) return;
       if (download.kind === 'downloading') return;
       setDownload({ kind: 'downloading', downloadedBytes: 0, totalBytes: 0 });
+
+      if (canInstallInApp) {
+        void downloadAndroidUpdate(url, (progress) => {
+          if (mountedRef.current) {
+            setDownload({
+              kind: 'downloading',
+              downloadedBytes: progress.downloadedBytes,
+              totalBytes: progress.totalBytes,
+            });
+          }
+        })
+          .then((fileUri) => {
+            if (mountedRef.current) {
+              setDownload({ kind: 'done', filePath: fileUri });
+              setInstallError(null);
+            }
+          })
+          .catch((e) => {
+            if (mountedRef.current) {
+              setDownload({ kind: 'error', error: String(e) });
+            }
+          });
+        return;
+      }
+
       void startDesktopDownload(url).catch((e) => {
         if (mountedRef.current) {
           setDownload({ kind: 'error', error: String(e) });
@@ -368,7 +414,7 @@ export function useAppUpdate(): UseAppUpdateResult {
       activePollTimer = setInterval(checkProgress, 400);
       checkProgress();
     },
-    [isDesktop, download.kind],
+    [canInstallInApp, isDesktop, download.kind],
   );
 
   /** 手动打开已下载的安装包。 */
@@ -377,18 +423,33 @@ export function useAppUpdate(): UseAppUpdateResult {
     void openDownloadedInstaller(download.filePath);
   }, [download]);
 
-  /** 桌面端一键自动安装并重启。 */
+  /** 一键安装：桌面端静默替换并重启，安卓调起系统安装器。 */
   const installUpdate = useCallback(() => {
     if (download.kind !== 'done') return;
     setInstalling(true);
     setInstallError(null);
+
+    if (canInstallInApp) {
+      void installAndroidUpdate(download.filePath)
+        .catch((err) => {
+          if (mountedRef.current) {
+            setInstallError(err instanceof Error ? err.message : String(err));
+          }
+        })
+        .finally(() => {
+          // 安装器关掉（装完/取消）后都能再点一次；装成功时本进程已被替换。
+          if (mountedRef.current) setInstalling(false);
+        });
+      return;
+    }
+
     void installDesktopUpdateAndRestart(download.filePath).catch((err) => {
       if (mountedRef.current) {
         setInstalling(false);
         setInstallError(err instanceof Error ? err.message : String(err));
       }
     });
-  }, [download]);
+  }, [canInstallInApp, download]);
 
   // 计算 Release 详情链接
   const activeTag =
@@ -411,6 +472,7 @@ export function useAppUpdate(): UseAppUpdateResult {
     check,
     pageUrl: activeTag ? releasePageUrl(activeTag) : releasePageUrl(),
     isDesktop,
+    canInstallInApp,
     download,
     startDownload,
     openInstaller,

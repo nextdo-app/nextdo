@@ -31,6 +31,7 @@ import {
   parseAtomFeedEntries,
   parseAtomFeedTags,
   parseLatestTag,
+  pickAndroidAbi,
   pickDownloads,
   pickDualChannelReleases,
   pickLatestReleaseForChannel,
@@ -233,6 +234,28 @@ describe('pickLatestReleaseForChannel', () => {
   });
 });
 
+describe('pickAndroidAbi', () => {
+  it('prefers the 64-bit arm ABI on a modern phone', () => {
+    expect(pickAndroidAbi(['arm64-v8a', 'armeabi-v7a', 'armeabi'])).toBe('arm64-v8a');
+  });
+
+  it('falls back to the 32-bit arm ABI on a device without arm64', () => {
+    expect(pickAndroidAbi(['armeabi-v7a', 'armeabi'])).toBe('armeabi-v7a');
+  });
+
+  it('picks the x86 ABI for an emulator', () => {
+    expect(pickAndroidAbi(['x86_64', 'x86'])).toBe('x86_64');
+    expect(pickAndroidAbi(['x86'])).toBe('x86');
+  });
+
+  it('ignores entries we cannot ship (human-readable names) and unknown lists', () => {
+    expect(pickAndroidAbi(['arm64 v8', 'armeabi-v7a'])).toBe('armeabi-v7a');
+    // 探测不到 / 列表为空 → 按现实中最常见的 arm64，而不是不给安装包。
+    expect(pickAndroidAbi(null)).toBe('arm64-v8a');
+    expect(pickAndroidAbi([])).toBe('arm64-v8a');
+  });
+});
+
 describe('pickDownloads', () => {
   it('macOS gets EXACTLY ONE installer — the one matching the detected architecture', () => {
     expect(pickDownloads(release(), 'macos', 'aarch64')).toEqual([
@@ -268,6 +291,24 @@ describe('pickDownloads', () => {
         label: 'Android 安装包',
         url: `${PREFIX}${DOWNLOAD}/v0.1.4/Nextdo_0.1.4_android_arm64-v8a.apk`,
       },
+    ]);
+  });
+
+  it('Android gets EXACTLY ONE apk — the one matching the device ABI', () => {
+    expect(pickDownloads(release(), 'android', null, 'arm64-v8a')).toEqual([
+      {
+        label: 'Android 安装包',
+        url: `${PREFIX}${DOWNLOAD}/v0.1.4/Nextdo_0.1.4_android_arm64-v8a.apk`,
+      },
+    ]);
+    expect(pickDownloads(release(), 'android', null, 'armeabi-v7a')).toEqual([
+      {
+        label: 'Android 安装包（32 位）',
+        url: `${PREFIX}${DOWNLOAD}/v0.1.4/Nextdo_0.1.4_android_armeabi-v7a.apk`,
+      },
+    ]);
+    expect(pickDownloads(release(), 'android', null, 'x86_64').map((d) => d.url)).toEqual([
+      `${PREFIX}${DOWNLOAD}/v0.1.4/Nextdo_0.1.4_android_x86_64.apk`,
     ]);
   });
 
