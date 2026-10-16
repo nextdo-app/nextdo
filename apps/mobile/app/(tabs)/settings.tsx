@@ -485,7 +485,7 @@ export default function SettingsScreen() {
         contentContainerStyle={{ paddingTop: topPadding, paddingHorizontal: 16, paddingBottom: 40 }}
         keyboardShouldPersistTaps="handled"
       >
-        <View className="w-full max-w-2xl mx-auto pb-12">
+        <View className="w-full max-w-5xl mx-auto pb-12">
         {/* Header block (matches the other tabs) */}
         <View className="mb-1">
           <Text className="font-display text-3xl font-bold tracking-tight text-ink dark:text-ink-dark">
