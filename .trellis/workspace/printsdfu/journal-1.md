@@ -1382,3 +1382,37 @@ NextAction / CalendarAction / HabitDay 并支持逐条恢复为未完成；顺�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 43: 通知与同步体验改进（#24/#22）+ beta.5→beta.8 四次发版与 Cloud 同步鉴权排查
+<!-- trellis-session: v=2 fp=e0869f79d0f45670 -->
+
+**Date**: 2026-10-16
+**Task**: 通知与同步体验改进（#24/#22）+ beta.5→beta.8 四次发版与 Cloud 同步鉴权排查
+**Branch**: `fix/configurable-jwt-kid`
+
+### Summary
+
+实现并发布 issue #24（首次通知授权引导 + App 内通知总开关；总开关做成 computeReconcile 的 enabled 输入，关闭时真正撤销已排入系统的通知）与 #22（云同步四态状态、「立即同步」= 重连并冲刷上传队列、上次同步时间），spec 更新，浏览器实测截图存 .verify/notifications-and-manual-sync/，经 PR #36 合并发布 v0.1.6-beta.5。随后排查用户线上 PSYNC_S2101：先把同步失败文案改为可读分类、不再渲染服务端 JSON（PR #37 → beta.6）；再修 Cloud 部署的 JWT aud 应由 NEXTDO_SYNC_ENDPOINT 推导而非固定 nextdo（PR #38 → beta.7）；最后新增 NEXTDO_JWT_KID 让 kid 可由部署指定（PR #39 → beta.8）。根因经服务端报错载荷确认：实例 keystore 里实际生效的键被 PowerSync 命名为 hs256-key-1，而 token 的 kid 是 nextdo-dev，按 kid 查键必然失败；用户删掉该条目重建后同步恢复。教程同步补齐 Save and Deploy、JWT Audience、实例是否已部署与 Known keys 排查线索。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3ff5d8b` | chore(release): bump version to 0.1.6-beta.8 |
+| `5ca9138` | docs(deploy): 教程补上 JWT Audience、实例是否已部署、NEXTDO_JWT_KID 与 Known keys 线索 |
+| `4575c44` | fix(server): kid 支持由部署指定（NEXTDO_JWT_KID），不再假设实例必须叫 nextdo-dev |
+| `a72524b` | chore(release): bump version to 0.1.6-beta.7 |
+| `0616aea` | docs(deploy): 教程补上 Save and Deploy、Secret 一致性、aud 自动生成与实例错配排查 |
+| `7919523` | fix(server): Cloud 部署的 JWT aud 改用实例 URL，自托管保持 nextdo 不变 |
+| `058098b` | chore(release): bump version to 0.1.6-beta.6 |
+| `be7444a` | docs(deploy): 教程补上 PowerSync 密钥 kid 必须为 nextdo-dev，并给出合法示例密钥 |
+| `d4c7cdb` | fix(sync): 同步凭据被拒时给出可执行提示，不再渲染服务端 JSON (PSYNC_S2101) |
+| `f005043` | chore(release): bump version to 0.1.6-beta.5 |
+| `b55fa74` | docs(spec): 记录同步状态读取边界、无 sync-now API 与通知总开关的投递契约 |
+| `bb700f9` | feat(sync): 设置页新增「立即同步」与上次同步时间，同步状态细分四态 (fixes #22) |
+| `d016407` | feat(notifications): 首次进入主动引导授权 + App 内通知总开关 (fixes #24) |
+
+### Status
+
+[OK] **Completed**
