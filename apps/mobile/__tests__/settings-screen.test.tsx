@@ -1622,6 +1622,20 @@ describe('settings cloud-sync status card (issue #22)', () => {
     expect(screen.getByText('同步失败：Connection refused')).toBeTruthy();
   });
 
+  it('never puts the service JSON body on the card — an auth rejection names the layer and the fix', async () => {
+    // 用户实测遇到的那一段原文（PowerSync 服务端 401）。
+    mockSyncStatus.downloadError = new Error(
+      'HTTP : {"error":{"code":"PSYNC_S2101","status":401,"description":"Could not find an appropriate key in the keystore. The key is missing or no key matched the token KID","name":"AuthorizationError"}}',
+    );
+    await renderConnected();
+
+    expect(screen.getByText('同步凭据被同步服务拒绝')).toBeTruthy();
+    expect(screen.getByText(/kid 设为 nextdo-dev/)).toBeTruthy();
+    // 原始 JSON 不能再出现在卡片上（标题与提示都是人话）。
+    expect(screen.queryByText(/Could not find an appropriate key/)).toBeNull();
+    expect(screen.queryByText(/AuthorizationError/)).toBeNull();
+  });
+
   it('pressing 立即同步 reports success without inventing a failure (AC1)', async () => {
     await renderConnected();
 
