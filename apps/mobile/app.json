@@ -43,7 +43,11 @@
         "expo-build-properties",
         {
           "android": {
-            "manifestPermissions": ["SCHEDULE_EXACT_ALARM", "USE_EXACT_ALARM"],
+            "manifestPermissions": [
+              "SCHEDULE_EXACT_ALARM",
+              "USE_EXACT_ALARM",
+              "REQUEST_INSTALL_PACKAGES"
+            ],
             "enableMinifyInReleaseBuilds": true,
             "enableBundleCompression": true,
             "usesCleartextTraffic": true

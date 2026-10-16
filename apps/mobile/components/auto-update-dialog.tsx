@@ -5,7 +5,9 @@
  * 1. 静默检测：若开启自动更新偏好，在应用启动后后台低优先级检测；
  * 2. 温和提醒：同一个版本在同一个运行会话（session）中只主动提醒一次，用户点「稍后再说」后不重复弹窗骚扰；
  * 3. 完整透明：在用户做决定前，先完整展示该版本的更新日志（ChangeLog / Release Notes）；
- * 4. 自主选择：由用户决定立即下载更新还是稍后再说。
+ * 4. 自主选择：由用户决定立即下载更新还是稍后再说；
+ * 5. 应用内安装：桌面壳（Tauri）下载后直接替换重启，Android 下载 APK 后直接调起
+ *    系统安装器 —— 两条路都不再把用户丢去浏览器自己找安装包。
  */
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -17,14 +19,18 @@ import {
 } from 'react-native';
 import { Button, cn } from '@nextdo/ui';
 import {
+  canInstallUpdateInApp,
   compareVersions,
   currentAppVersion,
+  detectAndroidAbi,
   detectMacArch,
   detectUpdatePlatform,
+  downloadAndroidUpdate,
   fetchDualChannelReleases,
   formatReleaseDate,
   getAutoUpdateCheckPreference,
   getUpdateChannelPreference,
+  installAndroidUpdate,
   installDesktopUpdateAndRestart,
   isTauriDesktop,
   openDownloadedInstaller,
@@ -33,6 +39,7 @@ import {
   pollDesktopDownloadProgress,
   releasePageUrl,
   startDesktopDownload,
+  type AndroidAbi,
   type DesktopDownloadProgress,
   type MacArch,
   type ReleaseDownload,
@@ -72,8 +79,11 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
   const currentVersion = currentAppVersion();
   const platform = detectUpdatePlatform();
   const isDesktop = isTauriDesktop();
+  // 安卓：下载 APK 后直接调起系统安装器（模块缺失 / 非安卓时为 false，退回浏览器下载）。
+  const canInstallInApp = useMemo(() => canInstallUpdateInApp(), []);
 
   const [macArch, setMacArch] = useState<MacArch | null>(null);
+  const [androidAbi, setAndroidAbi] = useState<AndroidAbi>('arm64-v8a');
   const [selectedChannel, setSelectedChannel] = useState<'stable' | 'beta'>('stable');
   const [downloadState, setDownloadState] = useState<
     | { kind: 'idle' }
@@ -87,6 +97,10 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
   useEffect(() => {
     if (platform === 'macos') {
       void detectMacArch().then(setMacArch);
+    }
+    if (platform === 'android') {
+      // 下错 ABI 的 APK 在安卓上根本装不上（解析失败），所以先问系统架构。
+      void detectAndroidAbi().then(setAndroidAbi);
     }
   }, [platform]);
 
@@ -114,8 +128,8 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
 
   const downloads: ReleaseDownload[] = useMemo(() => {
     if (!activeRelease) return [];
-    return pickDownloads(activeRelease, platform, macArch);
-  }, [activeRelease, platform, macArch]);
+    return pickDownloads(activeRelease, platform, macArch, androidAbi);
+  }, [activeRelease, platform, macArch, androidAbi]);
 
   const activeDownloadUrl = downloads[0]?.url;
 
@@ -139,6 +153,26 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
       if (activeRelease) {
         void openExternalUrl(releasePageUrl(activeRelease.tag));
       }
+      return;
+    }
+
+    if (canInstallInApp) {
+      // 安卓：下到应用缓存，下完的「完成态」再由用户一键交给系统安装器。
+      setInstallError(null);
+      setDownloadState({ kind: 'downloading', downloadedBytes: 0, totalBytes: 0 });
+      void downloadAndroidUpdate(activeDownloadUrl, (progress) => {
+        setDownloadState({
+          kind: 'downloading',
+          downloadedBytes: progress.downloadedBytes,
+          totalBytes: progress.totalBytes,
+        });
+      })
+        .then((fileUri) => {
+          setDownloadState({ kind: 'done', filePath: fileUri });
+        })
+        .catch((err) => {
+          setDownloadState({ kind: 'error', error: String(err) });
+        });
       return;
     }
 
@@ -175,12 +209,29 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
     pollTimerRef.current = setInterval(checkProgress, 400);
     // 与设置页一致：立刻取一次进度，完成态不必等第一个 400ms 周期。
     checkProgress();
-  }, [activeDownloadUrl, activeRelease, isDesktop, stopPolling]);
+  }, [activeDownloadUrl, activeRelease, canInstallInApp, isDesktop, stopPolling]);
 
-  const handleInstallAndRestart = useCallback(async () => {
+  /**
+   * 一键安装（安卓：把已下好的 APK 交给系统安装器；桌面：替换应用包并重启）。
+   */
+  const handleInstall = useCallback(async () => {
     if (downloadState.kind !== 'done') return;
     setInstalling(true);
     setInstallError(null);
+
+    if (canInstallInApp) {
+      try {
+        await installAndroidUpdate(downloadState.filePath);
+        // 安装器可能已经被用户取消，或装完后本应用被替换掉（那时这段不会再执行）；
+        // 两种情况都把按钮恢复成可再点一次，而不是卡在「正在安装」。
+        setInstalling(false);
+      } catch (e) {
+        setInstallError(String(e));
+        setInstalling(false);
+      }
+      return;
+    }
+
     try {
       // Tauri 侧的自动安装命令：macOS 静默挂载 DMG、由后台脚本在本进程退出后
       // 覆盖 /Applications 下的 .app 并重启，Windows 直接启动 NSIS 安装程序。
@@ -193,7 +244,7 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
       setInstallError(String(e));
       setInstalling(false);
     }
-  }, [downloadState, platform]);
+  }, [canInstallInApp, downloadState, platform]);
 
   if (!visible || !activeRelease) return null;
 
@@ -363,27 +414,51 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
             </Text>
           ) : null}
 
+          {downloadState.kind === 'done' && canInstallInApp ? (
+            <Text className="pb-3 font-sans text-xs text-muted dark:text-muted-dark">
+              安装包已下载完成。点「立即安装」会打开系统安装程序；首次安装需允许 Nextdo
+              「安装未知应用」。安装成功后应用会自动重启。
+            </Text>
+          ) : null}
+
           {installError ? (
             <View className="gap-1 pb-3">
               <Text className="font-sans text-xs text-danger dark:text-danger-dark">
                 安装启动失败：{installError}
               </Text>
-              {/* 覆盖 /Applications 需要写权限，静默替换可能失败；失败时留一条
-                  与设置页一致的兜底通道，而不是把用户卡在弹窗里。 */}
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="手动打开安装包"
-                onPress={() => {
-                  if (downloadState.kind === 'done') {
-                    void openDownloadedInstaller(downloadState.filePath);
-                  }
-                }}
-                className="self-start"
-              >
-                <Text className="font-sans text-xs font-semibold text-accent dark:text-accent-dark">
-                  手动打开安装包 →
-                </Text>
-              </Pressable>
+              {/* 静默替换 / 调起安装器都可能失败（无写权限、ROM 限制、未授权安装
+                  未知应用）；失败时留一条兜底通道，而不是把用户卡在弹窗里。 */}
+              {canInstallInApp ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="改用浏览器下载安装包"
+                  onPress={() => {
+                    void openExternalUrl(
+                      activeDownloadUrl ?? releasePageUrl(activeRelease?.tag),
+                    );
+                  }}
+                  className="self-start"
+                >
+                  <Text className="font-sans text-xs font-semibold text-accent dark:text-accent-dark">
+                    改用浏览器下载安装包 →
+                  </Text>
+                </Pressable>
+              ) : (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="手动打开安装包"
+                  onPress={() => {
+                    if (downloadState.kind === 'done') {
+                      void openDownloadedInstaller(downloadState.filePath);
+                    }
+                  }}
+                  className="self-start"
+                >
+                  <Text className="font-sans text-xs font-semibold text-accent dark:text-accent-dark">
+                    手动打开安装包 →
+                  </Text>
+                </Pressable>
+              )}
             </View>
           ) : null}
 
@@ -397,17 +472,25 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
             />
             {downloadState.kind === 'done' ? (
               <Button
-                label={installing ? '正在安装并重启…' : '立即安装并重启'}
+                label={
+                  canInstallInApp
+                    ? installing
+                      ? '正在打开安装程序…'
+                      : '立即安装'
+                    : installing
+                      ? '正在安装并重启…'
+                      : '立即安装并重启'
+                }
                 variant="primary"
                 onPress={() => {
-                  void handleInstallAndRestart();
+                  void handleInstall();
                 }}
                 disabled={installing}
               />
             ) : (
               <Button
                 label={
-                  isDesktop
+                  isDesktop || canInstallInApp
                     ? downloadState.kind === 'downloading'
                       ? '下载中…'
                       : '立即更新'
