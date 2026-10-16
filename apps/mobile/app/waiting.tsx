@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { ScrollView, Text, TextInput, View } from 'react-native';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { Button, Card, EmptyState, Tag } from '@nextdo/ui';
+import { FormField } from '@/components/form-field';
 import { useWaitingForItems } from '@/hooks/use-waiting-for';
 import { useAppClock } from '@/hooks/use-app-clock';
 import { errorMessage } from '@/lib/error-messages';
@@ -99,20 +100,24 @@ function WaitingForm({
       <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
         新增等待事项
       </Text>
-      <TextInput
-        className={INPUT_CLASS}
-        placeholder="事项名称（例如：等发票报销、等设计稿回复）"
-        value={title}
-        onChangeText={setTitle}
-        accessibilityLabel="等待事项名称"
-      />
-      <TextInput
-        className={INPUT_CLASS}
-        placeholder="等待谁？（例如：财务部、张经理、审核系统）"
-        value={waitingOn}
-        onChangeText={setWaitingOn}
-        accessibilityLabel="等待对象"
-      />
+      <FormField label="事项名称">
+        <TextInput
+          className={INPUT_CLASS}
+          placeholder="事项名称（例如：等发票报销、等设计稿回复）"
+          value={title}
+          onChangeText={setTitle}
+          accessibilityLabel="等待事项名称"
+        />
+      </FormField>
+      <FormField label="等待谁">
+        <TextInput
+          className={INPUT_CLASS}
+          placeholder="等待谁？（例如：财务部、张经理、审核系统）"
+          value={waitingOn}
+          onChangeText={setWaitingOn}
+          accessibilityLabel="等待对象"
+        />
+      </FormField>
       <View className="flex-row justify-end">
         <Button
           size="sm"

@@ -18,6 +18,7 @@ import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { Button, Card, EmptyState } from '@nextdo/ui';
+import { FormField } from '@/components/form-field';
 import { useContexts } from '@/hooks/use-contexts';
 import { errorMessage } from '@/lib/error-messages';
 import { goBack } from '@/lib/go-back';
@@ -82,14 +83,16 @@ function ContextForm({
   return (
     <Card className="gap-3.5 p-4">
       <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">新场景</Text>
-      <TextInput
-        className={INPUT_CLASS}
-        placeholder="场景名（如 客厅）"
-        value={name}
-        onChangeText={setName}
-        accessibilityLabel="新场景名称"
-        onSubmitEditing={submit}
-      />
+      <FormField label="场景名">
+        <TextInput
+          className={INPUT_CLASS}
+          placeholder="场景名（如 客厅）"
+          value={name}
+          onChangeText={setName}
+          accessibilityLabel="新场景名称"
+          onSubmitEditing={submit}
+        />
+      </FormField>
       <View className="flex-row flex-wrap items-center gap-1.5 pt-0.5">
         <Text className="font-sans text-xs text-muted dark:text-muted-dark">常用推荐：</Text>
         {PRESET_SCENES.map((scene) => (

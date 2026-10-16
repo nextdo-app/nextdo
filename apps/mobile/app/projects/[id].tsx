@@ -22,6 +22,7 @@ import { useAppInsets } from '@/lib/use-app-insets';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Button, Card, ContextChip, EmptyState, Tag, ValueChips, cn, type TagTone } from '@nextdo/ui';
 import { DateTimePicker } from '@/components/datetime-picker';
+import { FormField } from '@/components/form-field';
 import { PickerField } from '@/components/picker-field';
 import { DeadlineChip } from '@/components/deadline-chip';
 import { localDateKey, type Habit, type NextAction, type Project, type ProjectStatus, type Value } from '@nextdo/core';
@@ -118,12 +119,14 @@ function AddActionForm({ projectId, now, onDone, onAdded }: { projectId: string;
   return (
     <Card className="gap-3">
       <Text className="text-sm font-medium text-muted dark:text-muted-dark">添加行动</Text>
-      <TextInput
-        className={INPUT_CLASS}
-        placeholder="下一步行动（具体的、单步的）"
-        value={title}
-        onChangeText={setTitle}
-      />
+      <FormField label="行动标题">
+        <TextInput
+          className={INPUT_CLASS}
+          placeholder="下一步行动（具体的、单步的）"
+          value={title}
+          onChangeText={setTitle}
+        />
+      </FormField>
       <View className="flex-row flex-wrap items-center gap-2">
         <Text className="text-sm font-medium text-ink dark:text-ink-dark">预估时长（分钟）</Text>
       </View>
@@ -142,13 +145,15 @@ function AddActionForm({ projectId, now, onDone, onAdded }: { projectId: string;
         />
       </View>
       <ValueChips value={value} onChange={setValue} />
-      <PickerField
-        label="截止"
-        value={deadline}
-        placeholder="截止日期（可选）"
-        onPress={() => setShowPicker(true)}
-        onClear={() => setDeadline('')}
-      />
+      <FormField label="截止日期">
+        <PickerField
+          label="截止"
+          value={deadline}
+          placeholder="截止日期（可选）"
+          onPress={() => setShowPicker(true)}
+          onClear={() => setDeadline('')}
+        />
+      </FormField>
       {showPicker ? (
         <DateTimePicker
           mode="date"
@@ -203,26 +208,32 @@ function EditProjectForm({ project, now, onDone, onSaved }: { project: Project; 
   return (
     <Card className="gap-3">
       <Text className="text-sm font-medium text-muted dark:text-muted-dark">编辑项目</Text>
-      <TextInput
-        className={INPUT_CLASS}
-        placeholder="项目标题"
-        value={title}
-        onChangeText={setTitle}
-      />
-      <TextInput
-        className={INPUT_CLASS}
-        placeholder="完成是什么样（结果）"
-        value={outcome}
-        onChangeText={setOutcome}
-      />
+      <FormField label="项目标题">
+        <TextInput
+          className={INPUT_CLASS}
+          placeholder="项目标题"
+          value={title}
+          onChangeText={setTitle}
+        />
+      </FormField>
+      <FormField label="完成是什么样（结果）">
+        <TextInput
+          className={INPUT_CLASS}
+          placeholder="完成是什么样（结果）"
+          value={outcome}
+          onChangeText={setOutcome}
+        />
+      </FormField>
       <ValueChips value={value} onChange={setValue} />
-      <PickerField
-        label="截止"
-        value={deadline}
-        placeholder="截止日期（可选）"
-        onPress={() => setShowDeadlinePicker(true)}
-        onClear={() => setDeadline('')}
-      />
+      <FormField label="截止日期">
+        <PickerField
+          label="截止"
+          value={deadline}
+          placeholder="截止日期（可选）"
+          onPress={() => setShowDeadlinePicker(true)}
+          onClear={() => setDeadline('')}
+        />
+      </FormField>
       {showDeadlinePicker ? (
         <DateTimePicker
           mode="date"
@@ -300,12 +311,14 @@ function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; 
   return (
     <Card className="gap-3">
       <Text className="text-sm font-medium text-muted dark:text-muted-dark">编辑行动</Text>
-      <TextInput
-        className={INPUT_CLASS}
-        placeholder="下一步行动（具体的、单步的）"
-        value={title}
-        onChangeText={setTitle}
-      />
+      <FormField label="行动标题">
+        <TextInput
+          className={INPUT_CLASS}
+          placeholder="下一步行动（具体的、单步的）"
+          value={title}
+          onChangeText={setTitle}
+        />
+      </FormField>
       <View className="flex-row flex-wrap items-center gap-2">
         <Text className="text-sm font-medium text-ink dark:text-ink-dark">预估时长（分钟）</Text>
       </View>
@@ -360,13 +373,15 @@ function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; 
           </View>
         </View>
       ) : null}
-      <PickerField
-        label="截止"
-        value={deadline}
-        placeholder="截止日期（可选）"
-        onPress={() => setShowPicker(true)}
-        onClear={() => setDeadline('')}
-      />
+      <FormField label="截止日期">
+        <PickerField
+          label="截止"
+          value={deadline}
+          placeholder="截止日期（可选）"
+          onPress={() => setShowPicker(true)}
+          onClear={() => setDeadline('')}
+        />
+      </FormField>
       {showPicker ? (
         <DateTimePicker
           mode="date"
@@ -442,18 +457,22 @@ function AddProjectHabitForm({
       <Text className="text-sm font-medium text-muted dark:text-muted-dark">
         新建项目习惯 · 21 天挑战
       </Text>
-      <TextInput
-        className={INPUT_CLASS}
-        placeholder="习惯名（如 每日晨读文献）"
-        value={title}
-        onChangeText={setTitle}
-      />
-      <TextInput
-        className={INPUT_CLASS}
-        placeholder="每日行动（如 读一章论文，留空同习惯名）"
-        value={actionTitle}
-        onChangeText={setActionTitle}
-      />
+      <FormField label="习惯名">
+        <TextInput
+          className={INPUT_CLASS}
+          placeholder="习惯名（如 每日晨读文献）"
+          value={title}
+          onChangeText={setTitle}
+        />
+      </FormField>
+      <FormField label="每日行动">
+        <TextInput
+          className={INPUT_CLASS}
+          placeholder="每日行动（如 读一章论文，留空同习惯名）"
+          value={actionTitle}
+          onChangeText={setActionTitle}
+        />
+      </FormField>
       <View className="flex-row flex-wrap items-center gap-2">
         <Text className="text-sm font-medium text-ink dark:text-ink-dark">预估时长（分钟）</Text>
       </View>
@@ -726,7 +745,7 @@ export default function ProjectDetailScreen() {
         contentContainerStyle={{ paddingTop: topPadding, paddingHorizontal: 16, paddingBottom: 80 }}
         keyboardShouldPersistTaps="handled"
       >
-        <View className="w-full max-w-5xl mx-auto">
+        <View className="w-full">
         <View className="mb-4 flex-row items-center justify-between">
           <Button label="← 项目" variant="ghost" onPress={() => goBack('/(tabs)/projects')} />
         </View>
