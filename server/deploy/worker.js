@@ -8484,6 +8484,14 @@ var SignJWT = class extends SignJWT_base {
 var POWER_SYNC_JWT_TTL_SECONDS = 15 * 60;
 var POWER_SYNC_JWT_KID = "nextdo-dev";
 var POWER_SYNC_JWT_AUDIENCE = "nextdo";
+function cloudJwtAudience(syncEndpoint) {
+  try {
+    return new URL(syncEndpoint).origin;
+  } catch {
+    return syncEndpoint.trim().replace(/\/+$/, "");
+  }
+}
+__name(cloudJwtAudience, "cloudJwtAudience");
 var POWER_SYNC_JWT_SUBJECT = "owner";
 function decodeJwtSecret(secret) {
   const bytes = Uint8Array.from(Buffer.from(secret, "base64url"));
@@ -8534,7 +8542,16 @@ var logger = {
 // src/db.ts
 var MUTABLE_TABLES = {
   inbox_items: ["created_at", "updated_at", "deleted_at", "title", "captured_at"],
-  projects: ["created_at", "updated_at", "deleted_at", "title", "outcome", "value", "status"],
+  projects: [
+    "created_at",
+    "updated_at",
+    "deleted_at",
+    "title",
+    "outcome",
+    "value",
+    "status",
+    "deadline"
+  ],
   next_actions: [
     "created_at",
     "updated_at",
@@ -9157,7 +9174,11 @@ function createApp(config) {
     "/credentials",
     requireAuth,
     async (c) => {
-      const token = await mintPowerSyncJwt({ secret: config.jwtSecret, now: now() });
+      const token = await mintPowerSyncJwt({
+        secret: config.jwtSecret,
+        now: now(),
+        ...config.audience === void 0 ? {} : { audience: config.audience }
+      });
       return c.json({ token, endpoint: config.syncEndpoint });
     }
   );
@@ -9578,7 +9599,13 @@ async function initApp(env) {
     claimState,
     claimSecret,
     jwtSecret: env.JWT_SECRET,
-    syncEndpoint: env.NEXTDO_SYNC_ENDPOINT
+    syncEndpoint: env.NEXTDO_SYNC_ENDPOINT,
+    // A PowerSync CLOUD instance requires its OWN instance URL as `aud` — the
+    // shared `nextdo` default only satisfies the self-hosted service.yaml,
+    // which never runs this entry point. The URL is already here as
+    // NEXTDO_SYNC_ENDPOINT, so the audience is derived from it rather than
+    // asking the operator to keep a second setting in agreement.
+    audience: cloudJwtAudience(env.NEXTDO_SYNC_ENDPOINT)
   });
   cachedConnectionString = connectionString;
   cachedApp = app;
