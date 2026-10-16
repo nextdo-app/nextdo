@@ -20,7 +20,7 @@ import { Animated, Pressable, ScrollView, Text, TextInput, View } from 'react-na
 import { useAppInsets } from '@/lib/use-app-insets';
 import { router, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Button, Card, ContextChip, SceneOption, Tag, cn } from '@nextdo/ui';
+import { Button, Card, ContextChip, SceneOption, Tag, colors, cn } from '@nextdo/ui';
 import { formatDeadline, toIso, type CandidateKind, type NextAction, type NextCandidate } from '@nextdo/core';
 import { useNow, shouldOfferReclarify, type NowEligible } from '@/hooks/use-now';
 import { useAppClock } from '@/hooks/use-app-clock';
@@ -43,6 +43,7 @@ import { DeadlineChip } from '@/components/deadline-chip';
 import { AddSceneModal } from '@/components/add-scene-modal';
 import { EditActionModal } from '@/components/edit-action-modal';
 import { HabitWindowConfirmModal } from '@/components/habit-window-confirm-modal';
+import { useAppTheme } from '@/lib/theme';
 
 function candidateToNextAction(candidate: NextCandidate, now: Date): NextAction {
   return {
@@ -84,14 +85,16 @@ const FIELD_HIT_SLOP = { top: 6, bottom: 6 } as const;
  * Title "现在", "专注模式" badge, and subtitle with quick action icon.
  */
 function TopHeader({ onQuickAction }: { onQuickAction?: () => void }) {
+  const { isDark } = useAppTheme();
   return (
-    <View className="mb-3 flex-row items-center justify-between">
+    <View className="mb-3.5 flex-row items-center justify-between">
       <View>
         <View className="flex-row items-center gap-2">
           <Text className="font-display text-2xl font-bold tracking-tight text-ink dark:text-ink-dark">
             现在
           </Text>
-          <View className="rounded-full border border-accent/25 bg-accent/10 px-2 py-0.5 dark:border-accent-dark/30 dark:bg-accent-dark/20">
+          <View className="flex-row items-center gap-1 rounded-full border border-accent/25 bg-accent/10 px-2.5 py-0.5 dark:border-accent-dark/30 dark:bg-accent-dark/20">
+            <View className="h-1.5 w-1.5 rounded-full bg-accent dark:bg-accent-dark" />
             <Text className="font-sans text-[11px] font-medium text-accent dark:text-accent-dark">
               专注模式
             </Text>
@@ -109,7 +112,7 @@ function TopHeader({ onQuickAction }: { onQuickAction?: () => void }) {
         onPress={onQuickAction ?? (() => router.push('/contexts'))}
         className="h-8 w-8 items-center justify-center rounded-full border border-border/80 bg-surface shadow-2xs active:scale-95 dark:border-border-dark dark:bg-surface-dark"
       >
-        <Ionicons name="options-outline" size={16} color="#716b64" />
+        <Ionicons name="options-outline" size={16} color={isDark ? colors.mutedDark : colors.muted} />
       </Pressable>
     </View>
   );
@@ -245,6 +248,7 @@ function FilterContextCard({
 }) {
   const { data: contexts, add, reload: reloadContexts } = useContexts();
   const [modalVisible, setModalVisible] = useState(false);
+  const { isDark } = useAppTheme();
 
   useFocusEffect(
     useCallback(() => {
@@ -277,7 +281,7 @@ function FilterContextCard({
   }, [availableMinutes]);
 
   return (
-    <Card variant="outlined" className="gap-3.5 p-4">
+    <Card variant="outlined" className="gap-3.5 p-4 rounded-2xl border-border/70 bg-surface dark:border-border-dark/70 dark:bg-surface-dark shadow-2xs">
       {/* Dimension 1: Scene row */}
       <View className="gap-2.5">
         <View className="flex-row items-center justify-between">
@@ -299,7 +303,7 @@ function FilterContextCard({
               <Text className="font-sans text-[11px] font-medium text-muted dark:text-muted-dark">
                 管理场景
               </Text>
-              <Ionicons name="chevron-forward" size={12} color="#9b948a" />
+              <Ionicons name="chevron-forward" size={12} color={isDark ? colors.mutedDark : colors.muted} />
             </Pressable>
 
             {/* Any scene toggle pill */}
@@ -313,7 +317,7 @@ function FilterContextCard({
                 'flex-row items-center gap-1 rounded-full px-2.5 py-0.5 active:scale-95',
                 anyScene
                   ? 'bg-surface-container dark:bg-surface-container-dark'
-                  : 'border border-border/80 bg-surface dark:border-border-dark dark:bg-surface-dark',
+                  : 'border border-accent/40 bg-accent/10 dark:border-accent-dark/40 dark:bg-accent-dark/20',
               )}
             >
               <Text
@@ -327,7 +331,7 @@ function FilterContextCard({
                 {anyScene ? '任意' : `已选 ${contextIds.length} 个`}
               </Text>
               {!anyScene ? (
-                <Text className="font-sans text-xs text-muted dark:text-muted-dark">✕</Text>
+                <Text className="font-sans text-xs text-accent dark:text-accent-dark">✕</Text>
               ) : null}
             </Pressable>
           </View>
@@ -356,7 +360,7 @@ function FilterContextCard({
             onPress={() => setModalVisible(true)}
             className="h-8 flex-row items-center gap-1 rounded-full border border-dashed border-border/80 bg-surface px-3 active:scale-95 dark:border-border-dark dark:bg-surface-dark"
           >
-            <Ionicons name="add" size={14} color="#716b64" />
+            <Ionicons name="add" size={14} color={isDark ? colors.mutedDark : colors.muted} />
             <Text className="font-sans text-xs font-medium text-muted dark:text-muted-dark">
               添加场景
             </Text>
@@ -371,7 +375,7 @@ function FilterContextCard({
       <View className="gap-2">
         <View className="flex-row items-center justify-between">
           <View className="flex-row items-center gap-1.5">
-            <View className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            <View className="h-1.5 w-1.5 rounded-full bg-accent/70 dark:bg-accent-dark/70" />
             <Text className="font-sans text-xs font-semibold tracking-wider text-muted dark:text-muted-dark">
               可用时间{' '}
               <Text className="font-normal text-muted/70 dark:text-muted-dark/70">(分钟)</Text>
@@ -409,7 +413,9 @@ function FilterContextCard({
 }
 
 /**
- * Filter chip for the list area.
+ * Filter chip for the candidate list area.
+ * Intentionally uses a subtle segmented tag style (rounded-xl) with neutral ink tones,
+ * clearly distinguishing it from the engine's primary SceneOption chips above.
  */
 function Chip({
   label,
@@ -427,18 +433,20 @@ function Chip({
       accessibilityState={{ selected: active }}
       hitSlop={CHIP_HIT_SLOP}
       onPress={onPress}
-      className={
+      className={cn(
+        'h-8 flex-row items-center justify-center rounded-xl px-3.5 transition-colors active:scale-95',
         active
-          ? 'h-8 items-center justify-center rounded-full bg-accent px-3.5 shadow-xs dark:bg-accent-dark'
-          : 'h-8 items-center justify-center rounded-full border border-border/80 bg-surface px-3.5 shadow-2xs dark:border-border-dark dark:bg-surface-dark'
-      }
+          ? 'bg-ink shadow-2xs dark:bg-ink-dark'
+          : 'border border-border/80 bg-surface active:bg-surface-container dark:border-border-dark dark:bg-surface-dark dark:active:bg-surface-container-dark',
+      )}
     >
       <Text
-        className={
+        className={cn(
+          'font-sans text-xs',
           active
-            ? 'font-sans text-xs font-semibold text-on-accent dark:text-on-accent-dark'
-            : 'font-sans text-xs font-medium text-ink dark:text-ink-dark'
-        }
+            ? 'font-semibold text-canvas dark:text-canvas-dark'
+            : 'font-medium text-muted dark:text-muted-dark',
+        )}
       >
         {label}
       </Text>
@@ -449,9 +457,9 @@ function Chip({
 /** One stats cell of the stats row. */
 const StatsCell = memo(function StatsCell({ label, value }: { label: string; value: string }) {
   return (
-    <View className="flex-1 items-center gap-0.5 px-1 py-2">
-      <Text className="font-sans text-xs text-muted dark:text-muted-dark">{label}</Text>
-      <Text className="font-sans text-base font-semibold text-ink dark:text-ink-dark">{value}</Text>
+    <View className="flex-1 items-center gap-0.5 px-1 py-1.5">
+      <Text className="font-sans text-[11px] font-medium text-muted dark:text-muted-dark">{label}</Text>
+      <Text className="font-sans text-sm font-semibold tracking-tight text-ink dark:text-ink-dark">{value}</Text>
     </View>
   );
 });
@@ -520,15 +528,15 @@ const ActionRow = memo(function ActionRow({
           {...swipe.panHandlers}
           style={{ transform: [{ translateX: swipe.translateX }] }}
         >
-          <Card variant="outlined" className="gap-2 p-3.5">
-            <View className="flex-row items-start gap-2">
-              <View className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-accent/60 dark:bg-accent-dark/60" />
-              <Text className="flex-1 font-sans text-base font-medium text-ink dark:text-ink-dark">
+          <Card variant="outlined" className="gap-2.5 p-3.5 rounded-2xl border-border/70 bg-surface dark:border-border-dark/70 dark:bg-surface-dark shadow-2xs">
+            <View className="flex-row items-start gap-2.5">
+              <View className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-accent/80 dark:bg-accent-dark/80" />
+              <Text className="flex-1 font-sans text-base font-medium leading-snug text-ink dark:text-ink-dark">
                 {action.title}
               </Text>
             </View>
             <View className="flex-row flex-wrap items-center gap-1.5">
-              {projectName !== undefined ? <Tag label={projectName} /> : null}
+              {projectName !== undefined ? <Tag label={projectName} tone="neutral" /> : null}
               {action.contextIds.map((id) => (
                 <ContextChip key={id} name={contextName(id)} />
               ))}
@@ -546,7 +554,7 @@ const ActionRow = memo(function ActionRow({
                 )}
               </View>
             </View>
-            <View className="flex-row justify-end gap-2">
+            <View className="flex-row justify-end gap-1.5 pt-0.5 border-t border-border/40 dark:border-border-dark/40">
               <Button size="sm" label="完成" variant="ghost" onPress={() => onComplete(action.kind, action.id)} />
               <Button size="sm" label="稍后" variant="ghost" onPress={() => onSnooze(action.kind, action.id)} />
               {action.kind === 'next' ? (
@@ -566,12 +574,13 @@ const ActionRow = memo(function ActionRow({
  * Serene illustration with glowing icon, helpful guidance, and capture CTA.
  */
 function EmptyExecutionPool() {
+  const { isDark } = useAppTheme();
   return (
     <View className="items-center justify-center rounded-3xl border border-dashed border-border/80 bg-surface/60 px-4 py-8 text-center dark:border-border-dark/80 dark:bg-surface-dark/60">
       {/* Icon badge with pulsing ambiance */}
       <View className="relative mb-4 h-16 w-16 items-center justify-center rounded-2xl border border-accent/20 bg-accent/10 shadow-sm dark:border-accent-dark/30 dark:bg-accent-dark/20">
-        <Ionicons name="time-outline" size={32} color="#c85a17" />
-        <View className="absolute -top-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-surface bg-emerald-400 dark:border-surface-dark" />
+        <Ionicons name="time-outline" size={32} color={isDark ? colors.accentDark : colors.accent} />
+        <View className="absolute -top-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-surface bg-accent dark:border-surface-dark dark:bg-accent-dark" />
       </View>
 
       <Text className="font-display text-base font-bold tracking-tight text-ink dark:text-ink-dark">
@@ -589,7 +598,7 @@ function EmptyExecutionPool() {
           onPress={() => router.push('/(tabs)/inbox')}
           className="flex-row items-center gap-1.5 rounded-full bg-ink px-4 py-2 shadow-sm active:scale-95 dark:bg-ink-dark"
         >
-          <Ionicons name="file-tray-outline" size={14} color="#faf9f6" />
+          <Ionicons name="file-tray-outline" size={14} color={isDark ? colors.canvasDark : colors.canvas} />
           <Text className="font-sans text-xs font-semibold text-canvas dark:text-canvas-dark">
             去收件箱捕获
           </Text>
@@ -687,12 +696,13 @@ function TodayHabitSection({
   onCompleteHabit: (habitDayId: string, habit?: HabitWithProgress['habit']) => void;
   onCatchUpHabit: (habitDayId: string) => void;
 }) {
+  const { isDark } = useAppTheme();
   return (
-    <Card className="gap-3 p-4 shadow-sm">
+    <Card className="gap-3 p-4 shadow-2xs rounded-2xl border-border/70 bg-surface dark:border-border-dark/70 dark:bg-surface-dark">
       <View className="flex-row items-center justify-between">
         <View className="flex-row items-center gap-2">
           <View className="h-6 w-6 items-center justify-center rounded-lg bg-accent/10 dark:bg-accent-dark/20">
-            <Ionicons name="checkmark-circle-outline" size={14} color="#c85a17" />
+            <Ionicons name="checkmark-circle-outline" size={14} color={isDark ? colors.accentDark : colors.accent} />
           </View>
           <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
             今日习惯
@@ -708,7 +718,7 @@ function TodayHabitSection({
               onPress={() => router.push('/habits')}
             />
           ) : null}
-          <View className="rounded-full bg-surface-container px-2 py-0.5 dark:bg-surface-container-dark">
+          <View className="rounded-full bg-surface-container px-2.5 py-0.5 dark:bg-surface-container-dark">
             <Text className="font-mono text-xs font-medium text-muted dark:text-muted-dark">
               今天习惯 {todayDone}/{todayRowsCount}
             </Text>
@@ -749,7 +759,7 @@ function TodayHabitSection({
               onPress={() => router.push('/habits')}
               className="flex-row items-center gap-1 rounded-lg border border-border/80 bg-surface-container px-3 py-1.5 active:scale-95 dark:border-border-dark dark:bg-surface-container-dark"
             >
-              <Ionicons name="add" size={14} color="#716b64" />
+              <Ionicons name="add" size={14} color={isDark ? colors.mutedDark : colors.muted} />
               <Text className="font-sans text-xs font-medium text-ink dark:text-ink-dark">
                 去创建习惯
               </Text>
@@ -763,6 +773,7 @@ function TodayHabitSection({
 
 export default function NowScreen() {
   const now = useAppClock();
+  const { isDark } = useAppTheme();
   const { settings, update } = useEngineContextSettings();
   const { data, error } = useNow(settings);
   const { skip, error: skipError } = useSkipAction();
@@ -935,7 +946,7 @@ export default function NowScreen() {
         contentContainerStyle={{ paddingTop: topPadding, paddingHorizontal: 16, paddingBottom: 32 }}
         keyboardShouldPersistTaps="handled"
       >
-        <View className="w-full max-w-5xl mx-auto">
+        <View className="w-full flex-1">
         {/* Top Header */}
         <TopHeader />
 
@@ -983,8 +994,14 @@ export default function NowScreen() {
               {displayed !== null ? (
                 <>
                   {/* Recommendation Hero Card — prioritized first */}
-                  <Card variant="elevated" className="p-4 shadow-sm">
-                    <View className="mb-2.5 flex-row items-center justify-between">
+                  <Card
+                    variant="elevated"
+                    className="relative overflow-hidden rounded-2xl border border-accent/25 bg-surface p-5 shadow-sm dark:border-accent-dark/30 dark:bg-surface-dark"
+                  >
+                    {/* Top decorative accent highlight bar */}
+                    <View className="absolute top-0 left-0 right-0 h-1 bg-accent/80 dark:bg-accent-dark/80" />
+
+                    <View className="mb-3 flex-row items-center justify-between">
                       <View className="flex-row items-center gap-2">
                         <Tag label={KIND_LABELS[displayed.action.kind]} tone="accent" />
                         {displayed.action.estMinutes > 0 ? (
@@ -1000,7 +1017,7 @@ export default function NowScreen() {
                         />
                       ) : null}
                     </View>
-                    <Text className="font-display text-xl font-bold tracking-tight text-ink dark:text-ink-dark">
+                    <Text className="font-display text-xl font-bold tracking-tight leading-snug text-ink dark:text-ink-dark sm:text-2xl">
                       {displayed.action.title}
                     </Text>
                     {subtitleParts.length > 0 ? (
@@ -1010,8 +1027,8 @@ export default function NowScreen() {
                     ) : null}
 
                     {displayed.reasons.length > 0 ? (
-                      <View className="mt-3.5 rounded-xl border border-border/40 bg-canvas/70 p-3 dark:border-border-dark/40 dark:bg-canvas-dark/70">
-                        <Text className="mb-1.5 font-sans text-xs font-semibold text-muted dark:text-muted-dark">
+                      <View className="mt-4 rounded-xl border border-border/50 bg-surface-container/50 p-3 dark:border-border-dark/50 dark:bg-surface-container-dark/50">
+                        <Text className="mb-2 font-sans text-xs font-semibold text-muted dark:text-muted-dark">
                           为什么是它？
                         </Text>
                         <View className="flex-row flex-wrap gap-1.5">
@@ -1105,7 +1122,7 @@ export default function NowScreen() {
               <FilterContextCard settings={settings} update={update} />
 
               {/* Stats row — pool overview */}
-              <View className="flex-row items-center rounded-2xl border border-border/50 bg-surface/60 px-2 py-1.5 shadow-2xs backdrop-blur-sm dark:border-border-dark/50 dark:bg-surface-dark/60">
+              <View className="flex-row items-center rounded-2xl border border-border/60 bg-surface/70 px-2 py-1.5 shadow-2xs backdrop-blur-sm dark:border-border-dark/60 dark:bg-surface-dark/70">
                 <StatsCell label="可执行" value={`${eligible.length}/${totalCount} 项`} />
                 <View className="h-6 w-px bg-border/40 dark:bg-border-dark/40" />
                 <StatsCell label="预计耗时" value={`${totalEst} 分钟`} />
@@ -1121,17 +1138,17 @@ export default function NowScreen() {
                 accessibilityLabel="查看已完成行动"
                 hitSlop={CHIP_HIT_SLOP}
                 onPress={() => router.push('/completed')}
-                className="flex-row items-center justify-between rounded-2xl border border-border/50 bg-surface/60 px-3.5 py-2.5 active:bg-surface-container dark:border-border-dark/50 dark:bg-surface-dark/60 dark:active:bg-surface-container-dark"
+                className="flex-row items-center justify-between rounded-2xl border border-border/60 bg-surface/70 px-3.5 py-2.5 active:bg-surface-container dark:border-border-dark/60 dark:bg-surface-dark/70 dark:active:bg-surface-container-dark shadow-2xs"
               >
                 <View className="flex-row items-center gap-2">
-                  <Ionicons name="checkmark-done-outline" size={15} color="#716b64" />
+                  <Ionicons name="checkmark-done-outline" size={15} color={isDark ? colors.mutedDark : colors.muted} />
                   <Text className="font-sans text-sm font-medium text-ink dark:text-ink-dark">
                     已完成行动
                   </Text>
                 </View>
                 <View className="flex-row items-center gap-1">
                   <Text className="font-sans text-xs text-muted dark:text-muted-dark">查看与恢复</Text>
-                  <Ionicons name="chevron-forward" size={13} color="#9b948a" />
+                  <Ionicons name="chevron-forward" size={13} color={isDark ? colors.mutedDark : colors.muted} />
                 </View>
               </Pressable>
 

@@ -63,10 +63,23 @@
   `HH:mm` inputs until issue #13 and had to be converted. A text input for a
   value the picker already owns is a defect, not a shortcut.
 
-## 桌面端视口与主 Tab 容器宽度规范（Desktop / Web Layout）
+## Forms (field labels)
 
-- 所有 5 个主 Tab 页面（`inbox.tsx`, `now.tsx`, `projects.tsx`, `review.tsx`, `settings.tsx`）在宽屏桌面端（视口宽度 ≥ 1024px）下，主内容容器必须统一使用 `w-full max-w-5xl mx-auto`（或 `flex-1 w-full max-w-5xl mx-auto`）。
-- 底部标签栏在 `apps/mobile/app/(tabs)/_layout.tsx` 中通过 `horizontalInset = Math.max(0, (width - 1024) / 2)` 与 1024px 列宽居中对齐。若个别页面（如原先的 `settings.tsx` 或 `review.tsx`）随意缩小为 `max-w-2xl`（672px），宽屏下两侧会出现巨大空隙且与底部标签栏错位。统一为 `max-w-5xl` 保证全应用视觉骨架的一致性。
+- A field's NAME is a visible label above the control — `FormField`
+  (`apps/mobile/components/form-field.tsx`) — never the placeholder alone.
+  A placeholder disappears the moment the field holds a value, so a filled
+  box (or a picked date) reads as unexplained text; the placeholder stays a
+  hint INSIDE the box. The clarify wizard's `Field` and the edit-action
+  modal's label-over-control blocks are the same rule, locally.
+- The label is rendered even when the field is empty, so label + placeholder
+  may repeat the same words (e.g. 项目标题). That redundancy is deliberate:
+  the name must survive typing, and the placeholder must keep working for
+  tests and hints.
+
+## 桌面端视口与全宽自然排版规范（Desktop / Web Layout）
+
+- 所有主 Tab 页面（`inbox.tsx`, `now.tsx`, `projects.tsx`, `review.tsx`, `settings.tsx`）及二级页面在桌面端与宽屏视口下采用全宽自然延伸（`w-full`），不设置硬编码居中宽度限制（如 `max-w-5xl mx-auto`），消除窗口两侧的人工大面积黑底留白。
+- 底部标签栏在 `apps/mobile/app/(tabs)/_layout.tsx` 中全宽自然延展，水平内边距使用安全边距 `paddingLeft/Right: Math.max(insets.left/right, 8)`，与窗口边界紧密贴合。
 
 ## Cloud sync (Settings tab, `apps/mobile/app/(tabs)/settings.tsx`)
 

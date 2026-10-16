@@ -6,7 +6,7 @@
  * Settings is the 5th tab (prod-deploy R6 — cloud sync is optional,
  * configured there).
  */
-import { useWindowDimensions, type ViewStyle } from 'react-native';
+import { type ViewStyle } from 'react-native';
 import { Tabs } from 'expo-router';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { useAppTheme } from '@/lib/theme';
@@ -19,12 +19,7 @@ import { colors } from '@nextdo/ui';
 export default function TabsLayout() {
   const { isDark } = useAppTheme();
   const insets = useAppInsets();
-  const { width } = useWindowDimensions();
   const bottomPadding = Math.max(insets.bottom, 8);
-  // Align the 5 tabs horizontally with the centered max-w-5xl (1024px) content
-  // column on wide desktop viewports while keeping the bar background & top
-  // border full-width across the window.
-  const horizontalInset = Math.max(0, (width - 1024) / 2);
 
   const tabBarStyle: ViewStyle = {
     backgroundColor: isDark ? colors.surfaceDark : colors.surface,
@@ -33,8 +28,8 @@ export default function TabsLayout() {
     height: 64 + (insets.bottom > 0 ? insets.bottom : 0),
     paddingBottom: bottomPadding,
     paddingTop: 6,
-    paddingLeft: horizontalInset,
-    paddingRight: horizontalInset,
+    paddingLeft: Math.max(insets.left, 8),
+    paddingRight: Math.max(insets.right, 8),
   };
 
   return (

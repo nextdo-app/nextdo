@@ -38,7 +38,7 @@ export default function ReviewScreen() {
       style={{ paddingTop: topPadding }}
       className="flex-1 w-full bg-canvas px-4 pb-4 dark:bg-canvas-dark"
     >
-      <View className="flex-1 w-full max-w-5xl mx-auto">
+      <View className="flex-1 w-full">
       <Text className="mb-4 text-2xl font-bold tracking-tight text-ink dark:text-ink-dark">
         回顾
       </Text>
