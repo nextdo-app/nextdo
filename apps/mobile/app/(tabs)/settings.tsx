@@ -60,7 +60,12 @@ import { PickerField } from '@/components/picker-field';
 import { DateTimePicker } from '@/components/datetime-picker';
 import { useAppUpdate } from '@/hooks/use-app-update';
 import { formatReleaseDate, openExternalUrl, type UpdateFailureReason } from '@/lib/app-update';
-import { formatLastSyncedAt, type SyncDisplay } from '@/lib/sync-status';
+import {
+  describeSyncFailure,
+  formatLastSyncedAt,
+  truncateForDisplay,
+  type SyncDisplay,
+} from '@/lib/sync-status';
 import {
   formatConnectionString,
   formatDeepLink,
@@ -141,13 +146,36 @@ function syncStatusLabel(display: SyncDisplay): string {
       return `有 ${display.pendingUploads} 条改动待上传。`;
     case 'synced':
       return '已同步 — 数据在这台设备与服务器之间自动同步。';
-    case 'failed':
-      return `同步失败：${display.error ?? '未知原因'}`;
+    case 'failed': {
+      // 认证类失败是部署侧的配置问题，重试不会自愈：标题只说清是哪一层被拒，
+      // 绝不把服务端那段 JSON 直接当文案（展开与处置见 syncFailureHint）。
+      const failure = describeSyncFailure(display.error);
+      if (failure?.kind === 'auth') return '同步凭据被同步服务拒绝';
+      return `同步失败：${truncateForDisplay(display.error ?? '未知原因')}`;
+    }
     default: {
       const exhaustive: never = display.kind;
       return exhaustive;
     }
   }
+}
+
+/**
+ * 认证类失败的第二行：告诉用户去哪改什么。
+ *
+ * 自建与 Cloud 两套部署都由 server/app 以**固定的 kid** 签发 JWT
+ * （`server/app/src/credentials.ts` 的 `nextdo-dev`），同步服务的 keystore
+ * 里必须有同 kid 的密钥 —— 少一个就正好是 PowerSync 的 PSYNC_S2101。
+ */
+function syncFailureHint(display: SyncDisplay): string | null {
+  if (display.kind !== 'failed') return null;
+  const failure = describeSyncFailure(display.error);
+  if (failure?.kind !== 'auth') return null;
+  const code = failure.code ?? 'AuthorizationError';
+  if (failure.code === 'PSYNC_S2103') {
+    return `同步凭据已过期（${code}）—— 点「立即同步」会重新取一次凭据。`;
+  }
+  return `同步服务的密钥与后端签发的 JWT 不匹配（${code}）：请在 PowerSync 的 Authentication 把 HS256 密钥的 kid 设为 nextdo-dev，保存后点「立即同步」重试。`;
 }
 
 const INPUT_CLASS =
@@ -234,6 +262,7 @@ export default function SettingsScreen() {
   const { masterEnabled, setMasterEnabled } = useNotificationSettings();
   const now = useAppClock();
   const lastSyncedLabel = formatLastSyncedAt(now, lastSyncedAt);
+  const syncHint = syncFailureHint(syncDisplay);
   const { data: habitRows } = useHabits(now);
   const activeHabits = (habitRows ?? []).map((r) => r.habit).filter(
     (h) => h.deletedAt === null && h.status === 'active',
@@ -678,6 +707,11 @@ export default function SettingsScreen() {
               >
                 {syncStatusLabel(syncDisplay)}
               </Text>
+              {syncHint !== null ? (
+                <Text className="font-sans text-xs leading-relaxed text-danger dark:text-danger-dark">
+                  {syncHint}
+                </Text>
+              ) : null}
               <Text className="font-sans text-xs text-muted dark:text-muted-dark">
                 {lastSyncedLabel === null
                   ? '尚未完成过同步'

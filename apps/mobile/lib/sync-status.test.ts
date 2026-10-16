@@ -4,7 +4,14 @@
  * The card's four states each get a case, plus the two that only exist at the
  * edges: a failed manual attempt and a sync that never completed.
  */
-import { deriveSyncDisplay, formatLastSyncedAt, type SyncDisplayInput } from './sync-status';
+import {
+  deriveSyncDisplay,
+  describeSyncFailure,
+  formatLastSyncedAt,
+  SYNC_FAILURE_MAX_LENGTH,
+  truncateForDisplay,
+  type SyncDisplayInput,
+} from './sync-status';
 
 const NOW = new Date('2026-10-16T15:00:00.000Z');
 
@@ -114,5 +121,74 @@ describe('formatLastSyncedAt', () => {
 
   it('returns null for a corrupt timestamp', () => {
     expect(formatLastSyncedAt(NOW, new Date('not-a-date'))).toBeNull();
+  });
+});
+
+describe('describeSyncFailure', () => {
+  /** The exact shape the PowerSync SDK produces for a service rejection. */
+  const s2101 =
+    'HTTP : {"error":{"code":"PSYNC_S2101","status":401,"description":"Could not find an appropriate key in the keystore. The key is missing or no key matched the token KID","name":"AuthorizationError"}}';
+
+  it('reads PSYNC_S2101 as an auth rejection and extracts code + description', () => {
+    expect(describeSyncFailure(s2101)).toEqual({
+      kind: 'auth',
+      code: 'PSYNC_S2101',
+      detail:
+        'Could not find an appropriate key in the keystore. The key is missing or no key matched the token KID',
+      raw: s2101,
+    });
+  });
+
+  it('reads every credential-rejection code as auth (S2102 signature, S2103 expired)', () => {
+    for (const code of ['PSYNC_S2102', 'PSYNC_S2103']) {
+      const raw = `HTTP 401: {"error":{"code":"${code}","status":401,"name":"AuthorizationError"}}`;
+      expect(describeSyncFailure(raw)?.kind).toBe('auth');
+    }
+  });
+
+  it('treats an UNKNOWN code as auth when status and name both say authorization failed', () => {
+    const raw =
+      'HTTP 403: {"error":{"code":"PSYNC_S9999","status":403,"name":"AuthorizationError"}}';
+    expect(describeSyncFailure(raw)?.kind).toBe('auth');
+  });
+
+  it('keeps a plain message as an other-kind failure', () => {
+    expect(describeSyncFailure('Connection refused')).toEqual({
+      kind: 'other',
+      code: null,
+      detail: null,
+      raw: 'Connection refused',
+    });
+  });
+
+  it('keeps a non-auth service error as other (a 500 is not a credential problem)', () => {
+    const raw = 'HTTP 500: {"error":{"code":"PSYNC_S1001","status":500,"name":"InternalError"}}';
+    expect(describeSyncFailure(raw)).toMatchObject({ kind: 'other', code: 'PSYNC_S1001' });
+  });
+
+  it('survives a JSON-looking message that does not parse', () => {
+    expect(describeSyncFailure('HTTP 502: {not json')).toMatchObject({
+      kind: 'other',
+      code: null,
+      detail: null,
+    });
+  });
+
+  it('returns null when there is no failure at all', () => {
+    expect(describeSyncFailure(null)).toBeNull();
+    expect(describeSyncFailure('   ')).toBeNull();
+  });
+});
+
+describe('truncateForDisplay', () => {
+  it('leaves a short message untouched', () => {
+    expect(truncateForDisplay('Connection refused')).toBe('Connection refused');
+  });
+
+  it('elides a long body so it can never become the whole card', () => {
+    const long = 'x'.repeat(SYNC_FAILURE_MAX_LENGTH + 50);
+    const out = truncateForDisplay(long);
+    expect(out).toHaveLength(SYNC_FAILURE_MAX_LENGTH + 1);
+    expect(out.endsWith('…')).toBe(true);
   });
 });

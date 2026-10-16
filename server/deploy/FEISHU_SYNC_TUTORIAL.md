@@ -73,8 +73,11 @@ PowerSync 负责监听数据库变动并将差异实时分发至各端设备。
 4. **配置 JWT 身份认证密钥**：
    - 在左侧菜单点击 **Authentication**；
    - 算法选择 **HS256**；
-   - 填写一个自定义的密钥字符串（建议 32 位英文字符或密码生成器随机字符串，如 `nextdo_secret_key_2026_super_safe`）；
-   - 保存并记下该密钥。
+   - **密钥的 `kid`（Key ID）必须填 `nextdo-dev`** —— Nextdo 后端签发的 JWT 头里固定带这个 kid，两边对不上时，同步服务会以 `PSYNC_S2101`（keystore 里找不到匹配的 key）拒绝**每一次**同步；
+   - 填写密钥内容。它必须是 **base64url 编码、不带 `=` 填充**的字符串（不符合时后端会直接报错），可直接用这个示例：
+     `crHOgyjM6cvRfuko_8z9DbZcRWBO6Y7D-uqndYh8h9s`
+     想自己生成：`openssl rand -base64 32 | tr '+/' '-_' | tr -d '='`；
+   - 保存并记下该密钥（下一步要原样填进 Cloudflare 的 `JWT_SECRET`）。
 5. **部署同步规则 (Sync Rules)**：
    - 在左侧菜单进入 **Sync Rules**；
    - 清空输入框，复制粘贴以下完整规则：
@@ -167,6 +170,9 @@ Nextdo 支持极简配对，无需手敲任何复杂的配置项：
 ### 2. 同步状态一直显示“正在连接”或“认证失败”？
 - 检查 Cloudflare 中的 `JWT_SECRET` 是否与 PowerSync 中的 **HS256 密钥** 完全一致（包含大小写与空格）。
 - 确认 PowerSync 的 Sync Rules 已点击 **Deploy** 部署生效。
+- 若 App 的云同步卡片显示 **「同步凭据被同步服务拒绝」** 并带 `PSYNC_S2101`：说明 PowerSync 的 keystore 里没有 kid 为 `nextdo-dev` 的密钥。回到第二步的 **Authentication**，检查密钥的 **kid 是否填了 `nextdo-dev`**（这一项最容易漏），以及密钥内容是否与 Cloudflare 的 `JWT_SECRET` 完全一致。改完保存后回到 App 点 **「立即同步」** 即可，**不需要重新配对或重装**。
+- 若显示 `PSYNC_S2102`（签名无法验证）：kid 对上了但两边密钥内容不同，常见原因是末尾多了空格。
+- 若显示 `PSYNC_S2103`（凭据过期）：点一下 **「立即同步」** 重新取一次凭据即可。
 
 ### 3. 多台设备同步是否收费？
 - 完全免费。免费额度支持多达 50 台设备同时在线实时同步，数据存储与传输额度足够个人常年使用。
