@@ -138,6 +138,49 @@
   Guidelines): it re-reads the stored token + config and, on a 401, clears
   the TOKEN only (the config is kept — the SDK does not spin and the Settings
   tab stays honest).
+- **The connected card's status line is the SDK's own state, not a restatement
+  of "a token is stored"** (issue #22). `useSyncStatus` derives it with the
+  pure `lib/sync-status.ts` (`offline` / `syncing` / `pending` / `synced` /
+  `failed`); the screen maps `kind` → copy (the `UPDATE_FAILURE_COPY`
+  precedent — the state belongs to the lib, the sentence to the screen). The
+  「立即同步」 button beside it is the honest implementation of "sync now" —
+  re-`connect()` is the only stable mechanism, see the Database Guidelines.
+  「上次同步时间」 comes from `SyncStatus.lastSyncedAt`, which is undefined
+  BOTH before the first full sync AND after a PowerSync service restart:
+  render 「尚未完成过同步」 rather than a fabricated time. A manual attempt
+  that times out must say so — `connect()` never rejects on a dead network.
+
+## Notifications (Settings 「提醒通知」 card + the first-run guide)
+
+- TWO layers gate a reminder notification and the UI must never conflate them:
+  the OS permission (read/requested through `lib/reminders/adapters` — the
+  screen never imports `expo-notifications`) and the app's own master switch
+  (`lib/notification-settings.ts`, default ON so an untouched device keeps the
+  pre-#24 behavior). Both must allow delivery.
+- **The master switch is a RECONCILE INPUT, not a call-site guard.** It is
+  passed to `computeReconcile` as `enabled`; while false the pass returns
+  `toCancel: [...pendingIds]` and schedules / fires nothing
+  (`lib/reminders/reminder-scheduler.ts`). Merely skipping the delivery call
+  would leave the OS holding the schedules a previous pass created, so the
+  switch would not take effect until they expired. `use-reminder-delivery.ts`
+  reads the stored value BEFORE its first reconcile (otherwise it would
+  schedule and immediately withdraw) and re-reconciles on every preference
+  poke — that poke is the "即时生效" path, not a poll.
+- The one-shot first-run guide (`components/notification-optin-dialog.tsx`,
+  mounted in the root layout beside `IosInstallPrompt` / `AutoUpdateNotifier`)
+  shows only while the OS state is `undetermined` AND the user has never been
+  asked, and it records BOTH answers (`optInPromptSeen`) — a declined user is
+  never re-nagged (issue #24 AC3). A preference READ failure counts as
+  "already shown": the alternative is a dialog on every launch. It skips
+  plain web where the browser exposes no Notification API (iOS Safari before
+  「添加到主屏幕」) — a guide whose button cannot do anything is worse than none.
+- Device preferences use the `lib/theme.ts` / `lib/habit-reminders.ts` platform
+  matrix (native → `expo-secure-store`, web/Tauri → `localStorage`, Node →
+  memory). Do NOT store them through `packages/db/src/owner-token.ts`: the
+  desktop stronghold backend enforces a two-key contract and rejects any other
+  key with `storage.multi-key` — it is for secrets, not preferences. (The
+  matrix is now duplicated across four modules; consolidating it is worthwhile
+  but must not ride along on an unrelated feature.)
 
 ## Tag (packages/ui)
 
