@@ -70,14 +70,15 @@ PowerSync 负责监听数据库变动并将差异实时分发至各端设备。
 3. **连接数据库**：
    - 填写第一步中复制的 Neon 数据库连接串；
    - 点击 **Test Connection** 测试连通，通过后保存。
-4. **配置 JWT 身份认证密钥**：
-   - 在左侧菜单点击 **Authentication**；
-   - 算法选择 **HS256**；
-   - **密钥的 `kid`（Key ID）必须填 `nextdo-dev`** —— Nextdo 后端签发的 JWT 头里固定带这个 kid，两边对不上时，同步服务会以 `PSYNC_S2101`（keystore 里找不到匹配的 key）拒绝**每一次**同步；
-   - 填写密钥内容。它必须是 **base64url 编码、不带 `=` 填充**的字符串（不符合时后端会直接报错），可直接用这个示例：
+4. **配置 JWT 身份认证密钥**（三个字段都得对，缺一个同步就失败）：
+   - 在左侧菜单点击 **Authentication**，在 **HS256 Authentication Tokens (ADVANCED)** 区域点 **+** 新增一个 token；
+   - **KID 必须填 `nextdo-dev`** —— Nextdo 后端签发的 JWT 头里固定带这个 kid，对不上时同步服务会以 `PSYNC_S2101`（keystore 里找不到匹配的 key）拒绝**每一次**同步；
+   - **Shared Secret 必须是 base64url 编码、不带 `=` 填充**的字符串，且与下一步 Cloudflare 的 `JWT_SECRET` **完全一致**（含大小写）。格式不对时后端直接报错；两边不一致时同步服务以 `PSYNC_S2102`（签名无法验证）拒绝。可直接用这个示例：
      `crHOgyjM6cvRfuko_8z9DbZcRWBO6Y7D-uqndYh8h9s`
      想自己生成：`openssl rand -base64 32 | tr '+/' '-_' | tr -d '='`；
-   - 保存并记下该密钥（下一步要原样填进 Cloudflare 的 `JWT_SECRET`）。
+   - 点 **Save and Deploy**。**只点 Save 不生效** —— 没 Deploy 的话实例跑的还是旧的 keystore，改了 kid 也照样报 `PSYNC_S2101`。（自托管同理：改完 `service.yaml` 必须 **重启 PowerSync 服务**，否则容器里还是旧配置。）
+   - 记下该密钥（下一步原样填进 Cloudflare 的 `JWT_SECRET`）。
+   - 另：Cloud 的规则要求 JWT 的 `aud` 等于**本实例的 URL**。这一项不需要你管 —— 后端会用你填的 `NEXTDO_SYNC_ENDPOINT` 自动生成，只要那个变量填的是本实例 URL 就行。
 5. **部署同步规则 (Sync Rules)**：
    - 在左侧菜单进入 **Sync Rules**；
    - 清空输入框，复制粘贴以下完整规则：
@@ -170,8 +171,9 @@ Nextdo 支持极简配对，无需手敲任何复杂的配置项：
 ### 2. 同步状态一直显示“正在连接”或“认证失败”？
 - 检查 Cloudflare 中的 `JWT_SECRET` 是否与 PowerSync 中的 **HS256 密钥** 完全一致（包含大小写与空格）。
 - 确认 PowerSync 的 Sync Rules 已点击 **Deploy** 部署生效。
-- 若 App 的云同步卡片显示 **「同步凭据被同步服务拒绝」** 并带 `PSYNC_S2101`：说明 PowerSync 的 keystore 里没有 kid 为 `nextdo-dev` 的密钥。回到第二步的 **Authentication**，检查密钥的 **kid 是否填了 `nextdo-dev`**（这一项最容易漏），以及密钥内容是否与 Cloudflare 的 `JWT_SECRET` 完全一致。改完保存后回到 App 点 **「立即同步」** 即可，**不需要重新配对或重装**。
-- 若显示 `PSYNC_S2102`（签名无法验证）：kid 对上了但两边密钥内容不同，常见原因是末尾多了空格。
+- 若 App 的云同步卡片显示 **「同步凭据被同步服务拒绝」** 并带 `PSYNC_S2101`：说明这个实例的 keystore 里没有 kid 为 `nextdo-dev` 的密钥。回到第二步的 **Authentication** 逐项核对：**KID 是不是 `nextdo-dev`**（最容易漏）、Shared Secret 是不是与 Cloudflare 的 `JWT_SECRET` 完全一致，然后**必须 Save and Deploy**（只 Save 不生效）。改完回 App 点 **「立即同步」** 即可，不需要重新配对或重装。
+- 若显示 `PSYNC_S2102`（签名无法验证）：KID 对上了但密钥内容不同，常见原因是末尾多了空格，或 Shared Secret 填的不是 base64url 形式的那份。
+- 若两者都核对过仍报错：确认 App 里显示的 **同步流地址** 与你刚才改配置的实例是同一个（Cloudflare 的 `NEXTDO_SYNC_ENDPOINT` 要填 PowerSync 控制台 Connect 弹窗里那个 Instance URL）。改到了另一个实例上同样会一直 401。
 - 若显示 `PSYNC_S2103`（凭据过期）：点一下 **「立即同步」** 重新取一次凭据即可。
 
 ### 3. 多台设备同步是否收费？
