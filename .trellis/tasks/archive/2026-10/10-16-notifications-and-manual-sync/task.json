@@ -1,0 +1,29 @@
+{
+  "id": "notifications-and-manual-sync",
+  "name": "notifications-and-manual-sync",
+  "title": "通知与同步体验改进（issue #24 / #22）",
+  "description": "解决 GitHub issue #24（通知主动授权 + App 内总开关）与 #22（手动同步 + 上次同步时间），并 bump 版本、发 PR、打包发布。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "printsdfu",
+  "assignee": "printsdfu",
+  "createdAt": "2026-10-16",
+  "completedAt": "2026-10-16",
+  "branch": "feat/notifications-and-manual-sync",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-16-notification-optin-and-master-switch",
+    "10-16-manual-sync-and-last-synced"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
