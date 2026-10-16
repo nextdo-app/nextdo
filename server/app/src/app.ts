@@ -67,6 +67,15 @@ export interface ServerConfig {
    *  exactly that reason — a Cloud deployment that kept the default can
    *  never authenticate. */
   audience?: string;
+  /** The `kid` the deployment's PowerSync keystore actually holds.
+   *
+   *  The default (`credentials.ts`'s `nextdo-dev`) assumes the operator got
+   *  to name the key. PowerSync CLOUD auto-names its HS256 entries instead
+   *  (`hs256-key-1`, …), and a mismatch is a hard failure: the service looks
+   *  the key up BY kid and reports `PSYNC_S2101` — “The key is missing or no
+   *  key matched the token KID” — while its own log prints the kid it has.
+   *  `src/worker.ts` therefore passes `NEXTDO_JWT_KID` when it is set. */
+  kid?: string;
   /** Injectable clock — defaults to the process clock. */
   now?: () => Date;
 }
@@ -439,6 +448,7 @@ export function createApp(config: ServerConfig): Hono {
         secret: config.jwtSecret,
         now: now(),
         ...(config.audience === undefined ? {} : { audience: config.audience }),
+        ...(config.kid === undefined ? {} : { kid: config.kid }),
       });
       // `token` is the 15-min PowerSync JWT the client hands to the SDK;
       // `endpoint` is the deployment's public stream URL (NEXTDO_SYNC_ENDPOINT).

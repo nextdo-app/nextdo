@@ -234,6 +234,41 @@ describe('GET /credentials endpoint', () => {
     expect(payload.aud).toBe(POWER_SYNC_JWT_AUDIENCE);
   });
 
+  it('mints the deployment-supplied kid when the keystore named its own key (Cloud)', async () => {
+    const { pool } = createMockPool();
+    const app = createApp({
+      pool,
+      ownerToken: OWNER_TOKEN,
+      jwtSecret: JWT_SECRET,
+      syncEndpoint: SYNC_ENDPOINT,
+      kid: 'hs256-key-1',
+    });
+    const res = await app.request('/credentials', {
+      headers: { Authorization: `Bearer ${OWNER_TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { token: string };
+    // The service looks the key up BY kid: a mismatch is precisely the
+    // PSYNC_S2101 “no key matched the token KID” failure, so the header must
+    // carry whatever name the deployment's keystore actually uses.
+    expect(jwtHeader(body.token).kid).toBe('hs256-key-1');
+  });
+
+  it('keeps the shared default kid when the deployment does not supply one (self-hosted)', async () => {
+    const { pool } = createMockPool();
+    const app = createApp({
+      pool,
+      ownerToken: OWNER_TOKEN,
+      jwtSecret: JWT_SECRET,
+      syncEndpoint: SYNC_ENDPOINT,
+    });
+    const res = await app.request('/credentials', {
+      headers: { Authorization: `Bearer ${OWNER_TOKEN}` },
+    });
+    const body = (await res.json()) as { token: string };
+    expect(jwtHeader(body.token).kid).toBe(POWER_SYNC_JWT_KID);
+  });
+
   it('the endpoint is NOT leaked on a 401 (auth stays the whole gate)', async () => {
     const { pool } = createMockPool();
     const app = createApp({

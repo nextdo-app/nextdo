@@ -78,7 +78,8 @@ PowerSync 负责监听数据库变动并将差异实时分发至各端设备。
      想自己生成：`openssl rand -base64 32 | tr '+/' '-_' | tr -d '='`；
    - 点 **Save and Deploy**。**只点 Save 不生效** —— 没 Deploy 的话实例跑的还是旧的 keystore，改了 kid 也照样报 `PSYNC_S2101`。（自托管同理：改完 `service.yaml` 必须 **重启 PowerSync 服务**，否则容器里还是旧配置。）
    - 记下该密钥（下一步原样填进 Cloudflare 的 `JWT_SECRET`）。
-   - 另：Cloud 的规则要求 JWT 的 `aud` 等于**本实例的 URL**。这一项不需要你管 —— 后端会用你填的 `NEXTDO_SYNC_ENDPOINT` 自动生成，只要那个变量填的是本实例 URL 就行。
+   - **JWT Audience（同一页下方）**：这一栏默认是空的，含义是「只接受实例 URL 作为 `aud`」。而 **beta.7 之前** 的 `worker.js` 签发的 `aud` 是 `nextdo` —— 用旧 worker 就必须在这里 **+ Add** 一条 `nextdo`，否则即使 KID 与 Secret 都对，同步仍会 401。**beta.7 起** 后端改用 `NEXTDO_SYNC_ENDPOINT`（实例 URL）当 `aud`，这一栏可以留空。
+   - **关于 KID 更省事的做法**：上面的 KID 要与后端签发的一致；但如果实例里的键已经被 PowerSync 自己命名（在同步报错的 `Known keys: <kid: …>` 里能看到，形如 `hs256-key-1`），与其去改实例，不如把这个名字填到 Cloudflare 的 `NEXTDO_JWT_KID` 环境变量里（见第三步）。
 5. **部署同步规则 (Sync Rules)**：
    - 在左侧菜单进入 **Sync Rules**；
    - 清空输入框，复制粘贴以下完整规则：
@@ -108,7 +109,8 @@ streams:
 ```
 
    - 点击右上角 **Deploy** 部署生效。
-6. 记录同步网址：
+6. **确认实例已完成部署**：如果控制台右上角还挂着 **Finish Setting Up PowerSync**，说明上述改动尚未落到运行中的实例上 —— 点它把流程走完（等同于点 Save and Deploy）。此时界面里 KID/Secret 看着都对，运行中的实例用的仍是旧 keystore，客户端会一直报 `PSYNC_S2101`（原文里的「The key is missing」就是这么来的）。
+7. 记录同步网址：
    - 回到 Instance Overview，复制你的 **PowerSync Instance URL**（格式如 `https://xxxx.powersync.journeyapps.com`）。
 
 ---
@@ -129,6 +131,7 @@ Cloudflare Workers 负责接收客户端写入的数据，并在首次启动时*
 | `DATABASE_URL` | **Secret** (加密密钥) | 第一步中复制的 Neon 数据库连接串 |
 | `JWT_SECRET` | **Secret** (加密密钥) | 第二步中填写的 PowerSync JWT 认证密钥 |
 | `NEXTDO_SYNC_ENDPOINT` | **Text** (文本) | 第二步中记录的 PowerSync Instance URL |
+| `NEXTDO_JWT_KID` | **Text** (文本) | **选填**。当实例里那把 HS256 密钥的 kid 不是 `nextdo-dev` 时，填实例**实际持有**的那个。值直接看同步报错里的 `Known keys: <kid: …>` —— PowerSync Cloud 会自己给条目命名（如 `hs256-key-1`），你在界面上敲的 KID 不一定就是它。不填则保持 `nextdo-dev` |
 
 5. **在线填入代码**：
    - 点击右上角 **Edit Code** 打开网页在线代码编辑器；
@@ -171,7 +174,13 @@ Nextdo 支持极简配对，无需手敲任何复杂的配置项：
 ### 2. 同步状态一直显示“正在连接”或“认证失败”？
 - 检查 Cloudflare 中的 `JWT_SECRET` 是否与 PowerSync 中的 **HS256 密钥** 完全一致（包含大小写与空格）。
 - 确认 PowerSync 的 Sync Rules 已点击 **Deploy** 部署生效。
-- 若 App 的云同步卡片显示 **「同步凭据被同步服务拒绝」** 并带 `PSYNC_S2101`：说明这个实例的 keystore 里没有 kid 为 `nextdo-dev` 的密钥。回到第二步的 **Authentication** 逐项核对：**KID 是不是 `nextdo-dev`**（最容易漏）、Shared Secret 是不是与 Cloudflare 的 `JWT_SECRET` 完全一致，然后**必须 Save and Deploy**（只 Save 不生效）。改完回 App 点 **「立即同步」** 即可，不需要重新配对或重装。
+- 若 App 的云同步卡片显示 **「同步凭据被同步服务拒绝」** 并带 `PSYNC_S2101`：说明这个实例的 keystore 里没有 kid 为 `nextdo-dev` 的密钥。按顺序核对：
+  1. **实例是否真的部署了** —— 控制台右上角若还有 **Finish Setting Up PowerSync**，先把它走完；这一步没做时，界面里 KID/Secret 填得再对也不生效，报错原文的「The key is missing」指的就是这个。
+  2. **KID 是否对得上** —— 注意不是看你填了什么，而是看实例**实际**持有什么：同步报错里会写 `Known keys: <kid: …>`（PowerSync Cloud 会自己给条目命名，形如 `hs256-key-1`）。两边字面不同就必然 `PSYNC_S2101`。最省事的做法是把这个名字填到 Cloudflare 的 `NEXTDO_JWT_KID`；也可以反过来把实例里的键改名成 `nextdo-dev`；
+  3. **Secret 是不是 base64url、且与 Cloudflare 的 `JWT_SECRET` 完全一致**；
+  4. **JWT Audience**：这一栏为空时只接受实例 URL。用 beta.7 之前的 `worker.js` 就在这里 **+ Add** 一条 `nextdo`；换了 beta.7 的 `worker.js` 则无需此项。
+
+  四项都确认后回 App 点 **「立即同步」** 即可，不需要重新配对或重装。
 - 若显示 `PSYNC_S2102`（签名无法验证）：KID 对上了但密钥内容不同，常见原因是末尾多了空格，或 Shared Secret 填的不是 base64url 形式的那份。
 - 若两者都核对过仍报错：确认 App 里显示的 **同步流地址** 与你刚才改配置的实例是同一个（Cloudflare 的 `NEXTDO_SYNC_ENDPOINT` 要填 PowerSync 控制台 Connect 弹窗里那个 Instance URL）。改到了另一个实例上同样会一直 401。
 - 若显示 `PSYNC_S2103`（凭据过期）：点一下 **「立即同步」** 重新取一次凭据即可。
