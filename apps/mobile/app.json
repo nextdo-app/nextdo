@@ -2,7 +2,7 @@
   "expo": {
     "name": "Nextdo",
     "slug": "nextdo",
-    "version": "0.1.6-beta.7",
+    "version": "0.1.6-beta.8",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "nextdo",
