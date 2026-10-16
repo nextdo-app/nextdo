@@ -238,6 +238,20 @@ UI:
   the HS256 signing key) and `server/powersync/.env` (interpolated into
   `PS_JWT_SECRET` → `service.yaml` JWK `k` verbatim). `kid` + `audience` are
   pinned on both sides.
+
+  **The JWT audience is per-deployment SHAPE, not a constant.** PowerSync's
+  rule (docs.powersync.com/configuration/auth/custom): the `aud` must match the
+  **PowerSync instance URL for Cloud**, or one of `client_auth.audience` **for
+  self-hosted**. `credentials.ts`'s default is `nextdo`, which is exactly what
+  the self-hosted `service.yaml` lists — so it is correct there and wrong for
+  every Cloud instance. `worker.ts` (the Cloudflare entry point, the only Cloud
+  path) therefore passes `audience: cloudJwtAudience(NEXTDO_SYNC_ENDPOINT)`: the
+  instance URL the operator already pasted, so the audience cannot drift from
+  the endpoint. The self-hosted `index.ts` passes nothing and keeps the default.
+  The same split explains the `kid`: `credentials.ts` hard-codes
+  `nextdo-dev`, so the Cloud Auth entry's KID must match it — and must be
+  **Save and Deploy**-ed, since saving alone leaves the running instance on its
+  old keystore (symptom: `PSYNC_S2101` survives a correct-looking edit).
   The owner token (`NEXTDO_OWNER_TOKEN`) is a shared secret generated once
   at deploy time (deploy-owned — `openssl rand -hex 32` in
   `server/deploy/.env`; REQUIRED, the server refuses to boot without it).

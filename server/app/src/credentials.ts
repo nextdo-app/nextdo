@@ -34,6 +34,31 @@ export const POWER_SYNC_JWT_KID = 'nextdo-dev';
 /** Must be in the service's `client_auth.audience`. */
 export const POWER_SYNC_JWT_AUDIENCE = 'nextdo';
 
+/**
+ * The `aud` a PowerSync **Cloud** instance requires: the instance URL itself.
+ *
+ * PowerSync's rule (docs.powersync.com/configuration/auth/custom): “The `aud`
+ * of the JWT must match the PowerSync instance URL (for Cloud) or one of the
+ * audiences configured in `client_auth.audience` (for self-hosted).” A
+ * self-hosted `service.yaml` lists `nextdo`, so that path keeps the default;
+ * a Cloud deployment runs THIS helper instead, because no Cloud instance
+ * accepts `nextdo`.
+ *
+ * The instance URL is already the value the operator pasted as
+ * `NEXTDO_SYNC_ENDPOINT`, so deriving the audience from it keeps a second
+ * setting from having to agree with the first. The origin is used because the
+ * console shows the instance URL without a path; the fallback only exists so
+ * a malformed value degrades to a trailing-slash trim instead of throwing
+ * inside token minting.
+ */
+export function cloudJwtAudience(syncEndpoint: string): string {
+  try {
+    return new URL(syncEndpoint).origin;
+  } catch {
+    return syncEndpoint.trim().replace(/\/+$/, '');
+  }
+}
+
 /** v1 single user: the one subject, no account model. */
 export const POWER_SYNC_JWT_SUBJECT = 'owner';
 

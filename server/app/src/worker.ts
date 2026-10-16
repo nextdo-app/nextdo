@@ -10,6 +10,7 @@ import {
   readPersistedOwnerToken,
   ServerClaimManager,
 } from './claim.js';
+import { cloudJwtAudience } from './credentials.js';
 import { createPool } from './db.js';
 import { logger } from './logger.js';
 import { initDatabaseSchema } from './schema-init.js';
@@ -94,6 +95,12 @@ async function initApp(env: WorkerEnv): Promise<ReturnType<typeof createApp>> {
     claimSecret,
     jwtSecret: env.JWT_SECRET,
     syncEndpoint: env.NEXTDO_SYNC_ENDPOINT,
+    // A PowerSync CLOUD instance requires its OWN instance URL as `aud` — the
+    // shared `nextdo` default only satisfies the self-hosted service.yaml,
+    // which never runs this entry point. The URL is already here as
+    // NEXTDO_SYNC_ENDPOINT, so the audience is derived from it rather than
+    // asking the operator to keep a second setting in agreement.
+    audience: cloudJwtAudience(env.NEXTDO_SYNC_ENDPOINT),
   });
 
   cachedConnectionString = connectionString;

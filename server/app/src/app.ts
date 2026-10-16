@@ -58,6 +58,15 @@ export interface ServerConfig {
    *  every client with `/credentials`, so the deployment owns the path
    *  layout and devices never have to guess it. */
   syncEndpoint: string;
+  /** The `aud` the PowerSync service expects.
+   *
+   *  Self-hosted deployments leave this out: `service.yaml` lists `nextdo`
+   *  in `client_auth.audience`, so the shared default is already correct.
+   *  A PowerSync **Cloud** instance instead requires its OWN instance URL as
+   *  the audience, and `src/worker.ts` passes `cloudJwtAudience(...)` for
+   *  exactly that reason — a Cloud deployment that kept the default can
+   *  never authenticate. */
+  audience?: string;
   /** Injectable clock — defaults to the process clock. */
   now?: () => Date;
 }
@@ -426,7 +435,11 @@ export function createApp(config: ServerConfig): Hono {
     '/credentials',
     requireAuth,
     async (c) => {
-      const token = await mintPowerSyncJwt({ secret: config.jwtSecret, now: now() });
+      const token = await mintPowerSyncJwt({
+        secret: config.jwtSecret,
+        now: now(),
+        ...(config.audience === undefined ? {} : { audience: config.audience }),
+      });
       // `token` is the 15-min PowerSync JWT the client hands to the SDK;
       // `endpoint` is the deployment's public stream URL (NEXTDO_SYNC_ENDPOINT).
       // The endpoint carries NO authority — the PowerSync service

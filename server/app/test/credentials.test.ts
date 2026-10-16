@@ -14,6 +14,7 @@
  */
 import { jwtVerify, type JWTPayload } from 'jose';
 import {
+  cloudJwtAudience,
   decodeJwtSecret,
   mintPowerSyncJwt,
   POWER_SYNC_JWT_AUDIENCE,
@@ -96,6 +97,23 @@ describe('mintPowerSyncJwt', () => {
   });
 });
 
+describe('cloudJwtAudience', () => {
+  it('is the instance origin — the aud a PowerSync Cloud instance requires', () => {
+    expect(cloudJwtAudience('https://abc123.powersync.journeyapps.com')).toBe(
+      'https://abc123.powersync.journeyapps.com',
+    );
+  });
+
+  it('drops a trailing slash or path so a pasted URL still matches exactly', () => {
+    expect(cloudJwtAudience('https://abc123.powersync.journeyapps.com/')).toBe(
+      'https://abc123.powersync.journeyapps.com',
+    );
+    expect(cloudJwtAudience('https://abc123.powersync.journeyapps.com/sync')).toBe(
+      'https://abc123.powersync.journeyapps.com',
+    );
+  });
+});
+
 describe('decodeJwtSecret', () => {
   it('round-trips a valid base64url secret', () => {
     const bytes = decodeJwtSecret(JWT_SECRET);
@@ -173,6 +191,47 @@ describe('GET /credentials endpoint', () => {
     });
     const body = (await res.json()) as { endpoint: string };
     expect(body.endpoint).toBe(endpoint);
+  });
+
+  it('mints the Cloud instance URL as aud when the deployment supplies one', async () => {
+    const { pool } = createMockPool();
+    const instance = 'https://abc123.powersync.journeyapps.com';
+    const app = createApp({
+      pool,
+      ownerToken: OWNER_TOKEN,
+      jwtSecret: JWT_SECRET,
+      syncEndpoint: instance,
+      audience: cloudJwtAudience(instance),
+    });
+    const res = await app.request('/credentials', {
+      headers: { Authorization: `Bearer ${OWNER_TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { token: string };
+    // jwtVerify enforces the audience: a token minted with the wrong aud
+    // rejects here, which is exactly the failure a Cloud instance reports.
+    const { payload } = await jwtVerify(body.token, decodeJwtSecret(JWT_SECRET), {
+      audience: instance,
+    });
+    expect(payload.aud).toBe(instance);
+  });
+
+  it('keeps the shared default aud when the deployment does not supply one (self-hosted)', async () => {
+    const { pool } = createMockPool();
+    const app = createApp({
+      pool,
+      ownerToken: OWNER_TOKEN,
+      jwtSecret: JWT_SECRET,
+      syncEndpoint: SYNC_ENDPOINT,
+    });
+    const res = await app.request('/credentials', {
+      headers: { Authorization: `Bearer ${OWNER_TOKEN}` },
+    });
+    const body = (await res.json()) as { token: string };
+    const { payload } = await jwtVerify(body.token, decodeJwtSecret(JWT_SECRET), {
+      audience: POWER_SYNC_JWT_AUDIENCE,
+    });
+    expect(payload.aud).toBe(POWER_SYNC_JWT_AUDIENCE);
   });
 
   it('the endpoint is NOT leaked on a 401 (auth stays the whole gate)', async () => {
