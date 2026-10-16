@@ -1416,3 +1416,26 @@ NextAction / CalendarAction / HabitDay 并支持逐条恢复为未完成；顺�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 44: 设置页面 UI 重构与视觉体验优化
+<!-- trellis-session: v=2 fp=4eb67e9b891c9841 -->
+
+**Date**: 2026-10-16
+**Task**: 设置页面 UI 重构与视觉体验优化
+**Branch**: `feat/settings-ui-redesign`
+
+### Summary
+
+重构设置页面视觉分组、控件规范与桌面端布局，解决移动端截断并对齐品牌主色与纯白滑块，bump 版本至 0.1.6-beta.9
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `77d30fd` | feat(settings): 重构设置页信息层级，开关与交互状态对齐品牌主色 |
+| `8d36a0a` | chore(release): bump version to 0.1.6-beta.9 |
+
+### Status
+
+[OK] **Completed**
