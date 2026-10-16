@@ -234,6 +234,12 @@
   immediate read** after `download_update`, so a finished download shows without
   waiting a full interval.
 
+## Settings & Multi-Section Screens
+
+- **Semantic Section Grouping**: Group related settings into semantic categories (e.g. 「通用与偏好」、「提醒与通知」、「数据与同步」、「关于与更新」) using uppercase `SectionHeader` with matching `Ionicons` icons (`text-xs font-bold uppercase tracking-wider text-muted`). Avoid flat uninterrupted card stacks.
+- **Desktop Width Constraint**: Single-column form screens and settings screens constrain content width to `max-w-2xl` (~672px) centered horizontally on wide viewports rather than stretching across `max-w-5xl`, preventing distorted full-width text inputs.
+- **Component Cell Integration**: Prefer integrating single-purpose entry rows (such as 场景管理) as list cells inside parent section cards (with icon badge and right `chevron-forward` / button) over creating isolated standalone single-row cards.
+
 ## Forbidden
 
 - `console.*`, `alert()`, direct network calls, direct SQLite access in components.

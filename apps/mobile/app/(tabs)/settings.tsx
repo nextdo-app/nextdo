@@ -46,9 +46,10 @@ import { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { useAppTheme, type ThemePreference } from '@/lib/theme';
-import { Button, Card, cn } from '@nextdo/ui';
+import { Button, Card, cn, colors } from '@nextdo/ui';
 import { useCloudSync } from '@/hooks/use-cloud-sync';
 import { useSyncStatus } from '@/hooks/use-sync-status';
 import { useNotificationSettings } from '@/hooks/use-notification-settings';
@@ -117,11 +118,33 @@ function isIosWebSafari(): boolean {
   return /iPad|iPhone|iPod/.test(ua) && host.window?.navigator?.standalone !== true;
 }
 
-const THEME_OPTIONS: Array<{ value: ThemePreference; label: string }> = [
-  { value: 'system', label: '跟随系统' },
-  { value: 'light', label: '浅色模式' },
-  { value: 'dark', label: '深色模式' },
+const THEME_OPTIONS: Array<{
+  value: ThemePreference;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}> = [
+  { value: 'system', label: '跟随系统', icon: 'phone-portrait-outline' },
+  { value: 'light', label: '浅色模式', icon: 'sunny-outline' },
+  { value: 'dark', label: '深色模式', icon: 'moon-outline' },
 ];
+
+/** 小节标题（语义分组，静雅克制） */
+function SectionHeader({
+  title,
+  icon,
+}: {
+  title: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}) {
+  return (
+    <View className="flex-row items-center gap-1.5 mt-7 mb-2 px-1">
+      <Ionicons name={icon} size={14} color="#8a847c" />
+      <Text className="font-sans text-xs font-semibold text-muted dark:text-muted-dark">
+        {title}
+      </Text>
+    </View>
+  );
+}
 
 /** 检查失败的三种原因 → 提示文案（文案归屏幕，逻辑层只给 reason）。 */
 const UPDATE_FAILURE_COPY: Record<UpdateFailureReason, string> = {
@@ -181,10 +204,6 @@ function syncFailureHint(display: SyncDisplay): string | null {
 const INPUT_CLASS =
   'rounded-md border border-border/80 bg-surface p-3 text-base text-ink placeholder:text-muted shadow-sm focus:border-accent dark:border-border-dark dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark';
 
-/** The Switch track colors. One definition: the habit-reminder switch
- *  introduced this pair, and the notification master switch (issue #24) needs
- *  the same one — two literals would drift apart on the first color change. */
-const SWITCH_TRACK_COLOR = { false: '#716b64', true: '#c85a17' };
 
 /** Placeholders / accessibility labels — the single definitions the tests
  *  match on (a duplicated literal in the JSX is how copy drifts). */
@@ -248,7 +267,12 @@ const TOKEN_ACCESSIBILITY_LABEL = '云同步连接串';
 type SyncMode = 'pair' | 'self_host';
 
 export default function SettingsScreen() {
-  const { preference, updatePreference } = useAppTheme();
+  const { preference, updatePreference, isDark } = useAppTheme();
+  const switchTrackColor = {
+    false: isDark ? '#38322a' : '#e5e2db',
+    true: isDark ? colors.accentDark : colors.accent,
+  };
+  const switchThumbColor = '#ffffff';
   const { state, storedConfig, ownerToken, connect, disconnect } = useCloudSync();
   // 同步状态（issue #22）：已配置同步时才去读队列深度（断开态没有可展示的号）。
   const {
@@ -458,26 +482,31 @@ export default function SettingsScreen() {
     >
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingTop: topPadding, paddingHorizontal: 16, paddingBottom: 32 }}
+        contentContainerStyle={{ paddingTop: topPadding, paddingHorizontal: 16, paddingBottom: 40 }}
         keyboardShouldPersistTaps="handled"
       >
-        <View className="w-full max-w-5xl mx-auto">
+        <View className="w-full max-w-2xl mx-auto pb-12">
         {/* Header block (matches the other tabs) */}
-        <Text className="font-display text-3xl font-bold tracking-tight text-ink dark:text-ink-dark">
-          设置
-        </Text>
-        <Text className="mt-1 font-sans text-sm text-muted dark:text-muted-dark">
-          设备与云同步。
-        </Text>
+        <View className="mb-1">
+          <Text className="font-display text-3xl font-bold tracking-tight text-ink dark:text-ink-dark">
+            设置
+          </Text>
+          <Text className="mt-1 font-sans text-sm text-muted dark:text-muted-dark">
+            设备与云同步。
+          </Text>
+        </View>
 
-        {/* Appearance / Theme block */}
-        <Card className="mt-4 gap-3 p-3.5">
-          <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
-            外观主题
-          </Text>
-          <Text className="font-sans text-xs text-muted dark:text-muted-dark">
-            选择跟随系统设置，或固定使用浅色 / 深色外观。
-          </Text>
+        {/* Section 1: 通用与偏好 */}
+        <SectionHeader title="通用与偏好" icon="options-outline" />
+        <Card className="gap-3.5 p-4">
+          <View className="gap-1">
+            <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+              外观主题
+            </Text>
+            <Text className="font-sans text-xs text-muted dark:text-muted-dark">
+              选择跟随系统设置，或固定使用浅色 / 深色外观。
+            </Text>
+          </View>
           <View className="flex-row gap-2">
             {THEME_OPTIONS.map((option) => (
               <Pressable
@@ -487,12 +516,17 @@ export default function SettingsScreen() {
                 accessibilityState={{ selected: preference === option.value }}
                 onPress={() => void updatePreference(option.value)}
                 className={cn(
-                  'flex-1 items-center justify-center rounded-lg border py-2.5',
+                  'flex-1 flex-col items-center justify-center gap-1.5 rounded-xl border py-2.5 px-2 active:opacity-80',
                   preference === option.value
                     ? 'border-accent bg-accent/15 dark:border-accent-dark dark:bg-accent-dark/20'
                     : 'border-border/80 bg-surface dark:border-border-dark dark:bg-surface-dark',
                 )}
               >
+                <Ionicons
+                  name={option.icon}
+                  size={18}
+                  color={preference === option.value ? '#c85a17' : '#716b64'}
+                />
                 <Text
                   className={cn(
                     'font-sans text-xs font-semibold',
@@ -506,53 +540,67 @@ export default function SettingsScreen() {
               </Pressable>
             ))}
           </View>
-        </Card>
 
-        {/* Contexts / Scene management block */}
-        <Card className="mt-4 gap-2.5 p-3.5">
-          <View className="flex-row items-center justify-between">
-            <View className="flex-1 pr-2">
-              <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
-                场景管理
-              </Text>
-              <Text className="mt-0.5 font-sans text-xs text-muted dark:text-muted-dark">
-                配置行动的执行场景（如 办公室、电脑、客厅），用于推荐筛选。
-              </Text>
+          {/* Contexts / Scene management inside General card */}
+          <View className="border-t border-border/40 pt-3 dark:border-border-dark/40">
+            <View className="flex-row items-center justify-between gap-2">
+              <View className="flex-row items-center gap-3 flex-1 min-w-0 pr-1">
+                <View className="h-8 w-8 rounded-lg bg-surface-container/60 dark:bg-surface-container-dark/60 items-center justify-center shrink-0">
+                  <Ionicons name="shapes-outline" size={16} color={isDark ? '#9b948a' : '#716b64'} />
+                </View>
+                <View className="flex-1 min-w-0">
+                  <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+                    场景管理
+                  </Text>
+                  <Text className="mt-0.5 font-sans text-xs text-muted dark:text-muted-dark leading-tight">
+                    配置行动的执行场景（如 办公室、电脑、客厅），用于推荐筛选。
+                  </Text>
+                </View>
+              </View>
+              <View className="shrink-0">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  label="管理 →"
+                  onPress={() => router.push('/contexts')}
+                />
+              </View>
             </View>
-            <Button
-              size="sm"
-              variant="secondary"
-              label="管理 →"
-              onPress={() => router.push('/contexts')}
-            />
           </View>
         </Card>
 
-        {/* Notifications block (task 09-30 R5 — the delivery status;
-         *  above cloud sync: notifications are the execution core) */}
-        <Card className="mt-4 gap-3 p-3.5">
-          <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
-            提醒通知
-          </Text>
-          {/* App 内总开关（issue #24 R2）：与系统权限是两层 —— 关掉它就不再
-              投递，并立刻把已排入系统的待发提醒撤销掉。 */}
-          <View className="flex-row items-center justify-between">
-            <View className="flex-1 pr-3">
-              <Text className="font-sans text-xs font-semibold text-ink dark:text-ink-dark">
-                应用内通知
-              </Text>
-              <Text className="mt-0.5 font-sans text-[11px] leading-tight text-muted dark:text-muted-dark">
-                关掉后不再发送任何提醒，已排入系统的提醒会立即撤销。
-              </Text>
+        {/* Section 2: 提醒与通知 */}
+        <SectionHeader title="提醒与通知" icon="notifications-outline" />
+        <Card className="gap-3.5 p-4">
+          <View className="flex-row items-center justify-between gap-2">
+            <View className="flex-row items-center gap-3 flex-1 min-w-0 pr-1">
+              <View className="h-8 w-8 rounded-lg bg-surface-container/60 dark:bg-surface-container-dark/60 items-center justify-center shrink-0">
+                <Ionicons name="notifications-outline" size={16} color={isDark ? '#9b948a' : '#716b64'} />
+              </View>
+              <View className="flex-1 min-w-0">
+                <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+                  提醒通知
+                </Text>
+                <Text className="font-sans text-xs font-medium text-muted dark:text-muted-dark">
+                  应用内通知
+                </Text>
+                <Text className="mt-0.5 font-sans text-[11px] leading-tight text-muted dark:text-muted-dark">
+                  关掉后不再发送任何提醒，已排入系统的提醒会立即撤销。
+                </Text>
+              </View>
             </View>
-            <Switch
-              accessibilityLabel="应用内通知总开关"
-              value={masterEnabled ?? true}
-              onValueChange={(val) => {
-                void setMasterEnabled(val);
-              }}
-              trackColor={SWITCH_TRACK_COLOR}
-            />
+            <View className="shrink-0">
+              <Switch
+                accessibilityLabel="应用内通知总开关"
+                value={masterEnabled ?? true}
+                onValueChange={(val) => {
+                  void setMasterEnabled(val);
+                }}
+                trackColor={switchTrackColor}
+                thumbColor={switchThumbColor}
+                {...({ activeThumbColor: switchThumbColor } as object)}
+              />
+            </View>
           </View>
           {/* 系统权限层：与上面的开关分开陈述，两者都允许才投递。 */}
           <View className="border-t border-border/40 pt-2.5 dark:border-border-dark/40">
@@ -627,67 +675,96 @@ export default function SettingsScreen() {
             </View>
           )}
           </View>
-        </Card>
 
-        {/* Habit Check-in Reminders (issue 32-A) */}
-        <Card className="mt-4 gap-3 p-3.5">
-          <View className="flex-row items-center justify-between">
-            <View className="flex-1 pr-2">
-              <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
-                习惯打卡提醒
-              </Text>
-              <Text className="mt-0.5 font-sans text-xs text-muted dark:text-muted-dark">
-                未完成习惯到点提醒，避免漏打卡。
-              </Text>
-            </View>
-            <Switch
-              accessibilityLabel="开启习惯打卡提醒"
-              value={habitReminderOptions?.enabled ?? true}
-              onValueChange={(val) => void updateHabitReminders({ enabled: val })}
-              trackColor={SWITCH_TRACK_COLOR}
-            />
-          </View>
-
-          {habitReminderOptions?.enabled ? (
-            <View className="gap-2.5 border-t border-border/40 pt-2.5 dark:border-border-dark/40">
-              {allWindowedHabits ? (
-                <View className="gap-1">
-                  <Text className="font-sans text-xs font-medium text-ink dark:text-ink-dark">
-                    时间窗口提醒已就绪
+          {/* Habit Check-in Reminders inside Notification card */}
+          <View className="border-t border-border/40 pt-3 dark:border-border-dark/40">
+            <View className="flex-row items-center justify-between gap-2">
+              <View className="flex-row items-center gap-3 flex-1 min-w-0 pr-1">
+                <View className="h-8 w-8 rounded-lg bg-surface-container/60 dark:bg-surface-container-dark/60 items-center justify-center shrink-0">
+                  <Ionicons name="calendar-outline" size={16} color={isDark ? '#9b948a' : '#716b64'} />
+                </View>
+                <View className="flex-1 min-w-0">
+                  <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+                    习惯打卡提醒
                   </Text>
-                  <Text className="font-sans text-[11px] leading-relaxed text-muted dark:text-muted-dark">
-                    当前所有习惯均已设置时间窗口，将在各自时间窗口开始前与结束前（未打卡时）自动提醒，无需配置全天提醒时刻。
+                  <Text className="mt-0.5 font-sans text-xs text-muted dark:text-muted-dark leading-tight">
+                    未完成习惯到点提醒，避免漏打卡。
                   </Text>
                 </View>
-              ) : (
-                <View className="flex-row items-center justify-between">
-                  <View className="flex-1 pr-2">
+              </View>
+              <View className="shrink-0">
+                <Switch
+                  accessibilityLabel="开启习惯打卡提醒"
+                  value={habitReminderOptions?.enabled ?? true}
+                  onValueChange={(val) => void updateHabitReminders({ enabled: val })}
+                  trackColor={switchTrackColor}
+                  thumbColor={switchThumbColor}
+                  {...({ activeThumbColor: switchThumbColor } as object)}
+                />
+              </View>
+            </View>
+
+            {habitReminderOptions?.enabled ? (
+              <View className="gap-2.5 pt-3">
+                {allWindowedHabits ? (
+                  <View className="gap-1 rounded-lg bg-surface-container/30 p-2.5 dark:bg-surface-container-dark/30">
                     <Text className="font-sans text-xs font-medium text-ink dark:text-ink-dark">
-                      全天习惯提醒时刻
+                      时间窗口提醒已就绪
                     </Text>
                     <Text className="font-sans text-[11px] leading-relaxed text-muted dark:text-muted-dark">
-                      无时间窗口的习惯在此刻提醒；有窗口的在窗口开始前与结束前（未打卡时）提醒。
+                      当前所有习惯均已设置时间窗口，将在各自时间窗口开始前与结束前（未打卡时）自动提醒，无需配置全天提醒时刻。
                     </Text>
                   </View>
-                  <View className="w-28">
-                    <PickerField
-                      label="全天提醒时刻"
-                      value={habitReminderOptions.allDayReminderHhmm}
-                      placeholder="21:00"
-                      onPress={() => setOpenHabitTimePicker(true)}
-                    />
+                ) : (
+                  <View className="flex-row items-center justify-between rounded-lg bg-surface-container/20 p-2.5 dark:bg-surface-container-dark/20">
+                    <View className="flex-1 pr-2">
+                      <Text className="font-sans text-xs font-medium text-ink dark:text-ink-dark">
+                        全天习惯提醒时刻
+                      </Text>
+                      <Text className="font-sans text-[11px] leading-relaxed text-muted dark:text-muted-dark">
+                        无时间窗口的习惯在此刻提醒；有窗口的在窗口开始前与结束前提醒。
+                      </Text>
+                    </View>
+                    <View className="w-28">
+                      <PickerField
+                        label="全天提醒时刻"
+                        value={habitReminderOptions.allDayReminderHhmm}
+                        placeholder="21:00"
+                        onPress={() => setOpenHabitTimePicker(true)}
+                      />
+                    </View>
                   </View>
-                </View>
-              )}
-            </View>
-          ) : null}
+                )}
+              </View>
+            ) : null}
+          </View>
         </Card>
 
-        {/* Cloud sync block (R6) */}
-        <Card className="mt-4 gap-3 p-3.5">
-        <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
-          云同步
-        </Text>
+        {/* Section 3: 数据与同步 */}
+        <SectionHeader title="数据与同步" icon="cloud-outline" />
+        <Card className="gap-3.5 p-4">
+        <View className="flex-row items-center justify-between">
+          <View className="flex-row items-center gap-2">
+            <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+              云同步
+            </Text>
+          </View>
+          {state === 'connected' ? (
+            <View className="flex-row items-center gap-1.5 rounded-full bg-accent/10 px-2.5 py-0.5 dark:bg-accent-dark/20">
+              <View className="h-2 w-2 rounded-full bg-accent dark:bg-accent-dark" />
+              <Text className="font-sans text-[11px] font-semibold text-accent dark:text-accent-dark">
+                已连接
+              </Text>
+            </View>
+          ) : (
+            <View className="flex-row items-center gap-1.5 rounded-full bg-surface-container px-2.5 py-0.5 dark:bg-surface-container-dark">
+              <View className="h-2 w-2 rounded-full bg-muted dark:bg-muted-dark" />
+              <Text className="font-sans text-[11px] font-medium text-muted dark:text-muted-dark">
+                仅本地
+              </Text>
+            </View>
+          )}
+        </View>
         {state === 'loading' ? (
           <Text className="font-sans text-sm text-muted dark:text-muted-dark">
             检查中…
@@ -741,13 +818,19 @@ export default function SettingsScreen() {
               onToggle={() => setShowSyncHelp((prev) => !prev)}
             />
             {storedConfig !== null ? (
-              <View className="gap-1">
-                <Text className="font-sans text-xs text-muted dark:text-muted-dark">
-                  后端地址：{storedConfig.backendUrl}
-                </Text>
-                <Text className="font-sans text-xs text-muted dark:text-muted-dark">
-                  同步流地址：{storedConfig.endpoint}
-                </Text>
+              <View className="gap-1.5 rounded-xl border border-border/60 bg-surface-container/30 p-3 dark:border-border-dark/60 dark:bg-surface-container-dark/30">
+                <View className="flex-row items-center gap-1.5">
+                  <Ionicons name="server-outline" size={13} color="#716b64" />
+                  <Text className="font-sans text-xs text-muted dark:text-muted-dark">
+                    后端地址：{storedConfig.backendUrl}
+                  </Text>
+                </View>
+                <View className="flex-row items-center gap-1.5">
+                  <Ionicons name="git-network-outline" size={13} color="#716b64" />
+                  <Text className="font-sans text-xs text-muted dark:text-muted-dark">
+                    同步流地址：{storedConfig.endpoint}
+                  </Text>
+                </View>
               </View>
             ) : null}
             {rejections.length > 0 && rejections[rejections.length - 1] ? (
@@ -802,13 +885,15 @@ export default function SettingsScreen() {
                 ) : null}
               </View>
             ) : null}
-            <Button
-              label="断开连接"
-              variant="secondary"
-              onPress={() => {
-                void disconnect();
-              }}
-            />
+            <View className="pt-1 border-t border-border/40 dark:border-border-dark/40">
+              <Button
+                label="断开连接"
+                variant="secondary"
+                onPress={() => {
+                  void disconnect();
+                }}
+              />
+            </View>
           </View>
         ) : (
           <View className="gap-3">
@@ -831,11 +916,22 @@ export default function SettingsScreen() {
                   'https://my.feishu.cn/wiki/FDWJwoCHsiBgltk0sW4cKs47nKb?from=from_copylink',
                 );
               }}
-              className="flex-row items-center gap-1.5 self-start py-0.5"
+              className="flex-row items-center justify-between rounded-xl border border-border/80 bg-surface-container/40 p-3.5 dark:border-border-dark/80 dark:bg-surface-container-dark/30 active:opacity-85"
             >
-              <Text className="font-sans text-xs font-semibold text-accent dark:text-accent-dark">
-                📖 查看 3 分钟零成本多端云同步教程 (飞书文档·纯网页) →
-              </Text>
+              <View className="flex-row items-center gap-3 flex-1 min-w-0 pr-2">
+                <View className="h-8 w-8 rounded-lg bg-accent/10 dark:bg-accent-dark/15 items-center justify-center shrink-0">
+                  <Ionicons name="book-outline" size={16} color={isDark ? '#e0703a' : '#c85a17'} />
+                </View>
+                <View className="flex-1 min-w-0">
+                  <Text className="font-sans text-xs font-semibold text-ink dark:text-ink-dark">
+                    📖 查看 3 分钟零成本多端云同步教程 (飞书文档·纯网页) →
+                  </Text>
+                  <Text className="mt-0.5 font-sans text-[11px] text-muted dark:text-muted-dark leading-tight">
+                    无需自备服务器，全流程在网页中点选即可搭建专属同步服务
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={14} color={isDark ? '#9b948a' : '#716b64'} />
             </Pressable>
 
             {/* 场景分流选择器 */}
@@ -849,12 +945,17 @@ export default function SettingsScreen() {
                   clearError();
                 }}
                 className={cn(
-                  'flex-1 items-center justify-center rounded-lg border py-2',
+                  'flex-1 flex-row items-center justify-center gap-1.5 rounded-lg border py-2.5 active:opacity-80',
                   syncMode === 'pair'
                     ? 'border-accent bg-accent/15 dark:border-accent-dark dark:bg-accent-dark/20'
                     : 'border-border/80 bg-surface dark:border-border-dark dark:bg-surface-dark',
                 )}
               >
+                <Ionicons
+                  name="key-outline"
+                  size={14}
+                  color={syncMode === 'pair' ? '#c85a17' : '#716b64'}
+                />
                 <Text
                   className={cn(
                     'font-sans text-xs font-semibold',
@@ -875,12 +976,17 @@ export default function SettingsScreen() {
                   clearError();
                 }}
                 className={cn(
-                  'flex-1 items-center justify-center rounded-lg border py-2',
+                  'flex-1 flex-row items-center justify-center gap-1.5 rounded-lg border py-2.5 active:opacity-80',
                   syncMode === 'self_host'
                     ? 'border-accent bg-accent/15 dark:border-accent-dark dark:bg-accent-dark/20'
                     : 'border-border/80 bg-surface dark:border-border-dark dark:bg-surface-dark',
                 )}
               >
+                <Ionicons
+                  name="server-outline"
+                  size={14}
+                  color={syncMode === 'self_host' ? '#c85a17' : '#716b64'}
+                />
                 <Text
                   className={cn(
                     'font-sans text-xs font-semibold',
@@ -1087,18 +1193,23 @@ export default function SettingsScreen() {
         )}
       </Card>
 
-        {/* 检查更新：版本查询与安装包下载都走加速代理前缀，不直连 GitHub
-            （地址拼接见 lib/app-update.ts）。发现新版本后按当前平台给出
-            安装包，点击交给系统浏览器下载。 */}
-        <Card className="mt-4 gap-3 p-3.5">
-          <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
-            应用更新
-          </Text>
-          {/* 版本号与发布渠道标识（Issue #14：明确区分正式版与测试版） */}
-          <View className="flex-row items-center gap-2">
-            <Text className="font-sans text-xs text-muted dark:text-muted-dark">
-              当前版本 {update.currentVersion === '' ? '未知' : update.currentVersion}
-            </Text>
+        {/* Section 4: 关于与更新 */}
+        <SectionHeader title="关于与更新" icon="information-circle-outline" />
+        <Card className="gap-3.5 p-4">
+          <View className="flex-row items-center justify-between">
+            <View className="flex-row items-center gap-2.5">
+              <View className="h-8 w-8 rounded-lg bg-surface-container/60 dark:bg-surface-container-dark/60 items-center justify-center shrink-0">
+                <Ionicons name="sparkles-outline" size={16} color={isDark ? '#9b948a' : '#716b64'} />
+              </View>
+              <View>
+                <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+                  应用更新
+                </Text>
+                <Text className="font-sans text-xs text-muted dark:text-muted-dark">
+                  当前版本 {update.currentVersion === '' ? '未知' : update.currentVersion}
+                </Text>
+              </View>
+            </View>
             {update.currentVersion !== '' ? (
               <View
                 className={cn(
@@ -1135,12 +1246,17 @@ export default function SettingsScreen() {
                   void update.setPreferredChannel('stable');
                 }}
                 className={cn(
-                  'flex-1 items-center justify-center rounded-lg border py-2 px-1',
+                  'flex-1 flex-row items-center justify-center gap-1.5 rounded-lg border py-2.5 px-1 active:opacity-80',
                   update.preferredChannel === 'stable'
                     ? 'border-accent bg-accent/15 dark:border-accent-dark dark:bg-accent-dark/20'
                     : 'border-border/80 bg-surface dark:border-border-dark dark:bg-surface-dark',
                 )}
               >
+                <Ionicons
+                  name="shield-checkmark-outline"
+                  size={14}
+                  color={update.preferredChannel === 'stable' ? '#c85a17' : '#716b64'}
+                />
                 <Text
                   className={cn(
                     'font-sans text-xs font-semibold',
@@ -1160,12 +1276,17 @@ export default function SettingsScreen() {
                   void update.setPreferredChannel('beta');
                 }}
                 className={cn(
-                  'flex-1 items-center justify-center rounded-lg border py-2 px-1',
+                  'flex-1 flex-row items-center justify-center gap-1.5 rounded-lg border py-2.5 px-1 active:opacity-80',
                   update.preferredChannel === 'beta'
                     ? 'border-accent bg-accent/15 dark:border-accent-dark dark:bg-accent-dark/20'
                     : 'border-border/80 bg-surface dark:border-border-dark dark:bg-surface-dark',
                 )}
               >
+                <Ionicons
+                  name="flask-outline"
+                  size={14}
+                  color={update.preferredChannel === 'beta' ? '#c85a17' : '#716b64'}
+                />
                 <Text
                   className={cn(
                     'font-sans text-xs font-semibold',
@@ -1182,7 +1303,7 @@ export default function SettingsScreen() {
 
           {/* 自动检查更新开关 */}
           <View className="flex-row items-center justify-between py-1 border-t border-border/40 dark:border-border-dark/40 pt-2">
-            <View className="gap-0.5 flex-1 pr-3">
+            <View className="gap-0.5 flex-1 min-w-0 pr-3">
               <Text className="font-sans text-xs font-semibold text-ink dark:text-ink-dark">
                 自动检查更新
               </Text>
@@ -1198,10 +1319,10 @@ export default function SettingsScreen() {
                 void update.setAutoCheckEnabled(!update.autoCheckEnabled);
               }}
               className={cn(
-                'h-6 w-11 rounded-full p-0.5 justify-center',
+                'h-6 w-11 rounded-full p-0.5 justify-center shrink-0',
                 update.autoCheckEnabled
                   ? 'bg-accent dark:bg-accent-dark'
-                  : 'bg-muted/40 dark:bg-muted-dark/40',
+                  : 'bg-[#e5e2db] dark:bg-[#38322a]',
               )}
             >
               <View
