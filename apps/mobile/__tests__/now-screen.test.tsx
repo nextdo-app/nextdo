@@ -140,6 +140,19 @@ jest.mock('@powersync/react', () => {
     // The delivery hook subscribes to local changes (task 09-30) — a
     // no-op subscription in tests (the mocked queries never fire it).
     onChange: () => () => undefined,
+    // The cloud-sync status card (issue #22) reads the queue depth and waits
+    // for the stream to settle after 「立即同步」 — an empty, connected SDK.
+    getUploadQueueStats: async () => ({ count: 0, size: null }),
+    waitForStatus: async () => undefined,
+    currentStatus: {
+      connected: true,
+      connecting: false,
+      downloading: false,
+      uploading: false,
+      downloadError: undefined,
+      uploadError: undefined,
+      lastSyncedAt: undefined,
+    },
   };
   const queryResult = {
     data: [],
@@ -152,7 +165,7 @@ jest.mock('@powersync/react', () => {
     PowerSyncContext: React.createContext(powersync),
     usePowerSync: () => powersync,
     useQuery: () => queryResult,
-    useStatus: () => ({ status: 'synced', isSynced: true }),
+    useStatus: () => powersync.currentStatus,
   };
 });
 

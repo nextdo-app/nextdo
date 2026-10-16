@@ -50,6 +50,8 @@ import { useAppInsets } from '@/lib/use-app-insets';
 import { useAppTheme, type ThemePreference } from '@/lib/theme';
 import { Button, Card, cn } from '@nextdo/ui';
 import { useCloudSync } from '@/hooks/use-cloud-sync';
+import { useSyncStatus } from '@/hooks/use-sync-status';
+import { useNotificationSettings } from '@/hooks/use-notification-settings';
 import { useReminderPermission } from '@/hooks/use-reminder-permission';
 import { useAppClock } from '@/hooks/use-app-clock';
 import { useHabitReminders } from '@/hooks/use-habit-reminders';
@@ -58,6 +60,7 @@ import { PickerField } from '@/components/picker-field';
 import { DateTimePicker } from '@/components/datetime-picker';
 import { useAppUpdate } from '@/hooks/use-app-update';
 import { formatReleaseDate, openExternalUrl, type UpdateFailureReason } from '@/lib/app-update';
+import { formatLastSyncedAt, type SyncDisplay } from '@/lib/sync-status';
 import {
   formatConnectionString,
   formatDeepLink,
@@ -122,8 +125,38 @@ const UPDATE_FAILURE_COPY: Record<UpdateFailureReason, string> = {
   payload: '没能读到版本信息，请稍后重试。',
 };
 
+/**
+ * 云同步状态文案（issue #22）——逻辑层只给 `kind` 与数据，句子归屏幕。
+ *
+ * `offline` 那条只会在「已配置同步但流断了」时渲染（完全未连接走的是卡片
+ * 另一套文案），所以它是「正在重连」，而不是「数据只在本地」。
+ */
+function syncStatusLabel(display: SyncDisplay): string {
+  switch (display.kind) {
+    case 'offline':
+      return '未连接 — 正在重试连接同步服务器。';
+    case 'syncing':
+      return '同步中…';
+    case 'pending':
+      return `有 ${display.pendingUploads} 条改动待上传。`;
+    case 'synced':
+      return '已同步 — 数据在这台设备与服务器之间自动同步。';
+    case 'failed':
+      return `同步失败：${display.error ?? '未知原因'}`;
+    default: {
+      const exhaustive: never = display.kind;
+      return exhaustive;
+    }
+  }
+}
+
 const INPUT_CLASS =
   'rounded-md border border-border/80 bg-surface p-3 text-base text-ink placeholder:text-muted shadow-sm focus:border-accent dark:border-border-dark dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark';
+
+/** The Switch track colors. One definition: the habit-reminder switch
+ *  introduced this pair, and the notification master switch (issue #24) needs
+ *  the same one — two literals would drift apart on the first color change. */
+const SWITCH_TRACK_COLOR = { false: '#716b64', true: '#c85a17' };
 
 /** Placeholders / accessibility labels — the single definitions the tests
  *  match on (a duplicated literal in the JSX is how copy drifts). */
@@ -189,9 +222,18 @@ type SyncMode = 'pair' | 'self_host';
 export default function SettingsScreen() {
   const { preference, updatePreference } = useAppTheme();
   const { state, storedConfig, ownerToken, connect, disconnect } = useCloudSync();
+  // 同步状态（issue #22）：已配置同步时才去读队列深度（断开态没有可展示的号）。
+  const {
+    display: syncDisplay,
+    manual: manualSync,
+    syncNow,
+    lastSyncedAt,
+  } = useSyncStatus(state === 'connected');
   const { state: notificationPermission, openSystemSettings, requestPermission } =
     useReminderPermission();
+  const { masterEnabled, setMasterEnabled } = useNotificationSettings();
   const now = useAppClock();
+  const lastSyncedLabel = formatLastSyncedAt(now, lastSyncedAt);
   const { data: habitRows } = useHabits(now);
   const activeHabits = (habitRows ?? []).map((r) => r.habit).filter(
     (h) => h.deletedAt === null && h.status === 'active',
@@ -463,6 +505,28 @@ export default function SettingsScreen() {
           <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
             提醒通知
           </Text>
+          {/* App 内总开关（issue #24 R2）：与系统权限是两层 —— 关掉它就不再
+              投递，并立刻把已排入系统的待发提醒撤销掉。 */}
+          <View className="flex-row items-center justify-between">
+            <View className="flex-1 pr-3">
+              <Text className="font-sans text-xs font-semibold text-ink dark:text-ink-dark">
+                应用内通知
+              </Text>
+              <Text className="mt-0.5 font-sans text-[11px] leading-tight text-muted dark:text-muted-dark">
+                关掉后不再发送任何提醒，已排入系统的提醒会立即撤销。
+              </Text>
+            </View>
+            <Switch
+              accessibilityLabel="应用内通知总开关"
+              value={masterEnabled ?? true}
+              onValueChange={(val) => {
+                void setMasterEnabled(val);
+              }}
+              trackColor={SWITCH_TRACK_COLOR}
+            />
+          </View>
+          {/* 系统权限层：与上面的开关分开陈述，两者都允许才投递。 */}
+          <View className="border-t border-border/40 pt-2.5 dark:border-border-dark/40">
           {notificationPermission === null ? (
             <Text className="font-sans text-sm text-muted dark:text-muted-dark">
               检查中…
@@ -520,10 +584,20 @@ export default function SettingsScreen() {
               )}
             </View>
           ) : (
-            <Text className="font-sans text-sm text-muted dark:text-muted-dark">
-              尚未授权 — 首次「稍后」或创建限时日历行动时，会请求通知权限。
-            </Text>
+            <View className="gap-2">
+              <Text className="font-sans text-sm text-muted dark:text-muted-dark">
+                尚未授权 — 系统还未允许 Nextdo 发送通知。
+              </Text>
+              <Button
+                label="开启通知"
+                variant="secondary"
+                onPress={() => {
+                  void requestPermission();
+                }}
+              />
+            </View>
           )}
+          </View>
         </Card>
 
         {/* Habit Check-in Reminders (issue 32-A) */}
@@ -541,7 +615,7 @@ export default function SettingsScreen() {
               accessibilityLabel="开启习惯打卡提醒"
               value={habitReminderOptions?.enabled ?? true}
               onValueChange={(val) => void updateHabitReminders({ enabled: val })}
-              trackColor={{ false: '#716b64', true: '#c85a17' }}
+              trackColor={SWITCH_TRACK_COLOR}
             />
           </View>
 
@@ -591,9 +665,40 @@ export default function SettingsScreen() {
           </Text>
         ) : state === 'connected' ? (
           <View className="gap-3">
-            <Text className="font-sans text-sm text-muted dark:text-muted-dark">
-              已连接 — 数据在这台设备与服务器之间自动同步。
-            </Text>
+            {/* 同步状态 + 立即同步 + 上次同步时间（issue #22）。状态派生在
+                lib/sync-status.ts（纯函数），句子留在屏幕。 */}
+            <View className="gap-1.5">
+              <Text
+                className={cn(
+                  'font-sans text-sm',
+                  syncDisplay.kind === 'failed'
+                    ? 'text-danger dark:text-danger-dark'
+                    : 'text-muted dark:text-muted-dark',
+                )}
+              >
+                {syncStatusLabel(syncDisplay)}
+              </Text>
+              <Text className="font-sans text-xs text-muted dark:text-muted-dark">
+                {lastSyncedLabel === null
+                  ? '尚未完成过同步'
+                  : `上次同步时间：${lastSyncedLabel}`}
+              </Text>
+              <View className="flex-row items-center gap-2 pt-1">
+                <Button
+                  label={syncDisplay.kind === 'syncing' ? '正在同步…' : '立即同步'}
+                  variant="secondary"
+                  disabled={syncDisplay.kind === 'syncing'}
+                  onPress={() => {
+                    void syncNow();
+                  }}
+                />
+                {manualSync?.kind === 'ok' ? (
+                  <Text className="font-sans text-xs text-accent dark:text-accent-dark">
+                    ✓ 同步完成
+                  </Text>
+                ) : null}
+              </View>
+            </View>
             {/* The four questions users actually ask about sync (issue #15).
                 Answered from the code's real behaviour, not a design doc —
                 see docs/sync.md, which is the long version. */}
