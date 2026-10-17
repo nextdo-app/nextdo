@@ -62,6 +62,23 @@
   as pickers — the habit form's optional time window was two free-text
   `HH:mm` inputs until issue #13 and had to be converted. A text input for a
   value the picker already owns is a defect, not a shortcut.
+- `mode="datetime"` is the third mode (task 10-17): it emits
+  `'YYYY-MM-DDTHH:mm'`, and — because its wheels start on a real time — it
+  emits plain `'YYYY-MM-DD'` when the user picked a day and never touched a
+  time control (the 「不调整时刻 = 只记日期（当天截止）」 hint sits above the
+  wheels). That date-only shape is the deadline convention: stored as that
+  day's local 23:59:59 via `endOfLocalDayIso`, read back with the plain-date
+  wording (`DATE_ONLY_DEADLINE_HHMM` sentinel in `packages/core`
+  `deadline.ts`). Only a deadline that carries a real time spells it out
+  (`今天 18:00 截止`).
+- The 「提醒时间（可选）」 field (`apps/mobile/hooks/use-action-reminder.ts` +
+  `apps/mobile/lib/datetime-field.ts`) pre-fills from the deadline — the same
+  moment when it has a time, that day at `DEFAULT_DATE_ONLY_REMINDER_HHMM`
+  (10:00) when it is date-only, nothing when the prefilled moment already
+  passed — and a save touches the `reminders` table ONLY when the value
+  changed (`reminderWriteIfChanged`): a rename must never disarm a snooze
+  reminder. Reminders exist for ACTIONS only — `reminders.action_kind` has no
+  `project`, so the project form shows the deadline alone.
 
 ## Forms (field labels)
 
