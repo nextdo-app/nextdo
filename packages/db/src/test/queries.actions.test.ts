@@ -20,6 +20,7 @@ import {
 } from '../queries/actions';
 import { listFocusSessions } from '../queries/focus';
 import { listCompletionRecords } from '../queries/reviews';
+import { listScheduledReminderFor } from '../queries/reminders';
 import { queryEnginePool } from '../queries/pool';
 import { openTestDb, type TestDb } from './query-helpers';
 import { FIXTURE_IDS, FIXTURE_NOW, fixtureHabitDayId } from './fixtures';
@@ -135,6 +136,49 @@ describe('addNextAction', () => {
       await close();
     }
   });
+
+  it('arms the deadline reminder in the same transaction (task 10-17)', async () => {
+    const { db, close } = await open();
+    try {
+      const action = makeAction();
+      const firesAt = new Date(FIXTURE_NOW.getTime() + 3_600_000);
+      await addNextAction(db, action, { reminderAt: toIso(firesAt), now: FIXTURE_NOW });
+      const armed = (await db.selectFrom('reminders').selectAll().execute()).filter(
+        (row) => row.action_id === action.id,
+      );
+      expect(armed).toHaveLength(1);
+      expect(armed[0]?.action_kind).toBe('next');
+      expect(armed[0]?.state).toBe('scheduled');
+      expect(armed[0]?.fires_at).toBe(toIso(firesAt));
+    } finally {
+      await close();
+    }
+  });
+
+  it('arms nothing for a moment that already passed (AC-5)', async () => {
+    const { db, close } = await open();
+    try {
+      const action = makeAction();
+      await addNextAction(db, action, {
+        reminderAt: toIso(new Date(FIXTURE_NOW.getTime() - 60_000)),
+        now: FIXTURE_NOW,
+      });
+      expect(await listScheduledReminderFor(db, 'next', action.id)).toBeNull();
+      expect(await db.selectFrom('reminders').selectAll().execute()).toHaveLength(0);
+    } finally {
+      await close();
+    }
+  });
+
+  it('without a reminder input no reminder row is written', async () => {
+    const { db, close } = await open();
+    try {
+      await addNextAction(db, makeAction());
+      expect(await db.selectFrom('reminders').selectAll().execute()).toHaveLength(0);
+    } finally {
+      await close();
+    }
+  });
 });
 
 describe('updateNextAction', () => {
@@ -188,6 +232,76 @@ describe('updateNextAction', () => {
       const reloaded = (await listNextActions(db)).find((action) => action.id === A.skipped);
       expect(reloaded?.consecutiveSkips).toBe(0);
       expect(reloaded?.lastSkippedAt).toBeUndefined();
+    } finally {
+      await close();
+    }
+  });
+
+  it('arms the reminder and replaces the previously armed one (AC-2)', async () => {
+    const { db, close } = await open(true);
+    try {
+      const action = (await listNextActions(db)).find((item) => item.id === A.a) as NextAction;
+      const first = new Date(FIXTURE_NOW.getTime() + 3_600_000);
+      const second = new Date(FIXTURE_NOW.getTime() + 7_200_000);
+      await updateNextAction(db, action, { reminderAt: toIso(first), now: FIXTURE_NOW });
+      expect(await listScheduledReminderFor(db, 'next', A.a)).toBe(toIso(first));
+      await updateNextAction(db, action, { reminderAt: toIso(second), now: FIXTURE_NOW });
+      expect(await listScheduledReminderFor(db, 'next', A.a)).toBe(toIso(second));
+      // Exactly one row stays pending — the old fires_at was cancelled in the
+      // same transaction instead of staying armed alongside the new one.
+      const scheduled = (await db.selectFrom('reminders').selectAll().execute()).filter(
+        (row) => row.action_id === A.a && row.state === 'scheduled',
+      );
+      expect(scheduled).toHaveLength(1);
+      expect(scheduled[0]?.fires_at).toBe(toIso(second));
+    } finally {
+      await close();
+    }
+  });
+
+  it('clears the reminder when the form sends null', async () => {
+    const { db, close } = await open(true);
+    try {
+      const action = (await listNextActions(db)).find((item) => item.id === A.a) as NextAction;
+      await updateNextAction(db, action, {
+        reminderAt: toIso(new Date(FIXTURE_NOW.getTime() + 3_600_000)),
+        now: FIXTURE_NOW,
+      });
+      await updateNextAction(db, action, { reminderAt: null, now: FIXTURE_NOW });
+      expect(await listScheduledReminderFor(db, 'next', A.a)).toBeNull();
+    } finally {
+      await close();
+    }
+  });
+
+  it('leaves an existing reminder alone when no reminder input is given', async () => {
+    const { db, close } = await open(true);
+    try {
+      const action = (await listNextActions(db)).find((item) => item.id === A.a) as NextAction;
+      const target = new Date(FIXTURE_NOW.getTime() + 3_600_000);
+      await snoozeAction(db, { actionKind: 'next', actionId: A.a, snoozedUntil: target, now: FIXTURE_NOW });
+      // A rename must not disarm the reminder the snooze just armed.
+      await updateNextAction(db, { ...action, title: '改个名字', updatedAt: toIso(FIXTURE_NOW) });
+      expect(await listScheduledReminderFor(db, 'next', A.a)).toBe(toIso(target));
+    } finally {
+      await close();
+    }
+  });
+
+  it('the Complete Transaction cancels the deadline reminder (AC-4)', async () => {
+    const { db, close } = await open(true);
+    try {
+      const action = (await listNextActions(db)).find((item) => item.id === A.a) as NextAction;
+      await updateNextAction(db, action, {
+        reminderAt: toIso(new Date(FIXTURE_NOW.getTime() + 3_600_000)),
+        now: FIXTURE_NOW,
+      });
+      await completeAction(db, { actionKind: 'next', actionId: A.a, now: FIXTURE_NOW });
+      expect(await listScheduledReminderFor(db, 'next', A.a)).toBeNull();
+      const mine = (await db.selectFrom('reminders').selectAll().execute()).filter(
+        (row) => row.action_id === A.a,
+      );
+      expect(mine.every((row) => row.state === 'cancelled')).toBe(true);
     } finally {
       await close();
     }

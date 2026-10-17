@@ -41,6 +41,62 @@ describe('DateTimePicker', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('datetime mode emits the DAY ALONE when no time control was touched (task 10-17)', () => {
+    render(
+      <DateTimePicker
+        mode="datetime"
+        title="选择截止时间"
+        value=""
+        now={now}
+        onConfirm={onConfirm}
+        onClose={onClose}
+      />,
+    );
+
+    // The wheels start on the clock (14:30). Picking a day and confirming must
+    // still mean "date only" — otherwise a deadline would silently acquire a
+    // 14:30 the user never chose, and the reminder pre-fill would stop using
+    // the date-only rule.
+    fireEvent.press(screen.getByLabelText('快捷 明天'));
+    fireEvent.press(screen.getByText('确定'));
+    expect(onConfirm).toHaveBeenCalledWith('2026-09-26');
+  });
+
+  it('datetime mode emits the full moment once a time control is used', () => {
+    render(
+      <DateTimePicker
+        mode="datetime"
+        title="选择截止时间"
+        value=""
+        now={now}
+        onConfirm={onConfirm}
+        onClose={onClose}
+      />,
+    );
+
+    fireEvent.press(screen.getByLabelText('快捷 明天'));
+    fireEvent.press(screen.getByLabelText('快捷 15分')); // minute → :15
+    fireEvent.press(screen.getByText('确定'));
+    expect(onConfirm).toHaveBeenCalledWith('2026-09-26T14:15');
+  });
+
+  it('datetime mode keeps a stored time when only the day changes', () => {
+    render(
+      <DateTimePicker
+        mode="datetime"
+        title="选择截止时间"
+        value="2026-09-25T18:00"
+        now={now}
+        onConfirm={onConfirm}
+        onClose={onClose}
+      />,
+    );
+
+    fireEvent.press(screen.getByLabelText('快捷 明天'));
+    fireEvent.press(screen.getByText('确定'));
+    expect(onConfirm).toHaveBeenCalledWith('2026-09-26T18:00');
+  });
+
   it('renders quick date presets (今天、明天、下周一、下月一日) and modern calendar grid', () => {
     render(
       <DateTimePicker

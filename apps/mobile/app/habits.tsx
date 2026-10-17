@@ -39,6 +39,7 @@ import { useAppInsets } from '@/lib/use-app-insets';
 import { Button, Card, EmptyState, Tag, ValueChips, cn } from '@nextdo/ui';
 import { checkHabitStartDate, hhmmToMinutes, parseHhmm, type Value } from '@nextdo/core';
 import { DateTimePicker } from '@/components/datetime-picker';
+import { FormField } from '@/components/form-field';
 import { PickerField } from '@/components/picker-field';
 import { localDateKey } from '@/lib/review-dates';
 import { useAppClock } from '@/hooks/use-app-clock';
@@ -239,28 +240,34 @@ function HabitForm({ onStarted }: { onStarted: () => void }) {
       <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
         新习惯 · {HABIT_CYCLE_DAYS} 天挑战
       </Text>
-      <TextInput
-        className={INPUT_CLASS}
-        placeholder="习惯名（如 阅读）"
-        value={title}
-        onChangeText={setTitle}
-        accessibilityLabel="习惯名"
-      />
-      <TextInput
-        className={INPUT_CLASS}
-        placeholder="每日行动（选填，如 阅读 30 min）"
-        value={actionTitle}
-        onChangeText={setActionTitle}
-        accessibilityLabel="每日行动标题（选填）"
-      />
-      <TextInput
-        className={INPUT_CLASS}
-        placeholder="预计分钟（正整数）"
-        keyboardType="number-pad"
-        value={estMinutes}
-        onChangeText={setEstMinutes}
-        accessibilityLabel="预计分钟"
-      />
+      <FormField label="习惯名">
+        <TextInput
+          className={INPUT_CLASS}
+          placeholder="习惯名（如 阅读）"
+          value={title}
+          onChangeText={setTitle}
+          accessibilityLabel="习惯名"
+        />
+      </FormField>
+      <FormField label="每日行动">
+        <TextInput
+          className={INPUT_CLASS}
+          placeholder="每日行动（选填，如 阅读 30 min）"
+          value={actionTitle}
+          onChangeText={setActionTitle}
+          accessibilityLabel="每日行动标题（选填）"
+        />
+      </FormField>
+      <FormField label="预计分钟">
+        <TextInput
+          className={INPUT_CLASS}
+          placeholder="预计分钟（正整数）"
+          keyboardType="number-pad"
+          value={estMinutes}
+          onChangeText={setEstMinutes}
+          accessibilityLabel="预计分钟"
+        />
+      </FormField>
       <ValueChips value={value} onChange={setValue} />
 
       {/* Challenge start date — the app never hand-types a date
@@ -309,19 +316,23 @@ function HabitForm({ onStarted }: { onStarted: () => void }) {
       </Pressable>
 
       {windowOn ? (
-        <View className="flex-row items-center gap-2">
-          <PickerField
-            label="时间窗口开始"
-            value={windowStart}
-            placeholder="开始时间"
-            onPress={() => setOpenPicker('windowStart')}
-          />
-          <PickerField
-            label="时间窗口结束"
-            value={windowEnd}
-            placeholder="结束时间"
-            onPress={() => setOpenPicker('windowEnd')}
-          />
+        <View className="flex-row items-end gap-2">
+          <FormField label="开始时间" className="flex-1">
+            <PickerField
+              label="时间窗口开始"
+              value={windowStart}
+              placeholder="开始时间"
+              onPress={() => setOpenPicker('windowStart')}
+            />
+          </FormField>
+          <FormField label="结束时间" className="flex-1">
+            <PickerField
+              label="时间窗口结束"
+              value={windowEnd}
+              placeholder="结束时间"
+              onPress={() => setOpenPicker('windowEnd')}
+            />
+          </FormField>
         </View>
       ) : null}
 

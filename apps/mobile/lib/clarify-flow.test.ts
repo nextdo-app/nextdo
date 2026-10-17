@@ -16,6 +16,8 @@ import {
   composeLocalDateTimeIso,
   createWizardState,
   endOfLocalDayIso,
+  localDateTimeKey,
+  localDateTimeToIso,
   outcomeLabel,
   validateForm,
   PREVIEW_FORMS,
@@ -573,7 +575,17 @@ describe('validateForm edge cases', () => {
 
   it('intercepts a malformed deadline on the action form', () => {
     expect(validateForm('action', fill(base, { estMinutes: 10, deadline: '30-09-2026' }))).toBe(
-      '日期格式应为 YYYY-MM-DD',
+      '截止格式应为 YYYY-MM-DD 或 YYYY-MM-DDTHH:mm',
+    );
+  });
+
+  it('accepts a deadline that carries a time (task 10-17)', () => {
+    expect(validateForm('action', fill(base, { estMinutes: 10, deadline: '2026-09-30' }))).toBeNull();
+    expect(
+      validateForm('action', fill(base, { estMinutes: 10, deadline: '2026-09-30T18:00' })),
+    ).toBeNull();
+    expect(validateForm('action', fill(base, { estMinutes: 10, deadline: '2026-09-30T25:00' }))).toBe(
+      '截止格式应为 YYYY-MM-DD 或 YYYY-MM-DDTHH:mm',
     );
   });
 });
@@ -591,6 +603,28 @@ describe('date composition helpers', () => {
     expect(endOfLocalDayIso('')).toBeNull();
     expect(endOfLocalDayIso('2026-13-01')).toBeNull();
     expect(endOfLocalDayIso('not-a-date')).toBeNull();
+  });
+
+  it('localDateTimeToIso keeps a picked time and falls back to end-of-day', () => {
+    // Task 10-17 — the two picker shapes this one function has to accept.
+    expect(localDateTimeToIso('2026-09-25')).toBe(endOfLocalDayIso('2026-09-25'));
+    const withTime = localDateTimeToIso('2026-09-25T18:00');
+    expect(withTime).not.toBeNull();
+    expect(hm(new Date(withTime as string))).toBe('18:00');
+    expect(localDateTimeToIso('')).toBeNull();
+    expect(localDateTimeToIso('2026-13-01')).toBeNull();
+    expect(localDateTimeToIso('2026-09-25T25:00')).toBeNull();
+    expect(localDateTimeToIso('2026-09-25T18:00:30')).toBeNull();
+  });
+
+  it('localDateTimeKey collapses the end-of-day sentinel back to a date', () => {
+    // Prefill direction: a legacy 23:59 row re-opens as "date only" so
+    // saving it untouched cannot mint a 23:59 time the user never picked.
+    expect(localDateTimeKey(new Date(2026, 8, 25, 18, 0, 0, 0).toISOString())).toBe(
+      '2026-09-25T18:00',
+    );
+    expect(localDateTimeKey(new Date(2026, 8, 25, 23, 59, 30, 0).toISOString())).toBe('2026-09-25');
+    expect(localDateTimeKey('garbage')).toBe('');
   });
 
   it('composeLocalDateTimeIso maps date+time to a local datetime ISO', () => {

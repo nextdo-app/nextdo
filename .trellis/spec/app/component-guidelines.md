@@ -62,11 +62,41 @@
   as pickers — the habit form's optional time window was two free-text
   `HH:mm` inputs until issue #13 and had to be converted. A text input for a
   value the picker already owns is a defect, not a shortcut.
+- `mode="datetime"` is the third mode (task 10-17): it emits
+  `'YYYY-MM-DDTHH:mm'`, and — because its wheels start on a real time — it
+  emits plain `'YYYY-MM-DD'` when the user picked a day and never touched a
+  time control (the 「不调整时刻 = 只记日期（当天截止）」 hint sits above the
+  wheels). That date-only shape is the deadline convention: stored as that
+  day's local 23:59:59 via `endOfLocalDayIso`, read back with the plain-date
+  wording (`DATE_ONLY_DEADLINE_HHMM` sentinel in `packages/core`
+  `deadline.ts`). Only a deadline that carries a real time spells it out
+  (`今天 18:00 截止`).
+- The 「提醒时间（可选）」 field (`apps/mobile/hooks/use-action-reminder.ts` +
+  `apps/mobile/lib/datetime-field.ts`) pre-fills from the deadline — the same
+  moment when it has a time, that day at `DEFAULT_DATE_ONLY_REMINDER_HHMM`
+  (10:00) when it is date-only, nothing when the prefilled moment already
+  passed — and a save touches the `reminders` table ONLY when the value
+  changed (`reminderWriteIfChanged`): a rename must never disarm a snooze
+  reminder. Reminders exist for ACTIONS only — `reminders.action_kind` has no
+  `project`, so the project form shows the deadline alone.
 
-## 桌面端视口与主 Tab 容器宽度规范（Desktop / Web Layout）
+## Forms (field labels)
 
-- 所有 5 个主 Tab 页面（`inbox.tsx`, `now.tsx`, `projects.tsx`, `review.tsx`, `settings.tsx`）在宽屏桌面端（视口宽度 ≥ 1024px）下，主内容容器必须统一使用 `w-full max-w-5xl mx-auto`（或 `flex-1 w-full max-w-5xl mx-auto`）。
-- 底部标签栏在 `apps/mobile/app/(tabs)/_layout.tsx` 中通过 `horizontalInset = Math.max(0, (width - 1024) / 2)` 与 1024px 列宽居中对齐。若个别页面（如原先的 `settings.tsx` 或 `review.tsx`）随意缩小为 `max-w-2xl`（672px），宽屏下两侧会出现巨大空隙且与底部标签栏错位。统一为 `max-w-5xl` 保证全应用视觉骨架的一致性。
+- A field's NAME is a visible label above the control — `FormField`
+  (`apps/mobile/components/form-field.tsx`) — never the placeholder alone.
+  A placeholder disappears the moment the field holds a value, so a filled
+  box (or a picked date) reads as unexplained text; the placeholder stays a
+  hint INSIDE the box. The clarify wizard's `Field` and the edit-action
+  modal's label-over-control blocks are the same rule, locally.
+- The label is rendered even when the field is empty, so label + placeholder
+  may repeat the same words (e.g. 项目标题). That redundancy is deliberate:
+  the name must survive typing, and the placeholder must keep working for
+  tests and hints.
+
+## 桌面端视口与全宽自然排版规范（Desktop / Web Layout）
+
+- 所有主 Tab 页面（`inbox.tsx`, `now.tsx`, `projects.tsx`, `review.tsx`, `settings.tsx`）及二级页面在桌面端与宽屏视口下采用全宽自然延伸（`w-full`），不设置硬编码居中宽度限制（如 `max-w-5xl mx-auto`），消除窗口两侧的人工大面积黑底留白。
+- 底部标签栏在 `apps/mobile/app/(tabs)/_layout.tsx` 中全宽自然延展，水平内边距使用安全边距 `paddingLeft/Right: Math.max(insets.left/right, 8)`，与窗口边界紧密贴合。
 
 ## Cloud sync (Settings tab, `apps/mobile/app/(tabs)/settings.tsx`)
 

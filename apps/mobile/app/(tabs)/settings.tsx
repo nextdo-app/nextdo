@@ -58,6 +58,7 @@ import { useAppClock } from '@/hooks/use-app-clock';
 import { useHabitReminders } from '@/hooks/use-habit-reminders';
 import { useHabits } from '@/hooks/use-habits';
 import { PickerField } from '@/components/picker-field';
+import { FormField } from '@/components/form-field';
 import { DateTimePicker } from '@/components/datetime-picker';
 import { useAppUpdate } from '@/hooks/use-app-update';
 import { formatReleaseDate, openExternalUrl, type UpdateFailureReason } from '@/lib/app-update';
@@ -485,7 +486,7 @@ export default function SettingsScreen() {
         contentContainerStyle={{ paddingTop: topPadding, paddingHorizontal: 16, paddingBottom: 40 }}
         keyboardShouldPersistTaps="handled"
       >
-        <View className="w-full max-w-5xl mx-auto pb-12">
+        <View className="w-full pb-12">
         {/* Header block (matches the other tabs) */}
         <View className="mb-1">
           <Text className="font-display text-3xl font-bold tracking-tight text-ink dark:text-ink-dark">
@@ -1149,32 +1150,36 @@ export default function SettingsScreen() {
                 <Text className="font-sans text-xs text-muted dark:text-muted-dark">
                   自定义反代路径时才需要：两项都填写时优先于上面的服务器地址。
                 </Text>
-                <TextInput
-                  className={INPUT_CLASS}
-                  placeholder={ADVANCED_BACKEND_PLACEHOLDER}
-                  value={advancedBackendUrl}
-                  onChangeText={(next) => {
-                    setAdvancedBackendUrl(next);
-                    clearError();
-                  }}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoComplete="off"
-                  accessibilityLabel="后端地址"
-                />
-                <TextInput
-                  className={INPUT_CLASS}
-                  placeholder={ADVANCED_ENDPOINT_PLACEHOLDER}
-                  value={advancedEndpoint}
-                  onChangeText={(next) => {
-                    setAdvancedEndpoint(next);
-                    clearError();
-                  }}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoComplete="off"
-                  accessibilityLabel="同步流地址"
-                />
+                <FormField label="后端地址">
+                  <TextInput
+                    className={INPUT_CLASS}
+                    placeholder={ADVANCED_BACKEND_PLACEHOLDER}
+                    value={advancedBackendUrl}
+                    onChangeText={(next) => {
+                      setAdvancedBackendUrl(next);
+                      clearError();
+                    }}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoComplete="off"
+                    accessibilityLabel="后端地址"
+                  />
+                </FormField>
+                <FormField label="同步流地址">
+                  <TextInput
+                    className={INPUT_CLASS}
+                    placeholder={ADVANCED_ENDPOINT_PLACEHOLDER}
+                    value={advancedEndpoint}
+                    onChangeText={(next) => {
+                      setAdvancedEndpoint(next);
+                      clearError();
+                    }}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoComplete="off"
+                    accessibilityLabel="同步流地址"
+                  />
+                </FormField>
               </View>
             ) : null}
             {error !== null ? (

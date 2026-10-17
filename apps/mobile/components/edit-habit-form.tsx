@@ -16,6 +16,7 @@ import {
   type Value,
 } from '@nextdo/core';
 import { DateTimePicker } from '@/components/datetime-picker';
+import { FormField } from '@/components/form-field';
 import { PickerField } from '@/components/picker-field';
 import { useAppClock } from '@/hooks/use-app-clock';
 import { useUpdateHabit } from '@/hooks/use-update-habit';
@@ -153,28 +154,34 @@ export function EditHabitForm({ habit, onDone, onSaved }: EditHabitFormProps) {
       <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
         编辑习惯
       </Text>
-      <TextInput
-        className={INPUT_CLASS}
-        placeholder="习惯名（如 阅读）"
-        value={title}
-        onChangeText={setTitle}
-        accessibilityLabel="编辑习惯名"
-      />
-      <TextInput
-        className={INPUT_CLASS}
-        placeholder="每日行动（选填，如 阅读 30 min）"
-        value={actionTitle}
-        onChangeText={setActionTitle}
-        accessibilityLabel="编辑每日行动标题"
-      />
-      <TextInput
-        className={INPUT_CLASS}
-        placeholder="预计分钟（正整数）"
-        keyboardType="number-pad"
-        value={estMinutes}
-        onChangeText={setEstMinutes}
-        accessibilityLabel="编辑预计分钟"
-      />
+      <FormField label="习惯名">
+        <TextInput
+          className={INPUT_CLASS}
+          placeholder="习惯名（如 阅读）"
+          value={title}
+          onChangeText={setTitle}
+          accessibilityLabel="编辑习惯名"
+        />
+      </FormField>
+      <FormField label="每日行动">
+        <TextInput
+          className={INPUT_CLASS}
+          placeholder="每日行动（选填，如 阅读 30 min）"
+          value={actionTitle}
+          onChangeText={setActionTitle}
+          accessibilityLabel="编辑每日行动标题"
+        />
+      </FormField>
+      <FormField label="预计分钟">
+        <TextInput
+          className={INPUT_CLASS}
+          placeholder="预计分钟（正整数）"
+          keyboardType="number-pad"
+          value={estMinutes}
+          onChangeText={setEstMinutes}
+          accessibilityLabel="编辑预计分钟"
+        />
+      </FormField>
       <ValueChips value={value} onChange={setValue} />
 
       {/* Challenge start date */}
@@ -260,19 +267,23 @@ export function EditHabitForm({ habit, onDone, onSaved }: EditHabitFormProps) {
       </Pressable>
 
       {windowOn ? (
-        <View className="flex-row items-center gap-2">
-          <PickerField
-            label="时间窗口开始"
-            value={windowStart}
-            placeholder="开始时间"
-            onPress={() => setOpenPicker('windowStart')}
-          />
-          <PickerField
-            label="时间窗口结束"
-            value={windowEnd}
-            placeholder="结束时间"
-            onPress={() => setOpenPicker('windowEnd')}
-          />
+        <View className="flex-row items-end gap-2">
+          <FormField label="开始时间" className="flex-1">
+            <PickerField
+              label="时间窗口开始"
+              value={windowStart}
+              placeholder="开始时间"
+              onPress={() => setOpenPicker('windowStart')}
+            />
+          </FormField>
+          <FormField label="结束时间" className="flex-1">
+            <PickerField
+              label="时间窗口结束"
+              value={windowEnd}
+              placeholder="结束时间"
+              onPress={() => setOpenPicker('windowEnd')}
+            />
+          </FormField>
         </View>
       ) : null}
 

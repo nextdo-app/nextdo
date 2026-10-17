@@ -17,7 +17,6 @@ import {
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Button, ValueChips, cn } from '@nextdo/ui';
 import {
-  localDateKey,
   type NextAction,
   type Value,
 } from '@nextdo/core';
@@ -27,7 +26,9 @@ import { useContexts } from '@/hooks/use-contexts';
 import { useAppClock } from '@/hooks/use-app-clock';
 import { useUpdateNextAction } from '@/hooks/use-update-next-action';
 import { useAppInsets } from '@/lib/use-app-insets';
-import { endOfLocalDayIso } from '@/lib/clarify-flow';
+import { localDateTimeKey, localDateTimeToIso } from '@/lib/clarify-flow';
+import { formatDateTimeValue } from '@/lib/datetime-field';
+import { useActionReminderField } from '@/hooks/use-action-reminder';
 import { errorMessage } from '@/lib/error-messages';
 
 export interface EditActionModalProps {
@@ -92,8 +93,16 @@ export const EditActionModal = memo(function EditActionModal({
   const [selectedContextIds, setSelectedContextIds] = useState<string[]>([]);
   const [deadline, setDeadline] = useState('');
   const [showPicker, setShowPicker] = useState(false);
+  const [showReminderPicker, setShowReminderPicker] = useState(false);
   const [customEst, setCustomEst] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Task 10-17: the stored reminder loads once per action; the save only
+  // touches the row when the user changed the field (see `reminder.write`).
+  const reminder = useActionReminderField({
+    actionId: action?.id ?? null,
+    deadlineValue: deadline,
+    now,
+  });
 
   useEffect(() => {
     if (action !== null) {
@@ -104,14 +113,13 @@ export const EditActionModal = memo(function EditActionModal({
       setDeadline(
         action.deadline === undefined || action.deadline === null
           ? ''
-          : localDateKey(new Date(action.deadline)),
+          : localDateTimeKey(action.deadline),
       );
       setCustomEst('');
     }
   }, [action]);
 
   if (!visible || action === null) return null;
-
   const toggleContext = (ctxId: string) => {
     setSelectedContextIds((prev) =>
       prev.includes(ctxId) ? prev.filter((id) => id !== ctxId) : [...prev, ctxId],
@@ -128,7 +136,7 @@ export const EditActionModal = memo(function EditActionModal({
 
   const handleSave = async () => {
     if (!canSubmit || estMinutes === null) return;
-    const deadlineIso = deadline === '' ? undefined : (endOfLocalDayIso(deadline) ?? undefined);
+    const deadlineIso = deadline === '' ? undefined : (localDateTimeToIso(deadline) ?? undefined);
     setSubmitting(true);
     const ok = await update({
       action,
@@ -138,6 +146,7 @@ export const EditActionModal = memo(function EditActionModal({
         value,
         deadline: deadlineIso,
         contextIds: selectedContextIds,
+        ...(reminder.write !== undefined ? { reminderAt: reminder.write } : {}),
       },
     });
     setSubmitting(false);
@@ -289,17 +298,31 @@ export const EditActionModal = memo(function EditActionModal({
               </View>
             ) : null}
 
-            {/* Field 5: Deadline */}
+            {/* Field 5: Deadline (task 10-17 — a date, plus a time) */}
             <View className="gap-1.5">
               <Text className="font-sans text-xs font-semibold text-muted dark:text-muted-dark">
-                截止日期
+                截止时间
               </Text>
               <PickerField
-                label="截止"
-                value={deadline}
-                placeholder="截止日期（可选）"
+                label="截止时间"
+                value={formatDateTimeValue(deadline)}
+                placeholder="截止时间（可选）"
                 onPress={() => setShowPicker(true)}
                 onClear={() => setDeadline('')}
+              />
+            </View>
+
+            {/* Field 6: Reminder (task 10-17) */}
+            <View className="gap-1.5">
+              <Text className="font-sans text-xs font-semibold text-muted dark:text-muted-dark">
+                提醒时间（可选）
+              </Text>
+              <PickerField
+                label="提醒时间"
+                value={formatDateTimeValue(reminder.value)}
+                placeholder="不提醒"
+                onPress={() => setShowReminderPicker(true)}
+                onClear={() => reminder.setValue('')}
               />
             </View>
 
@@ -327,8 +350,8 @@ export const EditActionModal = memo(function EditActionModal({
 
           {showPicker ? (
             <DateTimePicker
-              mode="date"
-              title="选择截止日期"
+              mode="datetime"
+              title="选择截止时间"
               value={deadline}
               now={now}
               onConfirm={(val) => {
@@ -336,6 +359,20 @@ export const EditActionModal = memo(function EditActionModal({
                 setShowPicker(false);
               }}
               onClose={() => setShowPicker(false)}
+            />
+          ) : null}
+
+          {showReminderPicker ? (
+            <DateTimePicker
+              mode="datetime"
+              title="选择提醒时间"
+              value={reminder.value}
+              now={now}
+              onConfirm={(val) => {
+                reminder.setValue(val);
+                setShowReminderPicker(false);
+              }}
+              onClose={() => setShowReminderPicker(false)}
             />
           ) : null}
         </View>

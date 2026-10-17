@@ -17,6 +17,11 @@ export interface AddNextActionArgs {
   projectId?: string;
   /** Optional deadline (ISO datetime). */
   deadline?: string;
+  /**
+   * Task 10-17: the deadline reminder to arm together with the row (ISO
+   * datetime; absent/null = the action gets none).
+   */
+  reminderAt?: string | null;
 }
 
 export interface UseAddNextActionResult {
@@ -52,7 +57,7 @@ export function useAddNextAction(): UseAddNextActionResult {
         status: 'open' as const,
       };
       try {
-        await addNextAction(db, action);
+        await addNextAction(db, action, { reminderAt: args.reminderAt ?? null, now });
         setError(null);
       } catch (err: unknown) {
         logger.error('next action create failed', err instanceof Error ? err : new Error(String(err)));

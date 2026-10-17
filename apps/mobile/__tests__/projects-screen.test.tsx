@@ -588,6 +588,8 @@ describe('Project detail', () => {
       expect(mockedAddNextAction).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ title: '整理实验数据', estMinutes: 30, projectId: 'p-1', value: 3 }),
+        // Task 10-17: the reminder input travels next to the row.
+        expect.objectContaining({ reminderAt: null }),
       ),
     );
   });
@@ -628,13 +630,16 @@ describe('Project detail', () => {
     // picker, so an impossible date such as 2026-02-30 cannot be entered at
     // all — the picker only ever renders real calendar days.
     expect(screen.queryByPlaceholderText('截止（YYYY-MM-DD，可选）')).toBeNull();
-    const field = screen.getByRole('button', { name: /^截止，未选择/ });
+    const field = screen.getByRole('button', { name: /^截止时间，未选择/ });
     await pickDeadline(dayKey(5));
-    expect(screen.getByText(dayKey(5))).toBeTruthy();
+    const picked = new Date(dayKey(5));
+    // The field reads the picked day back as Chinese copy (task 10-17); a
+    // date-only pick carries no time, so no HH:mm shows up.
+    expect(screen.getByText(`${picked.getMonth() + 1}月${picked.getDate()}日`)).toBeTruthy();
 
     // Clearing returns the field to its unset wording.
-    fireEvent.press(screen.getByRole('button', { name: '清除截止' }));
-    expect(screen.getByRole('button', { name: /^截止，未选择/ })).toBeTruthy();
+    fireEvent.press(screen.getByRole('button', { name: '清除截止时间' }));
+    expect(screen.getByRole('button', { name: /^截止时间，未选择/ })).toBeTruthy();
     expect(field).toBeTruthy();
   });
 
@@ -663,7 +668,7 @@ describe('Project detail', () => {
     // Re-open and clear: `deadline: undefined` must reach the row so the
     // column is written back as NULL.
     fireEvent.press(screen.getAllByText('编辑')[0]!);
-    fireEvent.press(screen.getByRole('button', { name: '清除截止' }));
+    fireEvent.press(screen.getByRole('button', { name: '清除截止时间' }));
     fireEvent.press(screen.getByText('保存'));
 
     await waitFor(() => expect(mockedUpdateProject).toHaveBeenCalledTimes(2));
@@ -813,6 +818,9 @@ describe('Project detail', () => {
     expect(mockedUpdateNextAction).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ id: 'a-1', title: '运行 baseline B', estMinutes: 30, value: 3 }),
+      // No deadline and no stored reminder → the reminder field stays empty
+      // and this save leaves the reminders table alone (task 10-17).
+      undefined,
     );
     // The row re-renders from the (mocked) live data — new estimate tag.
     expect(screen.getByText('30 分钟')).toBeTruthy();

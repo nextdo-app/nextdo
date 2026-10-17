@@ -1483,3 +1483,50 @@ NextAction / CalendarAction / HabitDay 并支持逐条恢复为未完成；顺�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 47: 全端页面 UI 细节质感优化、全宽无留白排版与表单常显标签
+<!-- trellis-session: v=2 fp=ccf6c3769fd349ad -->
+
+**Date**: 2026-10-16
+**Task**: 全端页面 UI 细节质感优化、全宽无留白排版与表单常显标签
+**Branch**: `main`
+
+### Summary
+
+优化 Now/Inbox/Projects 各主屏视觉质感与 Paper Serenity 主题 Token 对齐；移除桌面端 max-w-5xl 留白限制实现全宽排版；支持内联表单常显字段标签 FormField；产出多视口实测截图
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `01edfd8` | feat(ui): 全端主页面 UI 细节质感与全宽自然排版规范优化 |
+| `10284a9` | feat(forms): 移动端各内联表单字段名改为常显标签 FormField |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 48: 截止时间与提醒时间（行动级提醒）
+<!-- trellis-session: v=2 fp=c5b71e7ed3681f4a -->
+
+**Date**: 2026-10-17
+**Task**: 截止时间与提醒时间（行动级提醒）
+**Branch**: `main`
+
+### Summary
+
+截止字段改为日期+可选时刻（只选日期仍存当天 23:59:59，零迁移）；行动新增可选提醒时间，默认跟随截止（只选日期预填 10:00），随保存事务写 reminders，完成/删除沿用既有取消路径；项目提醒因 kind 前向兼容风险延后。门禁 1318 用例全绿，浏览器实测 5 张截图 + checks.json。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6aeb2c4` | feat(deadline): 截止时间支持时刻，行动新增提醒时间 |
+| `2987ca0` | docs(spec): 记录截止时刻与提醒时间的约定 |
+| `61ee992` | docs(spec): 交互态截图的做法写进 Web 验证门禁 |
+
+### Status
+
+[OK] **Completed**

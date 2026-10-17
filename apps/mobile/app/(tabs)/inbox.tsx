@@ -27,7 +27,7 @@ import { FlatList, Pressable, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Button, Card, EmptyState, Tag } from '@nextdo/ui';
+import { Button, Card, EmptyState, Tag, colors } from '@nextdo/ui';
 import { useInboxItems } from '@/hooks/use-inbox-items';
 import { useAddInboxItem } from '@/hooks/use-add-inbox-item';
 import { useTrashInboxItem } from '@/hooks/use-trash-inbox-item';
@@ -36,10 +36,11 @@ import { useAppClock } from '@/hooks/use-app-clock';
 import { formatRelativeTime } from '@/lib/format';
 import { errorMessage } from '@/lib/error-messages';
 import { QuickCaptureModal } from '@/components/quick-capture-modal';
+import { useAppTheme } from '@/lib/theme';
 import type { InboxItem } from '@nextdo/core';
 
 const INPUT_CLASS =
-  'rounded-md border border-border/80 bg-surface p-3 text-base text-ink placeholder:text-muted shadow-sm focus:border-accent dark:border-border-dark dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark';
+  'rounded-xl border border-border/80 bg-surface px-3.5 py-3 text-base text-ink placeholder:text-muted shadow-2xs focus:border-accent dark:border-border-dark dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark';
 
 /** Captures older than this get the warning "优先澄清" meta (design §2). */
 const PRIORITY_AFTER_MS = 24 * 60 * 60 * 1000;
@@ -60,7 +61,7 @@ function InboxRow({
     now.getTime() - new Date(item.capturedAt).getTime() > PRIORITY_AFTER_MS;
 
   return (
-    <Card variant="outlined" className="p-3.5">
+    <Card variant="outlined" className="gap-2.5 p-4 rounded-2xl border-border/70 bg-surface dark:border-border-dark/70 dark:bg-surface-dark shadow-2xs">
       <View className="flex-row items-center gap-3">
         <Pressable
           className="flex-1"
@@ -68,15 +69,15 @@ function InboxRow({
           accessibilityLabel={`明晰：${item.title}`}
           onPress={() => router.push(`/clarify/${item.id}`)}
         >
-          <Text className="font-sans text-base font-medium text-ink dark:text-ink-dark">
+          <Text className="font-sans text-base font-medium leading-snug text-ink dark:text-ink-dark">
             {item.title}
           </Text>
-          <View className="mt-1 flex-row items-center gap-1">
+          <View className="mt-1 flex-row items-center gap-1.5">
             <Text className="font-sans text-xs text-muted dark:text-muted-dark">
               {formatRelativeTime(item.capturedAt, now)}
             </Text>
             {needsPriority ? (
-              <Text className="font-sans text-xs font-medium text-warning dark:text-warning-dark">
+              <Text className="font-sans text-xs font-semibold text-warning dark:text-warning-dark">
                 · 优先澄清
               </Text>
             ) : null}
@@ -113,23 +114,34 @@ function InboxRow({
 
 function GtdTipCard({ defaultExpanded = false }: { defaultExpanded?: boolean }) {
   const [open, setOpen] = useState(defaultExpanded);
+  const { isDark } = useAppTheme();
   return (
-    <Card variant="subtle" className="mt-3.5 p-3">
+    <Card variant="subtle" className="mt-3.5 p-3.5 rounded-2xl border-border/60 bg-surface/60 dark:border-border-dark/60 dark:bg-surface-dark/60 shadow-2xs">
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="展开或收起GTD澄清心法"
         onPress={() => setOpen((prev) => !prev)}
         className="flex-row items-center justify-between"
       >
-        <Text className="font-sans text-xs font-semibold text-muted dark:text-muted-dark">
-          GTD 澄清心法
-        </Text>
-        <Text className="font-sans text-[11px] text-muted/70 dark:text-muted-dark/70">
-          {open ? '收起' : '展开提示'}
-        </Text>
+        <View className="flex-row items-center gap-1.5">
+          <Ionicons name="bulb-outline" size={14} color={isDark ? colors.accentDark : colors.accent} />
+          <Text className="font-sans text-xs font-semibold text-muted dark:text-muted-dark">
+            GTD 澄清心法
+          </Text>
+        </View>
+        <View className="flex-row items-center gap-1">
+          <Text className="font-sans text-[11px] text-muted/70 dark:text-muted-dark/70">
+            {open ? '收起' : '展开提示'}
+          </Text>
+          <Ionicons
+            name={open ? 'chevron-up' : 'chevron-down'}
+            size={12}
+            color={isDark ? colors.mutedDark : colors.muted}
+          />
+        </View>
       </Pressable>
       {open ? (
-        <Text className="mt-1.5 font-sans text-xs leading-5 text-muted dark:text-muted-dark">
+        <Text className="mt-2 font-sans text-xs leading-relaxed text-muted dark:text-muted-dark">
           收集箱不是待办清单，它是大脑的缓冲区。两分钟内能完成的事立即去做，复杂的转化为项目与下一步。
         </Text>
       ) : null}
@@ -142,6 +154,7 @@ export default function InboxScreen() {
   const { add, error: captureError } = useAddInboxItem();
   const { trash, error: trashError } = useTrashInboxItem();
   const now = useAppClock();
+  const { isDark } = useAppTheme();
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
   const [showQuickCapture, setShowQuickCapture] = useState(true);
@@ -187,7 +200,7 @@ export default function InboxScreen() {
       style={{ paddingTop: topPadding }}
       className="flex-1 w-full bg-canvas px-4 pb-4 dark:bg-canvas-dark relative"
     >
-      <View className="flex-1 w-full max-w-5xl mx-auto">
+      <View className="flex-1 w-full">
       {/* Header block (design §2) */}
       <Text className="font-display text-3xl font-bold tracking-tight text-ink dark:text-ink-dark">
         清空大脑
@@ -197,7 +210,7 @@ export default function InboxScreen() {
       </Text>
 
       {/* Capture card */}
-      <Card className="mt-4 gap-3 p-3.5">
+      <Card className="mt-4 gap-3 p-4 rounded-2xl border-border/70 bg-surface dark:border-border-dark/70 dark:bg-surface-dark shadow-2xs">
         <TextInput
           className={INPUT_CLASS}
           value={draft}
@@ -230,14 +243,15 @@ export default function InboxScreen() {
       ) : (
         <>
           {/* Count row */}
-          <View className="mb-3 mt-3.5 flex-row items-center justify-between">
+          <View className="mb-3 mt-4 flex-row items-center justify-between">
             <Tag label="待处理" count={data.length} />
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="查看等待事项"
-              className="flex-row items-center gap-1 py-1"
+              className="flex-row items-center gap-1 rounded-full border border-border/60 bg-surface/70 px-2.5 py-1 active:bg-surface-container dark:border-border-dark/60 dark:bg-surface-dark/70 dark:active:bg-surface-container-dark shadow-2xs"
               onPress={() => router.push('/waiting')}
             >
+              <Ionicons name="time-outline" size={13} color={isDark ? colors.accentDark : colors.accent} />
               <Text className="font-sans text-xs font-medium text-accent dark:text-accent-dark">
                 等待事项 ({waitingItems.length}) →
               </Text>
@@ -286,7 +300,7 @@ export default function InboxScreen() {
           shadowRadius: 6,
         }}
       >
-        <Ionicons name="add" size={28} color="#ffffff" />
+        <Ionicons name="add" size={28} color={isDark ? colors.onAccentDark : colors.onAccent} />
       </Pressable>
 
       {/* On-launch & triggerable quick capture modal (R1: onCaptured hands

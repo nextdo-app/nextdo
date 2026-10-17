@@ -30,14 +30,16 @@ import { useContexts } from '@/hooks/use-contexts';
 import { useAppClock } from '@/hooks/use-app-clock';
 import { DateTimePicker } from '@/components/datetime-picker';
 import { DeadlineChip } from '@/components/deadline-chip';
+import { FormField } from '@/components/form-field';
 import { PickerField } from '@/components/picker-field';
-import { endOfLocalDayIso } from '@/lib/clarify-flow';
+import { localDateTimeToIso } from '@/lib/clarify-flow';
+import { formatDateTimeValue } from '@/lib/datetime-field';
 import { errorMessage } from '@/lib/error-messages';
 
 type FilterKind = 'active' | 'no-next' | 'archived';
 
 const INPUT_CLASS =
-  'rounded-md border border-border/80 bg-canvas p-3 text-base text-ink placeholder:text-muted focus:border-accent dark:border-border-dark dark:bg-canvas-dark dark:text-ink-dark dark:placeholder:text-muted-dark';
+  'rounded-xl border border-border/80 bg-surface px-3.5 py-3 text-base text-ink placeholder:text-muted shadow-2xs focus:border-accent dark:border-border-dark dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark';
 
 /** The inline new-project form (title + outcome + value 1–5 + optional
  *  deadline). Project only — no context field (contexts belong to
@@ -48,7 +50,7 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
   const [title, setTitle] = useState('');
   const [outcome, setOutcome] = useState('');
   const [value, setValue] = useState<Value>(3);
-  /** `YYYY-MM-DD` as picked; the row stores it as an ISO datetime. */
+  /** `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm` as picked (task 10-17); '' = none. */
   const [deadline, setDeadline] = useState('');
   const [showDeadlinePicker, setShowDeadlinePicker] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -58,7 +60,7 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
   const create = () => {
     if (!canSubmit) return;
     setSubmitting(true);
-    const deadlineIso = deadline === '' ? undefined : (endOfLocalDayIso(deadline) ?? undefined);
+    const deadlineIso = deadline === '' ? undefined : (localDateTimeToIso(deadline) ?? undefined);
     void add({ title, outcome, value, deadline: deadlineIso }).then(() => {
       setSubmitting(false);
       setTitle('');
@@ -70,32 +72,38 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <Card className="gap-3.5 p-5 shadow-md">
+    <Card className="gap-3.5 p-4 rounded-2xl border-border/70 bg-surface dark:border-border-dark/70 dark:bg-surface-dark shadow-2xs">
       <Text className="font-sans text-sm font-semibold text-muted dark:text-muted-dark">新项目</Text>
-      <TextInput
-        className={INPUT_CLASS}
-        placeholder="项目标题"
-        value={title}
-        onChangeText={setTitle}
-      />
-      <TextInput
-        className={INPUT_CLASS}
-        placeholder="完成是什么样（结果）"
-        value={outcome}
-        onChangeText={setOutcome}
-      />
+      <FormField label="项目标题">
+        <TextInput
+          className={INPUT_CLASS}
+          placeholder="项目标题"
+          value={title}
+          onChangeText={setTitle}
+        />
+      </FormField>
+      <FormField label="完成是什么样（结果）">
+        <TextInput
+          className={INPUT_CLASS}
+          placeholder="完成是什么样（结果）"
+          value={outcome}
+          onChangeText={setOutcome}
+        />
+      </FormField>
       <ValueChips value={value} onChange={setValue} />
-      <PickerField
-        label="截止"
-        value={deadline}
-        placeholder="截止日期（可选）"
-        onPress={() => setShowDeadlinePicker(true)}
-        onClear={() => setDeadline('')}
-      />
+      <FormField label="截止时间">
+        <PickerField
+          label="截止时间"
+          value={formatDateTimeValue(deadline)}
+          placeholder="截止时间（可选）"
+          onPress={() => setShowDeadlinePicker(true)}
+          onClear={() => setDeadline('')}
+        />
+      </FormField>
       {showDeadlinePicker ? (
         <DateTimePicker
-          mode="date"
-          title="选择截止日期"
+          mode="datetime"
+          title="选择截止时间"
           value={deadline}
           now={now}
           onConfirm={setDeadline}
@@ -131,16 +139,16 @@ function FilterChip({
       hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
       onPress={onPress}
       className={cn(
-        'h-8 flex-row items-center rounded-full px-3.5',
+        'h-8 flex-row items-center rounded-xl px-3.5 transition-colors active:scale-95',
         active
-          ? 'bg-accent dark:bg-accent-dark'
-          : 'border border-border/80 bg-surface dark:border-border-dark dark:bg-surface-dark',
+          ? 'bg-ink shadow-2xs dark:bg-ink-dark'
+          : 'border border-border/80 bg-surface active:bg-surface-container dark:border-border-dark dark:bg-surface-dark dark:active:bg-surface-container-dark',
       )}
     >
       <Text
         className={cn(
           'font-sans text-xs font-semibold',
-          active ? 'text-on-accent dark:text-on-accent-dark' : 'text-ink dark:text-ink-dark',
+          active ? 'text-canvas dark:text-canvas-dark' : 'text-ink dark:text-ink-dark',
         )}
       >
         {label} {count}
@@ -170,8 +178,8 @@ function ProjectCardRow({
       accessibilityLabel={`打开项目：${card.title}`}
       onPress={() => router.push(`/projects/${card.id}`)}
     >
-      <Card className="gap-2.5 p-4">
-        <View className="flex-row items-center gap-2">
+      <Card className="gap-3 p-4 rounded-2xl border-border/70 bg-surface dark:border-border-dark/70 dark:bg-surface-dark shadow-2xs">
+        <View className="flex-row items-center gap-2.5">
           <View
             className={cn(
               'h-2.5 w-2.5 shrink-0 rounded-full',
@@ -181,7 +189,7 @@ function ProjectCardRow({
             )}
           />
           <Text
-            className="flex-1 font-sans text-base font-semibold text-ink dark:text-ink-dark"
+            className="flex-1 font-sans text-base font-semibold leading-snug text-ink dark:text-ink-dark"
             numberOfLines={1}
           >
             {card.title}
@@ -195,7 +203,7 @@ function ProjectCardRow({
           <DeadlineChip deadline={card.earliestOpenDeadline} now={now} />
         </View>
 
-        <View className="flex-row items-center gap-2">
+        <View className="flex-row items-center gap-2.5">
           <ProgressBar
             value={total > 0 ? card.completedCount / total : 0}
             className="flex-1"
@@ -206,14 +214,14 @@ function ProjectCardRow({
         </View>
 
         {card.nextAction !== null ? (
-          <View className="rounded-lg bg-accent/10 p-3 dark:bg-accent-dark/15">
+          <View className="rounded-xl border border-accent/20 bg-accent/5 p-3 dark:border-accent-dark/25 dark:bg-accent-dark/10">
             <View className="flex-row items-center justify-between gap-2">
               <Text className="font-sans text-xs font-semibold text-accent dark:text-accent-dark">
                 ▶ 当前下一步行动
               </Text>
               <DeadlineChip deadline={card.nextAction.deadline} now={now} />
             </View>
-            <Text className="mt-1 font-sans text-sm text-ink dark:text-ink-dark" numberOfLines={2}>
+            <Text className="mt-1 font-sans text-sm font-medium leading-snug text-ink dark:text-ink-dark" numberOfLines={2}>
               {card.nextAction.title}
             </Text>
             {card.nextAction.contextIds.length > 0 ? (
@@ -227,8 +235,8 @@ function ProjectCardRow({
         ) : null}
 
         {missingNext ? (
-          <View className="gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3">
-            <Text className="font-sans text-xs font-semibold text-warning">
+          <View className="gap-2 rounded-xl border border-warning/40 bg-warning/10 p-3 dark:border-warning-dark/40 dark:bg-warning-dark/10">
+            <Text className="font-sans text-xs font-semibold text-warning dark:text-warning-dark">
               ⚠ 缺少下一步 · 项目处于停滞风险
             </Text>
             <Text className="font-sans text-xs text-muted dark:text-muted-dark">
@@ -299,7 +307,7 @@ export default function ProjectsScreen() {
       style={{ paddingTop: topPadding }}
       className="flex-1 w-full bg-canvas px-4 pb-4 dark:bg-canvas-dark"
     >
-      <View className="flex-1 w-full max-w-5xl mx-auto">
+      <View className="flex-1 w-full">
       {/* Header block (design §4.2) */}
       <Text className="font-display text-3xl font-bold tracking-tight text-ink dark:text-ink-dark">
         项目

@@ -176,6 +176,16 @@ export function DateTimePicker({
   // 12h vs 24h format state
   const [is12Hour, setIs12Hour] = useState(false);
 
+  /**
+   * Task 10-17: in `datetime` mode the wheels start at the incoming time (or
+   * the clock), so a user who only cares about the DAY must be able to say
+   * exactly that. "No time control touched AND the incoming value carried no
+   * time" → confirm emits 'YYYY-MM-DD' (the date-only convention the
+   * deadline field reads back as that day's end). Touching any time control —
+   * or opening a value that already has a time — emits the full moment.
+   */
+  const [timeTouched, setTimeTouched] = useState(false);
+
   const hourScrollRef = useRef<ScrollView>(null);
   const minuteScrollRef = useRef<ScrollView>(null);
 
@@ -230,16 +240,19 @@ export function DateTimePicker({
   }
 
   function selectHour(h: number) {
+    setTimeTouched(true);
     setHour(h);
     hourScrollRef.current?.scrollTo({ y: h * ITEM_HEIGHT, animated: true });
   }
 
   function selectMinute(m: number) {
+    setTimeTouched(true);
     setMinute(m);
     minuteScrollRef.current?.scrollTo({ y: m * ITEM_HEIGHT, animated: true });
   }
 
   function adjustMinute(delta: number) {
+    setTimeTouched(true);
     let total = hour * 60 + minute + delta;
     total = ((total % 1440) + 1440) % 1440;
     const newH = Math.floor(total / 60);
@@ -251,6 +264,7 @@ export function DateTimePicker({
   }
 
   function toggleAmPm(targetPeriod: 'AM' | 'PM') {
+    setTimeTouched(true);
     if (targetPeriod === 'AM' && hour >= 12) {
       const newH = hour - 12;
       setHour(newH);
@@ -264,9 +278,9 @@ export function DateTimePicker({
 
   function confirm() {
     if (mode === 'datetime') {
-      onConfirm(
-        `${selectedYear}-${pad(selectedMonth)}-${pad(selectedDay)}T${pad(hour)}:${pad(minute)}`,
-      );
+      const date = `${selectedYear}-${pad(selectedMonth)}-${pad(selectedDay)}`;
+      const carriesTime = timeTouched || DATETIME_LOCAL.test(value);
+      onConfirm(carriesTime ? `${date}T${pad(hour)}:${pad(minute)}` : date);
     } else if (mode === 'date') {
       onConfirm(`${selectedYear}-${pad(selectedMonth)}-${pad(selectedDay)}`);
     } else {
@@ -750,6 +764,11 @@ export function DateTimePicker({
             {/* Time Configuration Section (in time & datetime modes) */}
             {mode !== 'date' ? (
               <View className="gap-2.5">
+                {mode === 'datetime' ? (
+                  <Text className="px-1 font-sans text-[11px] text-muted dark:text-muted-dark">
+                    不调整时刻 = 只记日期（当天截止）
+                  </Text>
+                ) : null}
                 {/* Datetime mode specific format switch header */}
                 {mode === 'datetime' ? (
                   <View className="flex-row items-center justify-between px-1">
@@ -1103,6 +1122,7 @@ export function DateTimePicker({
                           accessibilityRole="button"
                           accessibilityLabel={`时段 ${p.label}`}
                           onPress={() => {
+                            setTimeTouched(true);
                             selectHour(p.h);
                             selectMinute(p.m);
                           }}

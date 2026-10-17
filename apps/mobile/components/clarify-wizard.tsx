@@ -60,13 +60,14 @@ import { useProjects } from '@/hooks/use-projects';
 import { errorMessage } from '@/lib/error-messages';
 import { maybeRequestNotificationPermission } from '@/lib/reminders/permission';
 import { formatDueLabel, formatLocalDate, formatLocalDateTime } from '@/lib/format';
+import { formatDateTimeValue } from '@/lib/datetime-field';
 import {
   buildDoNowSubmission,
   buildFormSubmission,
   clarifyReducer,
   composeLocalDateTimeIso,
   createWizardState,
-  endOfLocalDayIso,
+  localDateTimeToIso,
   outcomeLabel,
   validateForm,
   PREVIEW_FORMS,
@@ -184,8 +185,9 @@ function Field({
 /**
  * A date/time field (user feedback round 2 — design §15): the value is
  * picked with the DateTimePicker modal, NEVER hand-typed. The stored string
- * shapes stay 'YYYY-MM-DD' / 'HH:mm' (the clarify-flow contract is
- * untouched). `onClear` is offered only for optional fields.
+ * shapes stay 'YYYY-MM-DD' / 'HH:mm' — plus 'YYYY-MM-DDTHH:mm' for the
+ * 截止 time field (task 10-17). `onClear` is offered only for optional
+ * fields.
  */
 function DateTimeField({
   value,
@@ -197,7 +199,7 @@ function DateTimeField({
   onChange,
 }: {
   value: string;
-  mode: 'date' | 'time';
+  mode: 'date' | 'time' | 'datetime';
   /** The field's name — the picker's modal title + the a11y labels. */
   label: string;
   placeholder: string;
@@ -222,7 +224,7 @@ function DateTimeField({
               : 'text-ink dark:text-ink-dark',
           )}
         >
-          {value === '' ? placeholder : value}
+          {value === '' ? placeholder : mode === 'datetime' ? formatDateTimeValue(value) : value}
         </Text>
         <Text className="font-sans text-xs text-muted dark:text-muted-dark">点击选择</Text>
       </Pressable>
@@ -416,7 +418,7 @@ export function WizardBody({
        * on a 800px-tall desktop window, or the keyboard on phone) — the
        * whole body scrolls, same pattern as the review screens. */}
       <ScrollView className="flex-1" keyboardShouldPersistTaps="handled">
-      <View className="w-full max-w-5xl mx-auto">
+      <View className="w-full">
       {/* 1. header row: unified back button + step navigation on left, status tag on right */}
       <View className="mb-3.5 flex-row items-center justify-between">
         <View className="flex-row items-center gap-2">
@@ -1078,12 +1080,12 @@ function FormCard({
             <Field label="价值（1–5）">
               <ValuePicker value={fields.value} onSelect={(v) => onField('value', v)} />
             </Field>
-            <Field label="截止" optional>
+            <Field label="截止时间" optional>
               <DateTimeField
                 value={fields.deadline}
-                mode="date"
-                label="截止"
-                placeholder="YYYY-MM-DD"
+                mode="datetime"
+                label="截止时间"
+                placeholder="选择日期与时刻"
                 now={now}
                 onClear={() => onField('deadline', '')}
                 onChange={(v) => onField('deadline', v)}
@@ -1116,12 +1118,12 @@ function FormCard({
                 <ValuePicker value={fields.value} onSelect={(v) => onField('value', v)} />
               </Field>
             ) : null}
-            <Field label="截止" optional>
+            <Field label="截止时间" optional>
               <DateTimeField
                 value={fields.deadline}
-                mode="date"
-                label="截止"
-                placeholder="YYYY-MM-DD"
+                mode="datetime"
+                label="截止时间"
+                placeholder="选择日期与时刻"
                 now={now}
                 onClear={() => onField('deadline', '')}
                 onChange={(v) => onField('deadline', v)}
@@ -1224,7 +1226,7 @@ interface PreviewCardProps {
 
 function PreviewCard({ state, contextNames, now, disabled, onConfirm, onBack }: PreviewCardProps) {
   const { form, fields, twoMinute } = state;
-  const deadlineIso = fields.deadline !== '' ? endOfLocalDayIso(fields.deadline) : null;
+  const deadlineIso = fields.deadline !== '' ? localDateTimeToIso(fields.deadline) : null;
   const startsAtIso =
     form === 'calendar' ? composeLocalDateTimeIso(fields.startsAtDate, fields.startsAtTime) : null;
   const contextNamesSelected = fields.contextIds

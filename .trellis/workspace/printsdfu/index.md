@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 46
-- **Last Active**: 2026-10-16
+- **Total Sessions**: 48
+- **Last Active**: 2026-10-17
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1485 | Active |
+| `journal-1.md` | ~1532 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 48 | 2026-10-17 | 截止时间与提醒时间（行动级提醒） | `6aeb2c4`, `2987ca0`, `61ee992` | `main` |
+| 47 | 2026-10-16 | 全端页面 UI 细节质感优化、全宽无留白排版与表单常显标签 | `01edfd8`, `10284a9` | `main` |
 | 46 | 2026-10-16 | 安卓端应用内安装更新与桌面端设置页宽度统一 | `6891dbd` | `main` |
 | 45 | 2026-10-16 | 核心页面 UI 细节与视宽质感优化 | `b529b11` | `feat/settings-ui-redesign` |
 | 44 | 2026-10-16 | 设置页面 UI 重构与视觉体验优化 | `77d30fd`, `8d36a0a` | `feat/settings-ui-redesign` |

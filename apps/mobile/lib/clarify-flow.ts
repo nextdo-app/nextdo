@@ -20,7 +20,7 @@
  * Re-clarify mode re-enters the table at Q2 (core `ReclarifyAnswers` has no
  * Q1 field) — `createWizardState('reclarify', …)` starts at Q2.
  */
-import type { ClarifyAnswers, ClarifyOutcome, Value } from '@nextdo/core';
+import { DATE_ONLY_DEADLINE_HHMM, type ClarifyAnswers, type ClarifyOutcome, type Value } from '@nextdo/core';
 import type { ClarifyTarget, ReclarifyAnswers } from '@nextdo/db';
 
 export type WizardMode = 'clarify' | 'reclarify';
@@ -503,6 +503,35 @@ export function composeLocalDateTimeIso(dateOnly: string, hhmm: string): string 
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+const DATETIME_LOCAL = /^(\d{4})-(\d{2})-(\d{2})T([01]\d|2[0-3]):([0-5]\d)$/;
+
+/**
+ * A picker value — 'YYYY-MM-DD' (date only) or 'YYYY-MM-DDTHH:mm' (a real
+ * moment, task 10-17) — to the stored ISO datetime. The date-only branch IS
+ * the legacy end-of-day convention, so a form that never touches the time
+ * keeps writing exactly what it wrote before.
+ */
+export function localDateTimeToIso(value: string): string | null {
+  const match = DATETIME_LOCAL.exec(value);
+  if (match === null) return endOfLocalDayIso(value);
+  return composeLocalDateTimeIso(`${match[1]}-${match[2]}-${match[3]}`, `${match[4]}:${match[5]}`);
+}
+
+/**
+ * Reverse of `localDateTimeToIso`, for prefills: an ISO datetime → the
+ * picker value. A moment sitting on the date-only sentinel collapses to
+ * 'YYYY-MM-DD', so opening a legacy row and saving it changes nothing (and
+ * its chip keeps the plain-date wording).
+ */
+export function localDateTimeKey(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const date = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+  const time = `${pad(at.getHours())}:${pad(at.getMinutes())}`;
+  return time === DATE_ONLY_DEADLINE_HHMM ? date : `${date}T${time}`;
+}
+
 /**
  * Strict 'YYYY-MM-DD' parse: the regex gates the shape, then a Date
  * round-trip rejects impossible dates (month 13, Feb 30, … — the JS
@@ -541,8 +570,8 @@ export function validateForm(form: FormKind, fields: FormFields): string | null 
   if (fields.expectedBy !== '' && DATE_ONLY.exec(fields.expectedBy) === null) {
     return '日期格式应为 YYYY-MM-DD';
   }
-  if (fields.deadline !== '' && DATE_ONLY.exec(fields.deadline) === null) {
-    return '日期格式应为 YYYY-MM-DD';
+  if (fields.deadline !== '' && localDateTimeToIso(fields.deadline) === null) {
+    return '截止格式应为 YYYY-MM-DD 或 YYYY-MM-DDTHH:mm';
   }
   switch (form) {
     case 'reference':
@@ -696,7 +725,7 @@ export function buildFormSubmission(
         startsAt,
         estMinutes: fields.estMinutes as number,
         value: fields.value,
-        deadline: fields.deadline !== '' ? (endOfLocalDayIso(fields.deadline) ?? undefined) : undefined,
+        deadline: fields.deadline !== '' ? (localDateTimeToIso(fields.deadline) ?? undefined) : undefined,
         contextIds: fields.contextIds,
       };
       if (mode === 'clarify') {
@@ -720,7 +749,7 @@ export function buildFormSubmission(
         // let the db layer apply the default (3) / keep the re-clarify old
         // value. Clarified path: the user-set value.
         ...(twoMinute ? {} : { value: fields.value }),
-        deadline: fields.deadline !== '' ? (endOfLocalDayIso(fields.deadline) ?? undefined) : undefined,
+        deadline: fields.deadline !== '' ? (localDateTimeToIso(fields.deadline) ?? undefined) : undefined,
         contextIds: fields.contextIds,
       };
       if (mode === 'clarify') {

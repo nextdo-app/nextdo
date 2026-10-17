@@ -244,7 +244,32 @@ A rule generating a recurring action (Proposal §7).
   | Snooze (any) | = the snooze target time | `normal` |
   | CalendarAction with `startsAt` within 60 min | `startsAt − 15 min` | `important` |
   | Habit window closing | `windowEnd − 30 min` (if before window end) | `normal` |
+  | Deadline reminder (task 10-17 — the action form's 「提醒时间」) | = the moment the user picked; a past moment creates nothing | `normal` |
   | Repeated skips / "do nothing" nagging | **never** — forbidden by Proposal §6.4 | — |
+- **The deadline reminder (task 10-17)** is the one creator driven by a FORM
+  rather than a transaction rule: the action forms carry an optional
+  「提醒时间」 (`apps/mobile/hooks/use-action-reminder.ts` +
+  `apps/mobile/lib/datetime-field.ts`), pre-filled from the deadline — the same
+  moment when it has a time, that day at 10:00
+  (`DEFAULT_DATE_ONLY_REMINDER_HHMM`) when it is date-only, nothing when that
+  prefilled moment already passed — and the save reconciles the row in the SAME
+  transaction as the action write: cancel the action's scheduled rows, arm the
+  new one (`reconcileReminder` in `packages/db/src/queries/actions.ts`).
+  `addNextAction` / `updateNextAction` take an optional `reminderAt` for this;
+  a caller that passes nothing (a rename, a re-clarify) leaves the row alone, so
+  a snooze reminder survives edits that have nothing to do with it. One action
+  therefore has at most one pending reminder.
+- **Project reminders do not exist** — `actionKind` is
+  `next | habit | calendar`, and adding `project` is deliberately deferred: an
+  unknown kind written into the synced `reminders` table is read by OLDER
+  clients as an orphan (no join match) and their delivery layer cancels its
+  local notification.
+- **Deadline shape (task 10-17)**: `deadline` is always an exact ISO moment. A
+  date-only pick is stored as that day's local 23:59:59 (the
+  `DATE_ONLY_DEADLINE_HHMM` sentinel in `packages/core/domain/deadline.ts`) —
+  which is what every pre-existing row already carried, so there is **no
+  migration**. The sentinel is what the chip reads back as 「今天截止 / 还剩 N
+  天」; a deadline with a real time spells the time out (「今天 18:00 截止」).
 - **Notification actions** (Proposal §8: 完成 / 推迟 / 跳过 in the notification itself).
   A notification deep-links into the app and applies the **same transaction** as the
   in-app equivalent:
