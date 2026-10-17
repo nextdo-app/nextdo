@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/10-17-deadline-time-reminder/research/deadline-and-reminder-surface.md", "reason": "截止/提醒的现状接触面（表、事务、投递、同步）"}
+{"file": ".trellis/spec/domain/domain-model.md", "reason": "Reminder 与 deadline 的领域语义"}
+{"file": ".trellis/spec/app/component-guidelines.md", "reason": "Forms：日期时间一律用 picker、字段值形状约定"}
