@@ -201,9 +201,11 @@ export interface ClarifyResult {
 
 /** Re-clarify answers: the decision table from question 2 onwards. */
 export interface ReclarifyAnswers {
-  /** Q2: 需要多个步骤吗？ */
-  multipleSteps: boolean;
-  /** Required when `multipleSteps`: the project outcome. */
+  /** Q2: 这件事属于某个项目吗？ (wizard q2) */
+  inProject: boolean;
+  /** Q3, `inProject` only: 新建项目还是加到已有项目？ (wizard q2b) */
+  projectChoice?: 'new' | 'existing';
+  /** Required when `projectChoice === 'new'`: the project outcome. */
   projectOutcome?: string;
   /** Q3: 约 2 分钟内能完成吗？ */
   twoMinutes: boolean;
@@ -214,10 +216,11 @@ export interface ReclarifyAnswers {
   /** Q5: 必须在特定日期/时间执行吗？ */
   fixedTime: boolean;
   /**
-   * Q2b: 它属于哪个项目？ — three-state: non-empty string = attach to the
-   * given (validated) project; `null` = explicit "not in a project" (detach
-   * — the replacement row has no project); `undefined` = not asked
-   * (defensive — keep the old row's project).
+   * Required when `projectChoice === 'existing'` (wizard q2c) — three-state:
+   * non-empty string = attach to the given (validated) project; `null` =
+   * explicit "不属于项目" (detach — the replacement row has no project);
+   * `undefined` = not asked (defensive — keep the old row's project; the
+   * wizard always answers).
    */
   projectId?: string | null;
 }
@@ -358,7 +361,7 @@ export async function applyClarify(
   const outcome = classifyInboxItem(answers);
   const base = { nowIso, title: inbox.title, sourceInboxId: inbox.id };
 
-  // Q2b attach: validate the target project BEFORE the transaction — a
+  // Q2c attach: validate the target project BEFORE the transaction — a
   // failure throws without any write (same rule as the answer validation).
   const attachProject =
     outcome.kind === 'next-action' &&
@@ -545,7 +548,7 @@ export async function reclarifyAction(
   // table is re-entered at question 2.
   const outcome = classifyInboxItem({ actionable: true, ...answers });
 
-  // Q2b attach: validate the target project BEFORE the transaction (a
+  // Q2c attach: validate the target project BEFORE the transaction (a
   // failure throws without any write — the old action row stays untouched).
   const attachProject =
     outcome.kind === 'next-action' &&
@@ -623,9 +626,9 @@ export async function reclarifyAction(
         break;
       }
       case 'next-action': {
-        // Q2b three-state: attach (non-empty string) / detach (null — or
+        // q2c three-state: attach (non-empty string) / detach (null — or
         // '', defensively treated as an explicit no-attach) / keep the old
-        // attachment (undefined — defensive; the wizard always asks Q2b).
+        // attachment (undefined — defensive; the wizard always answers q2).
         const actionBase =
           attachProject !== null
             ? {

@@ -3,7 +3,7 @@ import { ValidationNextdoError } from '../lib/errors';
 
 const base: ClarifyAnswers = {
   actionable: true,
-  multipleSteps: false,
+  inProject: false,
   twoMinutes: false,
   myResponsibility: true,
   fixedTime: false,
@@ -42,59 +42,116 @@ describe('classifyInboxItem — Q1 non-actionable branches', () => {
   });
 });
 
-describe('classifyInboxItem — Q2 multiple steps', () => {
-  it('project with an outcome', () => {
+describe('classifyInboxItem — Q2 in-project / Q2b new vs existing', () => {
+  it('new project with an outcome → project', () => {
     expect(
-      classifyInboxItem({ ...base, multipleSteps: true, projectOutcome: '论文通过答辩' }),
+      classifyInboxItem({
+        ...base,
+        inProject: true,
+        projectChoice: 'new',
+        projectOutcome: '论文通过答辩',
+      }),
     ).toEqual({ kind: 'project' });
   });
 
-  it('project without an outcome → project.needs-outcome', () => {
+  it('new project without an outcome → project.needs-outcome', () => {
     expect(() =>
-      classifyInboxItem({ ...base, multipleSteps: true, projectOutcome: '   ' }),
+      classifyInboxItem({ ...base, inProject: true, projectChoice: 'new', projectOutcome: '   ' }),
     ).toThrow(ValidationNextdoError);
     expect(() =>
-      classifyInboxItem({ ...base, multipleSteps: true, projectOutcome: '   ' }),
+      classifyInboxItem({ ...base, inProject: true, projectChoice: 'new', projectOutcome: '   ' }),
     ).toThrow('A project requires an outcome');
-    expect(() => classifyInboxItem({ ...base, multipleSteps: true })).toThrow(
-      ValidationNextdoError,
-    );
     let err: unknown;
     try {
-      classifyInboxItem({ ...base, multipleSteps: true });
+      classifyInboxItem({ ...base, inProject: true, projectChoice: 'new' });
     } catch (e) {
       err = e;
     }
     expect((err as ValidationNextdoError).code).toBe('project.needs-outcome');
   });
-});
 
-describe('classifyInboxItem — Q2b project attach', () => {
-  it('a non-empty projectId → next-action (project-attach)', () => {
-    expect(classifyInboxItem({ ...base, projectId: 'p-1' })).toEqual({
-      kind: 'next-action',
-      source: 'project-attach',
-    });
-  });
-
-  it('priority: projectId beats twoMinutes (attach skips Q3–Q5)', () => {
+  it('existing project with an id → next-action (project-attach)', () => {
     expect(
-      classifyInboxItem({ ...base, projectId: 'p-1', twoMinutes: true, completedOnTheSpot: false }),
+      classifyInboxItem({
+        ...base,
+        inProject: true,
+        projectChoice: 'existing',
+        projectId: 'p-1',
+      }),
     ).toEqual({ kind: 'next-action', source: 'project-attach' });
   });
 
-  it('priority: multipleSteps beats projectId', () => {
-    expect(
-      classifyInboxItem({ ...base, multipleSteps: true, projectOutcome: '跑完 baseline', projectId: 'p-1' }),
-    ).toEqual({ kind: 'project' });
+  it('existing project without an id → clarify.project-required', () => {
+    for (const projectId of [undefined, null, ''] as const) {
+      let err: unknown;
+      try {
+        classifyInboxItem({ ...base, inProject: true, projectChoice: 'existing', projectId });
+      } catch (e) {
+        err = e;
+      }
+      expect((err as ValidationNextdoError).code).toBe('clarify.project-required');
+    }
   });
 
-  it('null / undefined / empty string fall through to the regular chain', () => {
+  it('in-project without a choice → clarify.incomplete (no implicit branch)', () => {
+    let err: unknown;
+    try {
+      classifyInboxItem({ ...base, inProject: true });
+    } catch (e) {
+      err = e;
+    }
+    expect((err as ValidationNextdoError).code).toBe('clarify.incomplete');
+  });
+
+  it('attach skips Q3–Q5: twoMinutes / myResponsibility / fixedTime do not matter', () => {
+    expect(
+      classifyInboxItem({
+        ...base,
+        inProject: true,
+        projectChoice: 'existing',
+        projectId: 'p-1',
+        twoMinutes: true,
+        completedOnTheSpot: false,
+      }),
+    ).toEqual({ kind: 'next-action', source: 'project-attach' });
+    expect(
+      classifyInboxItem({
+        ...base,
+        inProject: true,
+        projectChoice: 'existing',
+        projectId: 'p-1',
+        myResponsibility: false,
+      }),
+    ).toEqual({ kind: 'next-action', source: 'project-attach' });
+  });
+
+  it('a new-project choice beats a stray projectId', () => {
+    expect(
+      classifyInboxItem({
+        ...base,
+        inProject: true,
+        projectChoice: 'new',
+        projectOutcome: '跑完 baseline',
+        projectId: 'p-1',
+      }),
+    ).toEqual({ kind: 'project' });
+  });
+});
+
+describe('classifyInboxItem — 不属于项目 falls through to the regular chain', () => {
+  it('inProject false → next-action (clarified)', () => {
+    expect(classifyInboxItem(base)).toEqual({ kind: 'next-action', source: 'clarified' });
+  });
+
+  it('a stray projectId alongside inProject false is ignored', () => {
+    expect(classifyInboxItem({ ...base, projectId: 'p-1' })).toEqual({
+      kind: 'next-action',
+      source: 'clarified',
+    });
     expect(classifyInboxItem({ ...base, projectId: null })).toEqual({
       kind: 'next-action',
       source: 'clarified',
     });
-    expect(classifyInboxItem(base)).toEqual({ kind: 'next-action', source: 'clarified' });
     expect(classifyInboxItem({ ...base, projectId: '' })).toEqual({
       kind: 'next-action',
       source: 'clarified',

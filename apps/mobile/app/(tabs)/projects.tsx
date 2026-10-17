@@ -21,12 +21,11 @@ import { useState } from 'react';
 import { FlatList, KeyboardAvoidingView, Platform, Pressable, Text, TextInput, View } from 'react-native';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { router } from 'expo-router';
-import { Button, Card, ContextChip, EmptyState, ProgressBar, Tag, ValueChips, cn } from '@nextdo/ui';
+import { Button, Card, EmptyState, ProgressBar, Tag, ValueChips, cn } from '@nextdo/ui';
 import type { ProjectCard } from '@nextdo/db';
 import type { Value } from '@nextdo/core';
 import { useProjectCards, isProjectStalled } from '@/hooks/use-project-cards';
 import { useAddProject } from '@/hooks/use-add-project';
-import { useContexts } from '@/hooks/use-contexts';
 import { useAppClock } from '@/hooks/use-app-clock';
 import { DateTimePicker } from '@/components/datetime-picker';
 import { DeadlineChip } from '@/components/deadline-chip';
@@ -163,11 +162,9 @@ function FilterChip({
 function ProjectCardRow({
   card,
   now,
-  contextName,
 }: {
   card: ProjectCard;
   now: Date;
-  contextName: (id: string) => string;
 }) {
   const total = card.openCount + card.completedCount;
   const missingNext = card.status === 'active' && card.openCount === 0;
@@ -224,13 +221,6 @@ function ProjectCardRow({
             <Text className="mt-1 font-sans text-sm font-medium leading-snug text-ink dark:text-ink-dark" numberOfLines={2}>
               {card.nextAction.title}
             </Text>
-            {card.nextAction.contextIds.length > 0 ? (
-              <View className="mt-1.5 flex-row flex-wrap gap-1.5">
-                {card.nextAction.contextIds.map((id) => (
-                  <ContextChip key={id} name={contextName(id)} />
-                ))}
-              </View>
-            ) : null}
           </View>
         ) : null}
 
@@ -261,16 +251,11 @@ function ProjectCardRow({
 
 export default function ProjectsScreen() {
   const { data: cards, error } = useProjectCards();
-  const { data: contexts } = useContexts();
   const now = useAppClock();
   const [showForm, setShowForm] = useState(false);
   const [filter, setFilter] = useState<FilterKind>('active');
   const insets = useAppInsets();
   const topPadding = Math.max(insets.top, 16);
-  // next-action context ids → display names (unknown ids fall back to the id).
-  const contextName = (id: string) =>
-    contexts?.find((entry) => entry.id === id)?.name ?? id;
-
   const activeCards = cards.filter((card) => card.status === 'active');
   const noNextCards = activeCards.filter((card) => card.openCount === 0);
   const archivedCards = cards.filter((card) => card.status !== 'active');
@@ -358,7 +343,7 @@ export default function ProjectsScreen() {
             keyExtractor={(item) => item.id}
             contentContainerClassName="gap-2.5"
             renderItem={({ item }) => (
-              <ProjectCardRow card={item} now={now} contextName={contextName} />
+              <ProjectCardRow card={item} now={now} />
             )}
           />
         )}

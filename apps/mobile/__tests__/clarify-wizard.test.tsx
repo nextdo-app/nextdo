@@ -52,7 +52,9 @@ import { mockExpoNotifications } from './mocks/expo-notifications';
 jest.mock('@/hooks/use-projects', () => ({ useProjects: jest.fn() }));
 
 // The context multi-select's data (design §3.2.6).
-jest.mock('@/hooks/use-contexts', () => ({ useContexts: jest.fn() }));
+jest.mock('@/hooks/use-app-clock', () => ({
+  useAppClock: () => new Date(2026, 9, 17, 9, 0, 0),
+}));
 
 jest.mock('expo-router', () => ({
   router: {
@@ -74,7 +76,6 @@ import { ValidationNextdoError } from '@nextdo/core';
 import { applyClarify, listInboxItems, listNextActions, reclarifyAction } from '@nextdo/db';
 import { router } from 'expo-router';
 import { useProjects } from '@/hooks/use-projects';
-import { useContexts } from '@/hooks/use-contexts';
 import { formatLocalDateTime } from '@/lib/format';
 import { ClarifyWizard, WizardBody } from '../components/clarify-wizard';
 
@@ -83,7 +84,6 @@ const mockedReclarifyAction = reclarifyAction as jest.Mock;
 const mockedListInboxItems = listInboxItems as jest.Mock;
 const mockedListNextActions = listNextActions as jest.Mock;
 const mockedUseProjects = useProjects as jest.Mock;
-const mockedUseContexts = useContexts as jest.Mock;
 
 const INBOX_ITEM = {
   id: 'inbox-1',
@@ -137,16 +137,10 @@ const ON_HOLD_PROJECT = {
   hasOpenAction: false,
 };
 
-const CONTEXTS = [
-  { id: 'ctx-computer', createdAt: '2026-09-22T02:00:00.000Z', updatedAt: '2026-09-22T02:00:00.000Z', deletedAt: null, name: 'computer' },
-  { id: 'ctx-phone', createdAt: '2026-09-22T02:00:00.000Z', updatedAt: '2026-09-22T02:00:00.000Z', deletedAt: null, name: 'phone' },
-  { id: 'ctx-home', createdAt: '2026-09-22T02:00:00.000Z', updatedAt: '2026-09-22T02:00:00.000Z', deletedAt: null, name: 'home' },
-];
 
 beforeEach(() => {
   jest.clearAllMocks();
   mockedUseProjects.mockReturnValue({ data: [ACTIVE_PROJECT, ON_HOLD_PROJECT], error: null });
-  mockedUseContexts.mockReturnValue({ data: CONTEXTS, error: null, add: jest.fn(async () => undefined), reload: jest.fn() });
   mockedListInboxItems.mockResolvedValue([INBOX_ITEM]);
   mockedListNextActions.mockResolvedValue([NEXT_ACTION]);
   mockedApplyClarify.mockResolvedValue({ inboxId: 'inbox-1', outcome: { kind: 'next-action', source: 'clarified' }, createdIds: ['a1'] });
@@ -161,7 +155,6 @@ function renderWizard(
     defaultTitle?: string;
     currentProjectId?: string | null;
     capturedAt?: string | null;
-    initialContextIds?: string[];
   } = {},
 ) {
   return render(
@@ -172,14 +165,12 @@ function renderWizard(
       defaultTitle={props.defaultTitle ?? '订下周去杭州的高铁票'}
       currentProjectId={props.currentProjectId ?? null}
       capturedAt={props.capturedAt ?? null}
-      initialContextIds={props.initialContextIds ?? []}
     />,
   );
 }
 
 /** q2 → q2b → q3 → q4 → q5 → the action form (both modes re-enter at q2). */
 function walkToActionForm() {
-  fireEvent.press(screen.getByText('否，一步能完成'));
   fireEvent.press(screen.getByText('不属于项目'));
   expect(screen.getAllByText('大约 2 分钟内能完成吗？').length).toBeGreaterThan(0);
   fireEvent.press(screen.getByText('否'));
@@ -197,12 +188,10 @@ describe('WizardBody — step walking (clarify)', () => {
     expect(screen.getAllByText('可以变成下一步行动吗？').length).toBeGreaterThan(0);
 
     fireEvent.press(screen.getByText('可以，是行动'));
-    expect(screen.getAllByText('需要多个步骤才能完成吗？').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('这件事属于某个项目吗？').length).toBeGreaterThan(0);
 
-    fireEvent.press(screen.getByText('是，拆成项目'));
-    // Multi-step items walk Q2b too (它属于哪个项目？) — the attachable
-    // project rows + 新建项目. 不属于项目 is hidden for multi-step.
-    expect(screen.getAllByText('它属于哪个项目？').length).toBeGreaterThan(0);
+    fireEvent.press(screen.getByText('属于某个项目'));
+    // q2b offers exactly two equal-weight answers; 不属于项目 lives back at q2.
     expect(screen.queryByText('不属于项目')).toBeNull();
     fireEvent.press(screen.getByText('新建项目'));
     expect(screen.getByText('项目名')).toBeTruthy();
@@ -232,7 +221,8 @@ describe('WizardBody — step walking (clarify)', () => {
     expect(call.inboxId).toBe('inbox-1');
     expect(call.answers).toMatchObject({
       actionable: true,
-      multipleSteps: true,
+      inProject: true,
+      projectChoice: 'new',
       projectOutcome: '完成订票',
       twoMinutes: false,
       myResponsibility: true,
@@ -260,7 +250,7 @@ describe('WizardBody — step walking (clarify)', () => {
 
       // Click "可以，是行动" to go to Q2
       fireEvent.press(actionBtn);
-      expect(screen.getAllByText('需要多个步骤才能完成吗？').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('这件事属于某个项目吗？').length).toBeGreaterThan(0);
 
       // At Q2, both card bottom and header have "← 上一步"
       const backButtons = screen.getAllByText('← 上一步');
@@ -283,7 +273,7 @@ describe('WizardBody — step walking (clarify)', () => {
     it('form step supports stepping back to the previous question', () => {
       renderWizard();
       fireEvent.press(screen.getByText('可以，是行动'));
-      fireEvent.press(screen.getByText('否，一步能完成'));
+      fireEvent.press(screen.getByText('属于某个项目'));
       fireEvent.press(screen.getByText('新建项目'));
 
       // Now at project form
@@ -292,7 +282,7 @@ describe('WizardBody — step walking (clarify)', () => {
 
       // Press "上一步" in form
       fireEvent.press(screen.getByText('上一步'));
-      expect(screen.getAllByText('它属于哪个项目？').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('新建项目，还是加到已有项目？').length).toBeGreaterThan(0);
     });
   });
 
@@ -304,8 +294,9 @@ describe('WizardBody — step walking (clarify)', () => {
     });
     renderWizard();
     fireEvent.press(screen.getByText('可以，是行动'));
-    fireEvent.press(screen.getByText('是，拆成项目'));
-    // The attachable project row — its title + value are the row text.
+    fireEvent.press(screen.getByText('属于某个项目'));
+    fireEvent.press(screen.getByText('添加到已有项目'));
+    // The picker row — its title + value are the row text.
     expect(screen.queryByText('不属于项目')).toBeNull();
     fireEvent.press(screen.getByText('毕业论文实验（价值 4）'));
     // The action form with the attachment fixed (the preview shows 所属项目).
@@ -321,11 +312,12 @@ describe('WizardBody — step walking (clarify)', () => {
     fireEvent.press(screen.getByText('确认保存'));
     await waitFor(() => expect(mockedApplyClarify).toHaveBeenCalledTimes(1));
     const call = mockedApplyClarify.mock.calls[0][1];
-    // project-attach encoding: NO new project (multipleSteps=false) +
-    // the existing project id — value defaults to the project's (4).
+    // project-attach encoding: inProject + existing + the project id —
+    // value defaults to the project's (4).
     expect(call.answers).toMatchObject({
       actionable: true,
-      multipleSteps: false,
+      inProject: true,
+      projectChoice: 'existing',
       twoMinutes: false,
       myResponsibility: true,
       fixedTime: false,
@@ -338,8 +330,7 @@ describe('WizardBody — step walking (clarify)', () => {
     mockedApplyClarify.mockResolvedValue({ inboxId: 'inbox-1', outcome: { kind: 'do-now-completed' }, createdIds: ['r1'] });
     renderWizard();
     fireEvent.press(screen.getByText('可以，是行动'));
-    fireEvent.press(screen.getByText('否，一步能完成'));
-    // q2 (no) now leads to Q2b — opt out of a project to reach Q3.
+    // 不属于项目 goes straight to Q3 — no project step in between.
     fireEvent.press(screen.getByText('不属于项目'));
     expect(screen.getAllByText('大约 2 分钟内能完成吗？').length).toBeGreaterThan(0);
     fireEvent.press(screen.getByText('是，2 分钟内'));
@@ -350,7 +341,7 @@ describe('WizardBody — step walking (clarify)', () => {
     const call = mockedApplyClarify.mock.calls[0][1];
     expect(call.answers).toMatchObject({
       actionable: true,
-      multipleSteps: false,
+      inProject: false,
       twoMinutes: true,
       completedOnTheSpot: true,
       myResponsibility: true,
@@ -363,8 +354,7 @@ describe('WizardBody — step walking (clarify)', () => {
     mockedApplyClarify.mockRejectedValue(new ValidationNextdoError('action.not-found', 'No live next action with id x'));
     renderWizard();
     fireEvent.press(screen.getByText('可以，是行动'));
-    fireEvent.press(screen.getByText('否，一步能完成'));
-    // q2 (no) now leads to Q2b — opt out of a project to reach Q3.
+    // 不属于项目 goes straight to Q3 — no project step in between.
     fireEvent.press(screen.getByText('不属于项目'));
     expect(screen.getAllByText('大约 2 分钟内能完成吗？').length).toBeGreaterThan(0);
     fireEvent.press(screen.getByText('否'));
@@ -387,7 +377,7 @@ describe('WizardBody — reclarify entry', () => {
   it('re-enters at q2 (no q1) and submits reclarifyAction', async () => {
     renderWizard({ mode: 'reclarify', id: 'act-1', actionKind: 'next', defaultTitle: '写季度总结', currentProjectId: 'proj-1' });
     expect(screen.queryByText('可以变成下一步行动吗？')).toBeNull();
-    expect(screen.getAllByText('需要多个步骤才能完成吗？').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('这件事属于某个项目吗？').length).toBeGreaterThan(0);
 
     walkToActionForm();
     fireEvent.press(screen.getByLabelText('20 分钟'));
@@ -400,7 +390,7 @@ describe('WizardBody — reclarify entry', () => {
     expect(call.actionKind).toBe('next');
     expect(call.actionId).toBe('act-1');
     expect(call.answers).toMatchObject({
-      multipleSteps: false,
+      inProject: false,
       twoMinutes: false,
       myResponsibility: true,
       fixedTime: false,
@@ -411,23 +401,23 @@ describe('WizardBody — reclarify entry', () => {
 });
 
 describe('WizardBody — progress line + GTD 决策摘要 (design §3.4)', () => {
-  it('clarify: 步骤 1/7 at q1, 步骤 2/7 after answering q1', () => {
+  it('clarify: 步骤 1/6 at q1, 步骤 2/6 after answering q1', () => {
     renderWizard();
-    expect(screen.getByText('步骤 1/7')).toBeTruthy();
-    fireEvent.press(screen.getByText('可以，是行动'));
-    expect(screen.getByText('步骤 2/7')).toBeTruthy();
-  });
-
-  it('reclarify entry: 步骤 1/6', () => {
-    renderWizard({ mode: 'reclarify', id: 'act-1', actionKind: 'next', currentProjectId: 'proj-1' });
     expect(screen.getByText('步骤 1/6')).toBeTruthy();
+    fireEvent.press(screen.getByText('可以，是行动'));
+    expect(screen.getByText('步骤 2/6')).toBeTruthy();
   });
 
-  it('the form step reaches 步骤 7/7 on the full clarify chain', () => {
+  it('reclarify entry: 步骤 1/5', () => {
+    renderWizard({ mode: 'reclarify', id: 'act-1', actionKind: 'next', currentProjectId: 'proj-1' });
+    expect(screen.getByText('步骤 1/5')).toBeTruthy();
+  });
+
+  it('the form step reaches 步骤 6/6 on the full clarify chain', () => {
     renderWizard();
     fireEvent.press(screen.getByText('可以，是行动'));
     walkToActionForm();
-    expect(screen.getByText('步骤 7/7')).toBeTruthy();
+    expect(screen.getByText('步骤 6/6')).toBeTruthy();
   });
 
   it('decision summary: collapsed by default, expandable on tap to show question chain', () => {
@@ -452,7 +442,7 @@ describe('WizardBody — progress line + GTD 决策摘要 (design §3.4)', () =>
     fireEvent.press(screen.getByLabelText('展开GTD决策摘要'));
     expect(screen.queryByText('可以变成下一步行动吗？')).toBeNull();
     expect(screen.queryByText('那它更接近哪一类？')).toBeNull();
-    expect(screen.getAllByText('需要多个步骤才能完成吗？').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('这件事属于某个项目吗？').length).toBeGreaterThan(0);
   });
 });
 
@@ -528,100 +518,6 @@ describe('WizardBody — preview step (design §3.4)', () => {
   });
 });
 
-describe('WizardBody — context multi-select (design §3.4)', () => {
-  it('action form: two toggled chips appear in the preview and the submission', async () => {
-    renderWizard();
-    fireEvent.press(screen.getByText('可以，是行动'));
-    walkToActionForm();
-    expect(screen.getByText('在哪里做？（可多选，不选 = 随处可执行）')).toBeTruthy();
-
-    fireEvent.press(screen.getByLabelText('选择情境：computer'));
-    fireEvent.press(screen.getByLabelText('选择情境：phone'));
-    fireEvent.press(screen.getByLabelText('10 分钟'));
-    // Nothing selected yet → 随处可执行; with two chips → the two names.
-    fireEvent.press(screen.getByText('保存'));
-    expect(screen.getByText('决策摘要预览 · 归位就绪')).toBeTruthy();
-    expect(screen.getByText('computer')).toBeTruthy();
-    expect(screen.getByText('phone')).toBeTruthy();
-    expect(screen.queryByText('随处可执行')).toBeNull();
-    expect(screen.queryByText('home')).toBeNull();
-    expect(mockedApplyClarify).not.toHaveBeenCalled();
-
-    fireEvent.press(screen.getByText('确认保存'));
-    await waitFor(() => expect(mockedApplyClarify).toHaveBeenCalledTimes(1));
-    expect(mockedApplyClarify.mock.calls[0][1].target).toMatchObject({ contextIds: ['ctx-computer', 'ctx-phone'] });
-  });
-
-  it('no chips selected: the preview shows 随处可执行', async () => {
-    renderWizard();
-    fireEvent.press(screen.getByText('可以，是行动'));
-    walkToActionForm();
-    fireEvent.press(screen.getByLabelText('10 分钟'));
-    fireEvent.press(screen.getByText('保存'));
-    expect(screen.getByText('决策摘要预览 · 归位就绪')).toBeTruthy();
-    expect(screen.getByText('随处可执行')).toBeTruthy();
-  });
-
-  // Regression (found by running the app, 2026-10-07): the five default
-  // contexts are seeded SERVER-side (domain-model.md "Context" — the
-  // single-writer decision), so any client that has not connected to the
-  // sync backend yet has an EMPTY contexts table. The multi-select then
-  // rendered a bare 「在哪里做？」label over nothing — no chips, no empty
-  // state, and no way to create one from inside the wizard (only the Now
-  // screen's scene bar had that). A dead end.
-  // Context multi-select: scene management is centralized via /contexts
-  // route — inline quick-create is removed from the form to keep it clean.
-  it('no contexts: the multi-select explains the state and provides scene management entry', async () => {
-    mockedUseContexts.mockReturnValue({ data: [], error: null, add: jest.fn(async () => undefined), reload: jest.fn() });
-    renderWizard();
-    fireEvent.press(screen.getByText('可以，是行动'));
-    walkToActionForm();
-
-    // The empty state says what an empty selection means…
-    expect(screen.getByText(/还没有场景/)).toBeTruthy();
-    expect(screen.getByText(/不选即随处可执行/)).toBeTruthy();
-
-    // The management entry is reachable via header action.
-    expect(screen.getByLabelText('管理场景')).toBeTruthy();
-    expect(screen.queryByLabelText('新建场景')).toBeNull();
-    expect(screen.queryByLabelText('新场景名称')).toBeNull();
-  });
-
-  it('the 管理场景 button navigates to /contexts', async () => {
-    renderWizard();
-    fireEvent.press(screen.getByText('可以，是行动'));
-    walkToActionForm();
-
-    fireEvent.press(screen.getByLabelText('管理场景'));
-    expect(router.push).toHaveBeenCalledWith('/contexts');
-  });
-
-  it('does not render inline quick-create in the form', async () => {
-    renderWizard();
-    fireEvent.press(screen.getByText('可以，是行动'));
-    walkToActionForm();
-
-    expect(screen.queryByLabelText('新建场景')).toBeNull();
-    expect(screen.queryByLabelText('新场景名称')).toBeNull();
-  });
-
-  it('triggers reload on focus so returning from /contexts reflects newly created scenes', async () => {
-    const reload = jest.fn();
-    mockedUseContexts.mockReturnValue({
-      data: [{ id: 'ctx-1', name: '办公室' }],
-      error: null,
-      add: jest.fn(async () => undefined),
-      reload,
-    });
-    renderWizard();
-    fireEvent.press(screen.getByText('可以，是行动'));
-    walkToActionForm();
-
-    expect(screen.getByText('办公室')).toBeTruthy();
-    expect(reload).toHaveBeenCalled();
-  });
-});
-
 describe('WizardBody — calendar form (design §15: date/time pickers, no typed ISO)', () => {
   it('q5-yes → pickers fill 开始日期/开始时间; the preview shows 开始; submit carries the composed ISO', async () => {
     mockedApplyClarify.mockResolvedValue({
@@ -631,7 +527,6 @@ describe('WizardBody — calendar form (design §15: date/time pickers, no typed
     });
     renderWizard();
     fireEvent.press(screen.getByText('可以，是行动'));
-    fireEvent.press(screen.getByText('否，一步能完成'));
     fireEvent.press(screen.getByText('不属于项目'));
     fireEvent.press(screen.getByText('否'));
     fireEvent.press(screen.getByText('是，我的事'));
@@ -687,7 +582,7 @@ describe('ClarifyWizard — title loading', () => {
 
   it('reclarify loads the existing action title into the forms', async () => {
     render(<ClarifyWizard mode="reclarify" id="act-1" actionKind="next" />);
-    await waitFor(() => expect(screen.getAllByText('需要多个步骤才能完成吗？').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText('这件事属于某个项目吗？').length).toBeGreaterThan(0));
     walkToActionForm();
     const titleInput = screen.getByDisplayValue('写季度总结');
     expect(titleInput).toBeTruthy();
@@ -707,47 +602,52 @@ describe('ClarifyWizard — title loading', () => {
     expect(screen.queryByText('加载中…')).toBeNull();
   });
 
-  it('reclarify: the existing action contextIds prefill the form chips', async () => {
+  it('reclarify no longer shows a 场景 multi-select (#46: the feature is offline)', async () => {
     mockedListNextActions.mockResolvedValue([{ ...NEXT_ACTION, contextIds: ['ctx-computer', 'ctx-phone'] }]);
     render(<ClarifyWizard mode="reclarify" id="act-1" actionKind="next" />);
-    await waitFor(() => expect(screen.getAllByText('需要多个步骤才能完成吗？').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText('这件事属于某个项目吗？').length).toBeGreaterThan(0));
     walkToActionForm();
 
-    expect(screen.getByLabelText('选择情境：computer').props.accessibilityState.selected).toBe(true);
-    expect(screen.getByLabelText('选择情境：phone').props.accessibilityState.selected).toBe(true);
-    expect(screen.getByLabelText('选择情境：home').props.accessibilityState.selected).toBe(false);
+    // No scene label, no scene chips, no management entry.
+    expect(screen.queryByText(/在哪里做/)).toBeNull();
+    expect(screen.queryByLabelText('选择情境：computer')).toBeNull();
+    expect(screen.queryByLabelText('管理场景')).toBeNull();
 
     fireEvent.press(screen.getByLabelText('20 分钟'));
     fireEvent.press(screen.getByText('保存'));
-    expect(screen.getByText('computer')).toBeTruthy();
-    expect(screen.getByText('phone')).toBeTruthy();
+    expect(screen.queryByText('computer')).toBeNull();
     fireEvent.press(screen.getByText('确认保存'));
     await waitFor(() => expect(mockedReclarifyAction).toHaveBeenCalledTimes(1));
-    expect(mockedReclarifyAction.mock.calls[0][1].target).toMatchObject({
-      contextIds: ['ctx-computer', 'ctx-phone'],
-    });
+    // The submission no longer carries contextIds at all.
+    expect('contextIds' in mockedReclarifyAction.mock.calls[0][1].target).toBe(false);
   });
 });
 
-describe('WizardBody — q2b project ownership', () => {
+describe('WizardBody — project ownership (q2 → q2b → q2c)', () => {
   function walkToQ2b(mode: 'clarify' | 'reclarify' = 'clarify') {
     renderWizard({ mode, currentProjectId: mode === 'reclarify' ? 'proj-1' : null });
     if (mode === 'clarify') fireEvent.press(screen.getByText('可以，是行动'));
     // Re-clarify re-enters at Q2 — there is no Q1.
-    fireEvent.press(screen.getByText('否，一步能完成'));
-    expect(screen.getAllByText('它属于哪个项目？').length).toBeGreaterThan(0);
+    fireEvent.press(screen.getByText('属于某个项目'));
+    expect(screen.getAllByText('新建项目，还是加到已有项目？').length).toBeGreaterThan(0);
+  }
+
+  function walkToQ2c(mode: 'clarify' | 'reclarify' = 'clarify') {
+    walkToQ2b(mode);
+    fireEvent.press(screen.getByText('添加到已有项目'));
+    expect(screen.getAllByText('加到哪个项目？').length).toBeGreaterThan(0);
   }
 
   it('lists only ACTIVE projects (value shown); on-hold is filtered out', () => {
-    walkToQ2b();
+    walkToQ2c();
     expect(screen.getByText('毕业论文实验（价值 4）')).toBeTruthy();
     expect(screen.queryByText(/搬家计划/)).toBeNull();
-    expect(screen.getByText('新建项目')).toBeTruthy();
-    expect(screen.getByText('不属于项目')).toBeTruthy();
+    // 「不属于项目」 is q2's answer now — the picker carries rows only.
+    expect(screen.queryByText('不属于项目')).toBeNull();
   });
 
   it('attaching opens the action form with the read-only project row and the value prefilled', async () => {
-    walkToQ2b();
+    walkToQ2c();
     fireEvent.press(screen.getByLabelText('挂到项目：毕业论文实验'));
     // The action form shows the fixed attachment (read-only) and skips Q3–Q5.
     expect(screen.getByText('所属项目：毕业论文实验')).toBeTruthy();
@@ -769,16 +669,15 @@ describe('WizardBody — q2b project ownership', () => {
   });
 
   it('re-clarify marks the action\'s current project (可保持 / 改挂 / 解除)', () => {
-    walkToQ2b('reclarify');
+    walkToQ2c('reclarify');
     expect(screen.getByText('当前')).toBeTruthy();
   });
 
-  it('no projects → only the two fallback buttons', () => {
+  it('no projects → the picker shows the empty state instead of rows', () => {
     mockedUseProjects.mockReturnValue({ data: [], error: null });
-    walkToQ2b();
+    walkToQ2c();
     expect(screen.queryByLabelText('挂到项目：毕业论文实验')).toBeNull();
-    expect(screen.getByText('新建项目')).toBeTruthy();
-    expect(screen.getByText('不属于项目')).toBeTruthy();
+    expect(screen.getByText(/还没有进行中的项目/)).toBeTruthy();
   });
 });
 
@@ -787,7 +686,6 @@ describe('WizardBody — done step (explicit exits, no auto-back)', () => {
     mockedApplyClarify.mockResolvedValue({ inboxId: 'inbox-1', outcome: { kind: 'do-now-completed' }, createdIds: ['r1'] });
     renderWizard();
     fireEvent.press(screen.getByText('可以，是行动'));
-    fireEvent.press(screen.getByText('否，一步能完成'));
     fireEvent.press(screen.getByText('不属于项目'));
     expect(screen.getAllByText('大约 2 分钟内能完成吗？').length).toBeGreaterThan(0);
     fireEvent.press(screen.getByText('是，2 分钟内'));
@@ -812,7 +710,6 @@ describe('WizardBody — done step (explicit exits, no auto-back)', () => {
   it('完成 → router.back (same shape in reclarify mode)', async () => {
     mockedReclarifyAction.mockResolvedValue({ outcome: { kind: 'do-now-completed' }, createdIds: [] });
     renderWizard({ mode: 'reclarify', id: 'act-1', actionKind: 'next', currentProjectId: 'proj-1' });
-    fireEvent.press(screen.getByText('否，一步能完成'));
     fireEvent.press(screen.getByText('不属于项目'));
     expect(screen.getAllByText('大约 2 分钟内能完成吗？').length).toBeGreaterThan(0);
     fireEvent.press(screen.getByText('是，2 分钟内'));
@@ -886,10 +783,16 @@ describe('WizardBody — keyboard navigation (desktop)', () => {
     fireEvent(screen.getByText(label), 'keyDown', { key, preventDefault: jest.fn() });
   }
 
-  it('opens on the first option with the ring lit, and no other option ringed', () => {
+  it('opens with NO ring, and the first key press lights the moved-to option', () => {
     renderWizard();
-    expect(ringOn('可以，是行动')).toContain('border-accent');
+    // Issue #44 R4: an option must not look preselected the moment a
+    // question appears — both answers carry the same neutral styling.
+    expect(ringOn('可以，是行动')).not.toContain('border-accent');
     expect(ringOn('不行')).not.toContain('border-accent');
+
+    pressKey('可以，是行动', 'ArrowDown');
+    expect(ringOn('不行')).toContain('border-accent');
+    expect(ringOn('可以，是行动')).not.toContain('border-accent');
   });
 
   it('↓ / ↑ move the ring and wrap around the ends', () => {
@@ -915,55 +818,60 @@ describe('WizardBody — keyboard navigation (desktop)', () => {
     expect(screen.getAllByText('那它更接近哪一类？').length).toBeGreaterThan(0);
   });
 
-  it('Enter on the untouched first option takes the 「可以」 branch', () => {
+  it('Enter before any arrow does nothing (no invisible selection)', () => {
     renderWizard();
     pressKey('可以，是行动', 'Enter');
-    expect(screen.getAllByText('需要多个步骤才能完成吗？').length).toBeGreaterThan(0);
+    // Still at q1 — Enter can only confirm an option that is lit.
+    expect(screen.getAllByText('可以变成下一步行动吗？').length).toBeGreaterThan(0);
+    expect(screen.queryByText('这件事属于某个项目吗？')).toBeNull();
+
+    // Once the list is engaged, Enter behaves exactly as before.
+    pressKey('可以，是行动', 'ArrowDown');
+    pressKey('可以，是行动', 'Enter');
+    expect(screen.getAllByText('那它更接近哪一类？').length).toBeGreaterThan(0);
   });
 
-  it('a new question resets the ring to its own first option', () => {
+  it('a new question starts unlit (the ring does not carry over)', () => {
     renderWizard();
     // Park the ring on q1's SECOND answer, then answer with the mouse.
     pressKey('可以，是行动', 'ArrowDown');
     fireEvent.press(screen.getByText('可以，是行动'));
 
-    // q2's own list starts at its own first answer — the ring does not carry
-    // over, and focus has already been handed back to the new question.
-    expect(ringOn('是，拆成项目')).toContain('border-accent');
-    expect(ringOn('否，一步能完成')).not.toContain('border-accent');
+    // q2 opens with both answers at equal weight — no preselection — and
+    // the first arrow lights q2's own first option.
+    expect(ringOn('属于某个项目')).not.toContain('border-accent');
+    expect(ringOn('不属于项目')).not.toContain('border-accent');
+    pressKey('属于某个项目', 'ArrowDown');
+    expect(ringOn('不属于项目')).toContain('border-accent');
   });
 
-  it('q2b: ↓ walks from the project rows into the fall-through answers', () => {
+  it('q2c: ↓ walks the project rows (no fall-through answers left in the list)', () => {
     mockedUseProjects.mockReturnValue({
       data: [ACTIVE_PROJECT, { ...ACTIVE_PROJECT, id: 'proj-3', title: '读书笔记', value: 3 }],
       error: null,
     });
     renderWizard();
     fireEvent.press(screen.getByText('可以，是行动'));
-    fireEvent.press(screen.getByText('否，一步能完成'));
+    fireEvent.press(screen.getByText('属于某个项目'));
+    fireEvent.press(screen.getByText('添加到已有项目'));
 
-    // Two projects + 新建项目 + 不属于项目 — the ring starts on the first row.
-    expect(ringOn('毕业论文实验（价值 4）')).toContain('border-accent');
+    // The picker opens unlit; the first ↓ lights the first row, and the
+    // second wraps forward through the rows only.
+    expect(ringOn('毕业论文实验（价值 4）')).not.toContain('border-accent');
     pressKey('毕业论文实验（价值 4）', 'ArrowDown');
     expect(ringOn('读书笔记（价值 3）')).toContain('border-accent');
     pressKey('读书笔记（价值 3）', 'ArrowDown');
-    expect(ringOn('新建项目')).toContain('border-accent');
-    pressKey('新建项目', 'ArrowDown');
-    expect(ringOn('不属于项目')).toContain('border-accent');
+    expect(ringOn('毕业论文实验（价值 4）')).toContain('border-accent');
+    // 「不属于项目」 belongs to q2 — the picker cannot land on it.
+    expect(screen.queryByText('不属于项目')).toBeNull();
   });
 
-  it('Enter on the last q2b answer submits that choice (the ring really moved)', () => {
-    mockedUseProjects.mockReturnValue({
-      data: [ACTIVE_PROJECT],
-      error: null,
-    });
+  it('q2: End + Enter takes the last answer (不属于项目 → the regular chain)', () => {
     renderWizard();
     fireEvent.press(screen.getByText('可以，是行动'));
-    fireEvent.press(screen.getByText('否，一步能完成'));
-    pressKey('毕业论文实验（价值 4）', 'End');
-    // End jumps to the LAST answer, not to the last project row.
+    pressKey('属于某个项目', 'End');
     expect(ringOn('不属于项目')).toContain('border-accent');
-    pressKey('毕业论文实验（价值 4）', 'Enter');
+    pressKey('属于某个项目', 'Enter');
     // 「不属于项目」 → q3 (the regular chain), not the project form.
     expect(screen.getAllByText('大约 2 分钟内能完成吗？').length).toBeGreaterThan(0);
   });

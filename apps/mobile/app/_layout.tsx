@@ -55,7 +55,6 @@ import { PowerSyncContext } from '@powersync/react';
 import { useReminderDelivery } from '@/hooks/use-reminder-delivery';
 import { IosInstallPrompt } from '@/components/ios-install-prompt';
 import { AutoUpdateNotifier } from '@/components/auto-update-dialog';
-import { NotificationOptinNotifier } from '@/components/notification-optin-dialog';
 import {
   clearOwnerToken,
   createPowerSyncConnector,
@@ -441,8 +440,6 @@ export default function RootLayout() {
         <Stack screenOptions={{ headerShown: false }} />
         <IosInstallPrompt />
         <AutoUpdateNotifier />
-        {/* 首次通知授权引导（issue #24 R1）——与上面两个一次性提示并列。 */}
-        <NotificationOptinNotifier />
       </PowerSyncProvider>
     </SafeAreaProvider>
   );

@@ -167,7 +167,7 @@ describe('desktop (tauri) delivery wiring', () => {
   it('delivers nothing while the in-app master switch is off (issue #24 R2)', async () => {
     seedPastRow('r-switch-off');
     __setNotificationSettingsStoreForTests(
-      memoryStoreWith({ masterEnabled: false, optInPromptSeen: true }),
+      memoryStoreWith({ masterEnabled: false }),
     );
 
     renderHook(() => useReminderDelivery());
@@ -186,7 +186,7 @@ describe('desktop (tauri) delivery wiring', () => {
   it('delivers on the reconcile the switch-on poke triggers (即时生效)', async () => {
     seedPastRow('r-switch-on');
     __setNotificationSettingsStoreForTests(
-      memoryStoreWith({ masterEnabled: false, optInPromptSeen: true }),
+      memoryStoreWith({ masterEnabled: false }),
     );
 
     renderHook(() => useReminderDelivery());

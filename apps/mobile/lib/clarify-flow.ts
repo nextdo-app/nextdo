@@ -2,9 +2,9 @@
  * The Clarify / Re-clarify wizard — a PURE state machine (design.md §4.3).
  *
  * The wizard walks core's Clarify decision table one question at a time
- * (Q1 actionable? → Q1b kind / Q2 multiple steps? → Q2b which project? →
- * Q3 ~2 min? → Q3b completed on the spot? / Q4 my responsibility? → Q5
- * fixed time?). This module holds:
+ * (Q1 actionable? → Q1b kind / Q2 in a project? → Q2b new vs existing →
+ * Q2c which project? → Q3 ~2 min? → Q3b completed on the spot? /
+ * Q4 my responsibility? → Q5 fixed time?). This module holds:
  *
  * - the reducer (`clarifyReducer`) — forwards only; the system back button
  *   walks the stack, the reducer never moves backwards;
@@ -29,7 +29,7 @@ export type FormKind = 'reference' | 'someday' | 'trash' | 'project' | 'waiting'
 
 /** The question ids of the Clarify decision table (the answered-history
  *  and the "GTD 决策摘要" card key off these). */
-export type QuestionId = 'q1' | 'q1b' | 'q2' | 'q2b' | 'q3' | 'q3b' | 'q4' | 'q5';
+export type QuestionId = 'q1' | 'q1b' | 'q2' | 'q2b' | 'q2c' | 'q3' | 'q3b' | 'q4' | 'q5';
 
 /** One answered question (design §3.1) — the "GTD 决策摘要" card's data:
  *  the question title + the button text the user actually tapped. */
@@ -44,8 +44,9 @@ export interface AnsweredQuestion {
  * `''` = unset for optional text/date fields; `estMinutes: null` = not
  * chosen yet. Dates are device-local `YYYY-MM-DD`, the calendar time is
  * `HH:mm` (composed into an ISO datetime at submission — see
- * `composeLocalDateTimeIso`). `contextIds` = the selected execution
- * contexts (`[]` = 随处可执行; re-clarify prefills the existing action's).
+ *  Composed into an ISO datetime at submission (see
+ *  `composeLocalDateTimeIso`). The 场景 multi-select was removed in issue #46
+ *  — submissions no longer carry `contextIds` (the db layer defaults to []).
  */
 export interface FormFields {
   title: string;
@@ -62,7 +63,6 @@ export interface FormFields {
   deadline: string;
   startsAtDate: string;
   startsAtTime: string;
-  contextIds: string[];
 }
 
 export interface WizardResult {
@@ -75,9 +75,6 @@ interface WizardBase {
   /** The InboxItem title (re-clarify: the existing action's title) — the
    *  default for every editable title field. */
   defaultTitle: string;
-  /** The existing action's context ids (re-clarify prefill; clarify: `[]`)
-   *  — copied into every form's `contextIds` field (design §3.1). */
-  initialContextIds: string[];
   /** Forward steps taken — the progress line's numerator source
    *  (n = min(depth + 1, PROGRESS_MAX[mode])). */
   depth: number;
@@ -94,11 +91,11 @@ export type WizardState = WizardBase &
     | { step: 'q1' }
     | { step: 'q1b' }
     | { step: 'q2' }
-    /** Q2b carries the Q2 answer: multi-step items either attach to an
-     *  EXISTING project or become a NEW one — the UI hides the "不属于
-     *  项目" option for them (single-step items keep it and continue to
-     *  Q3). */
-    | { step: 'q2b'; multipleSteps: boolean }
+    /** Q2b (only reached after 「属于项目」): the item becomes a NEW project
+     *  or attaches to an EXISTING one. */
+    | { step: 'q2b' }
+    /** Q2c: which existing project — one tap on a project row. */
+    | { step: 'q2c' }
     | { step: 'q3' }
     | { step: 'q3b' }
     | { step: 'q4' }
@@ -136,15 +133,14 @@ export type WizardState = WizardBase &
 export type WizardAction =
   | { type: 'answer-q1'; actionable: boolean }
   | { type: 'answer-q1b'; kind: 'reference' | 'someday' | 'trash' }
-  | { type: 'answer-q2'; multipleSteps: boolean }
-  /** Q2b: 它属于哪个项目？ — none → Q3 (regular chain); new-project →
-   *  the project form; attach → the action form. The attach data travels
-   *  in the action payload — the reducer stays pure. */
-  | { type: 'answer-q2b'; choice: 'none' }
-  | { type: 'answer-q2b'; choice: 'new-project' }
+  /** Q2: 这件事属于某个项目吗？ — false → Q3 (the regular chain). */
+  | { type: 'answer-q2'; inProject: boolean }
+  /** Q2b (in-project only): new → the project form; existing → Q2c. */
+  | { type: 'answer-q2b'; choice: 'new' | 'existing' }
+  /** Q2c: the tapped project row — attach → the action form. The attach
+   *  data travels in the action payload — the reducer stays pure. */
   | {
-      type: 'answer-q2b';
-      choice: 'attach';
+      type: 'answer-q2c';
       projectId: string;
       projectValue: Value;
       projectTitle: string;
@@ -155,8 +151,7 @@ export type WizardAction =
   | { type: 'answer-q3b'; completedOnTheSpot: false }
   | { type: 'answer-q4'; myResponsibility: boolean }
   | { type: 'answer-q5'; fixedTime: boolean }
-  | { type: 'field'; field: Exclude<keyof FormFields, 'contextIds'>; value: string | number | null }
-  | { type: 'field'; field: 'contextIds'; value: string[] }
+  | { type: 'field'; field: keyof FormFields; value: string | number | null }
   /** Enter the preview step (design §3.1 D5) — ONLY the form step accepts
    *  it (every other step returns the state unchanged). The submission
    *  travels in the payload (the screen builds it after `validateForm`
@@ -176,8 +171,11 @@ export type WizardAction =
 // ---------------------------------------------------------------------------
 
 /** The longest question path per mode, INCLUDING the form step (the
- *  preview step does not count). Display: n = min(depth + 1, m). */
-export const PROGRESS_MAX: Record<WizardMode, number> = { clarify: 7, reclarify: 6 };
+ *  preview step does not count). Display: n = min(depth + 1, m).
+ *  clarify: q1 → q2(不属于项目) → q3 → q4 → q5 + form = 6;
+ *  reclarify: q2 → q3 → q4 → q5 + form = 5. The in-project chain
+ *  (q2b/q2c) is shorter than the regular one in both modes. */
+export const PROGRESS_MAX: Record<WizardMode, number> = { clarify: 6, reclarify: 5 };
 
 /** The forms whose "保存" goes through the preview step (design §3.2) —
  *  the screen dispatches `{ type: 'preview' }` for these and submits
@@ -191,8 +189,9 @@ export const PREVIEW_FORMS: readonly FormKind[] = ['action', 'project', 'calenda
 export const QUESTION_TITLES: Record<QuestionId, string> = {
   q1: '可以变成下一步行动吗？',
   q1b: '那它更接近哪一类？',
-  q2: '需要多个步骤才能完成吗？',
-  q2b: '它属于哪个项目？',
+  q2: '这件事属于某个项目吗？',
+  q2b: '新建项目，还是加到已有项目？',
+  q2c: '加到哪个项目？',
   q3: '大约 2 分钟内能完成吗？',
   q3b: '现在就做掉吗？',
   q4: '应该由你完成吗？',
@@ -224,7 +223,6 @@ function emptyFields(defaultTitle: string): FormFields {
     deadline: '',
     startsAtDate: '',
     startsAtTime: '',
-    contextIds: [],
   };
 }
 
@@ -235,17 +233,11 @@ function toSnapshot(state: WizardState): WizardSnapshot {
 }
 
 /** Entry state: clarify starts at Q1, re-clarify re-enters at Q2.
- *  `initialContextIds` prefills every form's context multi-select
- *  (re-clarify: the existing action's contextIds). */
-export function createWizardState(
-  mode: WizardMode,
-  defaultTitle: string,
-  initialContextIds: string[] = [],
-): WizardState {
+ *  Entry state: clarify starts at Q1, re-clarify re-enters at Q2. */
+export function createWizardState(mode: WizardMode, defaultTitle: string): WizardState {
   const base: WizardBase = {
     mode,
     defaultTitle,
-    initialContextIds: [...initialContextIds],
     depth: 0,
     answered: [],
     history: [],
@@ -261,8 +253,6 @@ function toForm(
   attach?: { projectId: string; projectValue: Value; projectTitle: string },
 ): WizardState {
   const fields = emptyFields(state.defaultTitle);
-  // Re-clarify prefill: the existing action's contexts (design §3.1).
-  fields.contextIds = [...state.initialContextIds];
   if (estDefault !== null) fields.estMinutes = estDefault;
   // Q2b attach: the value defaults to the project's value (still editable).
   if (attach !== undefined) fields.value = attach.projectValue;
@@ -288,7 +278,6 @@ function advanced(state: WizardState, id: QuestionId, answer: string): WizardBas
   return {
     mode: state.mode,
     defaultTitle: state.defaultTitle,
-    initialContextIds: state.initialContextIds,
     depth: state.depth + 1,
     answered: [...state.answered, { id, question: QUESTION_TITLES[id], answer }],
     history: [...state.history, toSnapshot(state)],
@@ -305,7 +294,6 @@ export function clarifyReducer(state: WizardState, action: WizardAction): Wizard
       return {
         mode: state.mode,
         defaultTitle: state.defaultTitle,
-        initialContextIds: state.initialContextIds,
         depth: state.depth,
         answered: state.answered,
         history: state.history,
@@ -338,7 +326,6 @@ export function clarifyReducer(state: WizardState, action: WizardAction): Wizard
     return {
       mode: state.mode,
       defaultTitle: state.defaultTitle,
-      initialContextIds: state.initialContextIds,
       depth: state.depth + (isDoNow ? 1 : 0),
       // The do-now YES button never parks in a form — its answer lands
       // here (design §3.1).
@@ -364,26 +351,25 @@ export function clarifyReducer(state: WizardState, action: WizardAction): Wizard
       return state;
     case 'q2':
       if (action.type === 'answer-q2') {
-        // Both answers walk Q2b (它属于哪个项目？): a multi-step item
-        // attaches to an EXISTING project or becomes a NEW one (新建项目
-        // → the project form); a single-step item additionally gets 不属
-        // 于项目 (the regular Q3 chain). The Q2 answer travels in the q2b
-        // state so the UI hides 不属于项目 for the multi-step case.
-        const next = advanced(state, 'q2', action.multipleSteps ? '是，拆成项目' : '否，一步能完成');
-        return { ...next, step: 'q2b', multipleSteps: action.multipleSteps };
+        // 属于项目 walks Q2b (新建 / 已有); 不属于项目 goes straight to
+        // the regular chain — Q2c is never shown.
+        const next = advanced(state, 'q2', action.inProject ? '属于某个项目' : '不属于项目');
+        return action.inProject ? { ...next, step: 'q2b' } : { ...next, step: 'q3' };
       }
       return state;
     case 'q2b':
       if (action.type === 'answer-q2b') {
-        if (action.choice === 'none') {
-          return { ...advanced(state, 'q2b', '不属于项目'), step: 'q3' };
-        }
-        if (action.choice === 'new-project') {
+        if (action.choice === 'new') {
           return toForm(advanced(state, 'q2b', '新建项目'), 'project', false, null);
         }
-        // attach: the answer is the tapped project's title (the row text
-        // is "{title}（价值 n）").
-        return toForm(advanced(state, 'q2b', action.projectTitle), 'action', false, null, {
+        return { ...advanced(state, 'q2b', '添加到已有项目'), step: 'q2c' };
+      }
+      return state;
+    case 'q2c':
+      if (action.type === 'answer-q2c') {
+        // The answer is the tapped project's title (the row text is
+        // "{title}（价值 n）").
+        return toForm(advanced(state, 'q2c', action.projectTitle), 'action', false, null, {
           projectId: action.projectId,
           projectValue: action.projectValue,
           projectTitle: action.projectTitle,
@@ -420,13 +406,7 @@ export function clarifyReducer(state: WizardState, action: WizardAction): Wizard
       switch (action.type) {
         case 'field': {
           const fields = { ...state.fields };
-          if (action.field === 'contextIds') {
-            fields.contextIds = [...action.value];
-          } else {
-            (
-              fields as Record<Exclude<keyof FormFields, 'contextIds'>, string | number | null>
-            )[action.field] = action.value;
-          }
+          (fields as Record<keyof FormFields, string | number | null>)[action.field] = action.value;
           return { ...state, fields, error: null };
         }
         case 'preview':
@@ -436,7 +416,6 @@ export function clarifyReducer(state: WizardState, action: WizardAction): Wizard
           return {
             mode: state.mode,
             defaultTitle: state.defaultTitle,
-            initialContextIds: state.initialContextIds,
             depth: state.depth,
             answered: state.answered,
             history: state.history,
@@ -461,7 +440,6 @@ export function clarifyReducer(state: WizardState, action: WizardAction): Wizard
         return {
           mode: state.mode,
           defaultTitle: state.defaultTitle,
-          initialContextIds: state.initialContextIds,
           depth: state.depth,
           answered: state.answered,
           history: state.history,
@@ -604,7 +582,7 @@ export type Submission =
   | { mode: 'clarify'; answers: ClarifyAnswers; target: ClarifyTarget }
   | { mode: 'reclarify'; answers: ReclarifyAnswers; target: ClarifyTarget };
 
-const NON_ACTIONABLE_ANSWERS = { multipleSteps: false, twoMinutes: false, myResponsibility: true, fixedTime: false };
+const NON_ACTIONABLE_ANSWERS = { inProject: false, twoMinutes: false, myResponsibility: true, fixedTime: false };
 
 /**
  * The Q3b-YES "completed on the spot" submission (do-now path): no form is
@@ -618,7 +596,7 @@ export function buildDoNowSubmission(mode: WizardMode): Submission {
       mode,
       answers: {
         actionable: true,
-        multipleSteps: false,
+        inProject: false,
         twoMinutes: true,
         completedOnTheSpot: true,
         myResponsibility: true,
@@ -630,7 +608,7 @@ export function buildDoNowSubmission(mode: WizardMode): Submission {
   return {
     mode,
     answers: {
-      multipleSteps: false,
+      inProject: false,
       twoMinutes: true,
       completedOnTheSpot: true,
       myResponsibility: true,
@@ -643,7 +621,7 @@ export function buildDoNowSubmission(mode: WizardMode): Submission {
 /**
  * Build the submission for a validated form state. `validateForm` must have
  * returned null first — this function assumes the required fields are set.
- * `projectId` is the form's Q2b attachment (the 'action' form reached via
+ * `projectId` is the form's Q2c attachment (the 'action' form reached via
  * an existing project); it is absent for every other form.
  */
 export function buildFormSubmission(
@@ -682,19 +660,18 @@ export function buildFormSubmission(
         projectValue: fields.projectValue,
         actionTitle: fields.actionTitle.trim(),
         estMinutes: fields.estMinutes as number,
-        contextIds: fields.contextIds,
       };
       const projectOutcome = fields.projectOutcome.trim();
       if (mode === 'clarify') {
         return {
           mode,
-          answers: { actionable: true, multipleSteps: true, projectOutcome, twoMinutes: false, myResponsibility: true, fixedTime: false },
+          answers: { actionable: true, inProject: true, projectChoice: 'new', projectOutcome, twoMinutes: false, myResponsibility: true, fixedTime: false },
           target,
         };
       }
       return {
         mode,
-        answers: { multipleSteps: true, projectOutcome, twoMinutes: false, myResponsibility: true, fixedTime: false },
+        answers: { inProject: true, projectChoice: 'new', projectOutcome, twoMinutes: false, myResponsibility: true, fixedTime: false },
         target,
       };
     }
@@ -707,13 +684,13 @@ export function buildFormSubmission(
       if (mode === 'clarify') {
         return {
           mode,
-          answers: { actionable: true, multipleSteps: false, twoMinutes: false, myResponsibility: false, fixedTime: false },
+          answers: { actionable: true, inProject: false, twoMinutes: false, myResponsibility: false, fixedTime: false },
           target,
         };
       }
       return {
         mode,
-        answers: { multipleSteps: false, twoMinutes: false, myResponsibility: false, fixedTime: false },
+        answers: { inProject: false, twoMinutes: false, myResponsibility: false, fixedTime: false },
         target,
       };
     }
@@ -726,18 +703,17 @@ export function buildFormSubmission(
         estMinutes: fields.estMinutes as number,
         value: fields.value,
         deadline: fields.deadline !== '' ? (localDateTimeToIso(fields.deadline) ?? undefined) : undefined,
-        contextIds: fields.contextIds,
       };
       if (mode === 'clarify') {
         return {
           mode,
-          answers: { actionable: true, multipleSteps: false, twoMinutes: false, myResponsibility: true, fixedTime: true },
+          answers: { actionable: true, inProject: false, twoMinutes: false, myResponsibility: true, fixedTime: true },
           target,
         };
       }
       return {
         mode,
-        answers: { multipleSteps: false, twoMinutes: false, myResponsibility: true, fixedTime: true },
+        answers: { inProject: false, twoMinutes: false, myResponsibility: true, fixedTime: true },
         target,
       };
     }
@@ -750,22 +726,22 @@ export function buildFormSubmission(
         // value. Clarified path: the user-set value.
         ...(twoMinute ? {} : { value: fields.value }),
         deadline: fields.deadline !== '' ? (localDateTimeToIso(fields.deadline) ?? undefined) : undefined,
-        contextIds: fields.contextIds,
       };
       if (mode === 'clarify') {
         return {
           mode,
           answers: {
             actionable: true,
-            multipleSteps: false,
             twoMinutes: twoMinute,
             ...(twoMinute ? { completedOnTheSpot: false } : {}),
             myResponsibility: true,
             fixedTime: false,
-            // Q2b attach: carry the existing project (the project-attach
-            // outcome). Without it the field stays ABSENT — the Q3–Q5
-            // semantics (the action is not in a project).
-            ...(projectId !== undefined ? { projectId } : {}),
+            // Q2c attach: carry the chosen project (the project-attach
+            // outcome). Without it the item is 「不属于项目」 — the
+            // regular-chain semantics.
+            ...(projectId !== undefined
+              ? { inProject: true, projectChoice: 'existing' as const, projectId }
+              : { inProject: false }),
           },
           target,
         };
@@ -773,15 +749,16 @@ export function buildFormSubmission(
       return {
         mode,
         answers: {
-          multipleSteps: false,
           twoMinutes: twoMinute,
           ...(twoMinute ? { completedOnTheSpot: false } : {}),
           myResponsibility: true,
           fixedTime: false,
-          // Three-state: attach → the project id; no attachment → null
-          // (explicit detach — re-clarify always walks Q2b, so "not in a
-          // project" must be said out loud to drop an old attachment).
-          projectId: projectId ?? null,
+          // Attach → the project id; no attachment → null (explicit
+          // detach — re-clarify always walks q2/q2b, so "不属于项目"
+          // must be said out loud to drop an old attachment).
+          ...(projectId !== undefined
+            ? { inProject: true, projectChoice: 'existing' as const, projectId }
+            : { inProject: false, projectId: null }),
         },
         target,
       };

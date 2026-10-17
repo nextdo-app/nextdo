@@ -35,11 +35,11 @@
  * Presentational otherwise: no engine logic, no stored engine output
  * (component-guidelines).
  */
-import { useCallback, useMemo, useReducer, useState, type Dispatch, type ReactNode } from 'react';
-import { router, useFocusEffect } from 'expo-router';
+import { useMemo, useReducer, useState, type Dispatch, type ReactNode } from 'react';
+import { router } from 'expo-router';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Button, Card, ContextChip, ProgressBar, SceneOption, Tag, cn } from '@nextdo/ui';
+import { Button, Card, ProgressBar, Tag, cn } from '@nextdo/ui';
 import { DateTimePicker } from '@/components/datetime-picker';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { goBack } from '@/lib/go-back';
@@ -50,12 +50,11 @@ import {
   type ActionKind,
 } from '@nextdo/db';
 import { usePowerSync } from '@powersync/react';
-import type { Context, Project, Value } from '@nextdo/core';
+import type { Project, Value } from '@nextdo/core';
 import { useAppClock } from '@/hooks/use-app-clock';
 import { useOptionKeyboardNav } from '@/hooks/use-option-keyboard-nav';
 import { useInboxItem } from '@/hooks/use-inbox-item';
 import { useActionTitle } from '@/hooks/use-action-title';
-import { useContexts } from '@/hooks/use-contexts';
 import { useProjects } from '@/hooks/use-projects';
 import { errorMessage } from '@/lib/error-messages';
 import { maybeRequestNotificationPermission } from '@/lib/reminders/permission';
@@ -90,9 +89,9 @@ const EST_CHIPS = [5, 10, 20, 30, 60, 120];
 const VALUE_CHIPS: Value[] = [1, 2, 3, 4, 5];
 
 /** The question chains of the "GTD 决策摘要" card (design §3.2): clarify
- *  shows all 8 rows; re-clarify re-enters at Q2 (q1/q1b never appear). */
-const CLARIFY_CHAIN: readonly QuestionId[] = ['q1', 'q1b', 'q2', 'q2b', 'q3', 'q3b', 'q4', 'q5'];
-const RECLARIFY_CHAIN: readonly QuestionId[] = ['q2', 'q2b', 'q3', 'q3b', 'q4', 'q5'];
+ *  shows all 9 rows; re-clarify re-enters at Q2 (q1/q1b never appear). */
+const CLARIFY_CHAIN: readonly QuestionId[] = ['q1', 'q1b', 'q2', 'q2b', 'q2c', 'q3', 'q3b', 'q4', 'q5'];
+const RECLARIFY_CHAIN: readonly QuestionId[] = ['q2', 'q2b', 'q2c', 'q3', 'q3b', 'q4', 'q5'];
 
 /** The quick-pick minute estimates (design.md §4.3) + a custom box. */
 function EstPicker({ value, onSelect }: { value: number | null; onSelect: (minutes: number) => void }) {
@@ -273,9 +272,6 @@ export interface WizardBodyProps {
   /** Clarify only: the inbox item's capturedAt (the title card's meta
    *  line) — null renders "收集箱" without a date. */
   capturedAt: string | null;
-  /** The initial context selection of every form — reclarify passes the
-   *  existing action's contextIds; clarify passes []. */
-  initialContextIds: string[];
 }
 
 export function WizardBody({
@@ -285,7 +281,6 @@ export function WizardBody({
   defaultTitle,
   currentProjectId,
   capturedAt,
-  initialContextIds,
 }: WizardBodyProps) {
   const powersync = usePowerSync();
   const db = useMemo(() => wrapDb(powersync), [powersync]);
@@ -296,21 +291,8 @@ export function WizardBody({
   const { data: allProjects } = useProjects();
   const activeProjects = allProjects.filter((project) => project.status === 'active');
 
-  // The context multi-select's data (seeded contexts + user-created).
-  // Re-read on focus so returning from /contexts immediately reflects newly created scenes.
-  const { data: contexts, reload: reloadContexts } = useContexts();
-  useFocusEffect(
-    useCallback(() => {
-      reloadContexts();
-    }, [reloadContexts]),
-  );
-  const contextNames = useMemo(
-    () => new Map((contexts ?? []).map((context) => [context.id, context.name] as const)),
-    [contexts],
-  );
-
   const [state, dispatch] = useReducer(clarifyReducer, undefined, () =>
-    createWizardState(mode, defaultTitle, initialContextIds),
+    createWizardState(mode, defaultTitle),
   );
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -374,12 +356,8 @@ export function WizardBody({
     void submit(submission);
   }
 
-  function setField(field: Exclude<keyof FormFields, 'contextIds'>, value: string | number | null) {
+  function setField(field: keyof FormFields, value: string | number | null) {
     dispatch({ type: 'field', field, value });
-  }
-
-  function setContextIds(value: string[]) {
-    dispatch({ type: 'field', field: 'contextIds', value });
   }
 
   const isPreview = state.step === 'preview';
@@ -479,6 +457,7 @@ export function WizardBody({
             {(state.step === 'q1' ||
               state.step === 'q2' ||
               state.step === 'q2b' ||
+              state.step === 'q2c' ||
               state.step === 'q3' ||
               state.step === 'q4' ||
               state.step === 'q5' ||
@@ -514,10 +493,8 @@ export function WizardBody({
             {state.step === 'form' && (
               <FormCard
                 state={state}
-                contexts={contexts ?? []}
                 now={now}
                 onField={setField}
-                onContextIds={setContextIds}
                 canGoBack={canGoBack}
                 onBack={handleBack}
                 onSubmit={() => handleFormSubmit(state.form, state.fields, state.twoMinute, state.projectId)}
@@ -527,7 +504,6 @@ export function WizardBody({
             {state.step === 'preview' && (
               <PreviewCard
                 state={state}
-                contextNames={contextNames}
                 now={now}
                 disabled={submitting}
                 onConfirm={() => void submit(state.submission)}
@@ -657,7 +633,7 @@ function DecisionSummaryCard({
 // ---------------------------------------------------------------------------
 
 interface QuestionCardProps {
-  state: Extract<WizardState, { step: 'q1' | 'q2' | 'q2b' | 'q3' | 'q3b' | 'q4' | 'q5' }>;
+  state: Extract<WizardState, { step: 'q1' | 'q2' | 'q2b' | 'q2c' | 'q3' | 'q3b' | 'q4' | 'q5' }>;
   dispatch: Dispatch<WizardAction>;
   onDoNow: () => void;
   disabled: boolean;
@@ -794,13 +770,19 @@ function QuestionCard({ state, dispatch, onDoNow, disabled, canGoBack, onBack, p
     case 'q2':
       return (
         <View className="gap-4">
-          <Question title="需要多个步骤才能完成吗？" />
+          <Question title="这件事属于某个项目吗？" />
           <Choices
             step="q2"
             disabled={disabled}
             choices={[
-              { label: '是，拆成项目', onPress: () => dispatch({ type: 'answer-q2', multipleSteps: true }) },
-              { label: '否，一步能完成', onPress: () => dispatch({ type: 'answer-q2', multipleSteps: false }) },
+              {
+                label: '属于某个项目',
+                onPress: () => dispatch({ type: 'answer-q2', inProject: true }),
+              },
+              {
+                label: '不属于项目',
+                onPress: () => dispatch({ type: 'answer-q2', inProject: false }),
+              },
             ]}
           />
           {back}
@@ -809,40 +791,48 @@ function QuestionCard({ state, dispatch, onDoNow, disabled, canGoBack, onBack, p
     case 'q2b':
       return (
         <View className="gap-4">
-          <Question
-            title="它属于哪个项目？"
-            sub={
-              state.multipleSteps
-                ? '挂到已有项目下作为一个行动（价值默认跟随项目），或由这件事新建项目。'
-                : '挂到已有项目下（价值默认跟随项目），或新建 / 不挂。'
-            }
-          />
-          {/* The project rows and the two fall-through answers share one
-              keyboard list, so ↓ walks straight from the last project into
-              「新建项目」 (issue #17). */}
+          <Question title="新建项目，还是加到已有项目？" />
           <Choices
             step="q2b"
             disabled={disabled}
             choices={[
-              ...projects.map((project) => ({
+              { label: '新建项目', onPress: () => dispatch({ type: 'answer-q2b', choice: 'new' }) },
+              {
+                label: '添加到已有项目',
+                onPress: () => dispatch({ type: 'answer-q2b', choice: 'existing' }),
+              },
+            ]}
+          />
+          {back}
+        </View>
+      );
+    case 'q2c':
+      return (
+        <View className="gap-4">
+          <Question title="加到哪个项目？" sub="挂到已有项目下作为一个行动，价值默认跟随项目。" />
+          {projects.length === 0 ? (
+            <Text className="font-sans text-sm text-muted dark:text-muted-dark">
+              还没有进行中的项目 —— 返回上一步选「新建项目」，或先去项目页建一个。
+            </Text>
+          ) : (
+            /* One keyboard list of project rows (issue #17). */
+            <Choices
+              step="q2c"
+              disabled={disabled}
+              choices={projects.map((project) => ({
                 label: project.title,
                 detail: `价值 ${project.value}`,
                 ...(currentProjectId === project.id ? { badge: '当前' } : {}),
                 onPress: () =>
                   dispatch({
-                    type: 'answer-q2b',
-                    choice: 'attach',
+                    type: 'answer-q2c',
                     projectId: project.id,
                     projectValue: project.value,
                     projectTitle: project.title,
                   }),
-              })),
-              { label: '新建项目', onPress: () => dispatch({ type: 'answer-q2b', choice: 'new-project' }) },
-              ...(state.multipleSteps
-                ? []
-                : [{ label: '不属于项目', onPress: () => dispatch({ type: 'answer-q2b', choice: 'none' }) }]),
-            ]}
-          />
+              }))}
+            />
+          )}
           {back}
         </View>
       );
@@ -910,48 +900,30 @@ function QuestionCard({ state, dispatch, onDoNow, disabled, canGoBack, onBack, p
 }
 
 // ---------------------------------------------------------------------------
-// The outcome forms (design.md §4.3 表单字段; the context multi-select per
-// design §3.2.6)
+// The outcome forms (design.md §4.3 表单字段)
 // ---------------------------------------------------------------------------
 
 interface FormCardProps {
   state: Extract<WizardState, { step: 'form' }>;
-  /** The selectable contexts (seeded + user-created), by display name. */
-  contexts: Context[];
   /** The single app clock (seeds the date/time pickers). */
   now: Date;
-  /** Scalar fields only — the context multi-select dispatches its own
-   *  `field: 'contextIds'` string[] action via `onContextIds`. */
-  onField: (field: Exclude<keyof FormFields, 'contextIds'>, value: string | number | null) => void;
-  onContextIds: (value: string[]) => void;
+  onField: (field: keyof FormFields, value: string | number | null) => void;
   canGoBack: boolean;
   onBack: () => void;
   onSubmit: () => void;
   disabled: boolean;
 }
 
-/** The forms that offer the context multi-select (design §3.2.6). */
-const CONTEXT_FORMS: readonly FormKind[] = ['action', 'calendar', 'project'];
-
 function FormCard({
   state,
-  contexts,
   now,
   onField,
-  onContextIds,
   canGoBack,
   onBack,
   onSubmit,
   disabled,
 }: FormCardProps) {
   const { form, fields } = state;
-
-  function toggleContext(contextId: string) {
-    const next = fields.contextIds.includes(contextId)
-      ? fields.contextIds.filter((entry) => entry !== contextId)
-      : [...fields.contextIds, contextId];
-    onContextIds(next);
-  }
 
   const body = (() => {
     switch (form) {
@@ -1137,43 +1109,6 @@ function FormCard({
   return (
     <View className="gap-4">
       {body}
-      {CONTEXT_FORMS.includes(form) ? (
-        <Field
-          label="在哪里做？（可多选，不选 = 随处可执行）"
-          rightAction={
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="管理场景"
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              onPress={() => router.push('/contexts')}
-              className="flex-row items-center gap-1 py-0.5 active:opacity-75"
-            >
-              <Text className="font-sans text-[11px] font-medium text-muted dark:text-muted-dark">
-                管理场景
-              </Text>
-              <Ionicons name="chevron-forward" size={12} color="#9b948a" />
-            </Pressable>
-          }
-        >
-          {contexts.length === 0 ? (
-            <Text className="font-sans text-xs text-muted dark:text-muted-dark">
-              还没有场景 —— 不选即随处可执行。
-            </Text>
-          ) : (
-            <View className="flex-row flex-wrap items-center gap-2">
-              {contexts.map((context) => (
-                <SceneOption
-                  key={context.id}
-                  label={context.name}
-                  selected={fields.contextIds.includes(context.id)}
-                  onPress={() => toggleContext(context.id)}
-                  accessibilityLabel={`选择情境：${context.name}`}
-                />
-              ))}
-            </View>
-          )}
-        </Field>
-      ) : null}
       <View className="flex-row gap-2.5">
         {canGoBack ? (
           <View className="flex-1">
@@ -1216,22 +1151,17 @@ function PreviewRow({ label, value }: { label: string; value: string }) {
 
 interface PreviewCardProps {
   state: Extract<WizardState, { step: 'preview' }>;
-  /** context id → display name (for the read-only chips). */
-  contextNames: Map<string, string>;
   now: Date;
   disabled: boolean;
   onConfirm: () => void;
   onBack: () => void;
 }
 
-function PreviewCard({ state, contextNames, now, disabled, onConfirm, onBack }: PreviewCardProps) {
+function PreviewCard({ state, now, disabled, onConfirm, onBack }: PreviewCardProps) {
   const { form, fields, twoMinute } = state;
   const deadlineIso = fields.deadline !== '' ? localDateTimeToIso(fields.deadline) : null;
   const startsAtIso =
     form === 'calendar' ? composeLocalDateTimeIso(fields.startsAtDate, fields.startsAtTime) : null;
-  const contextNamesSelected = fields.contextIds
-    .map((contextId) => contextNames.get(contextId))
-    .filter((name): name is string => name !== undefined);
   const projectTitle = state.projectTitle ?? (form === 'project' ? fields.projectTitle : null);
   const value = form === 'project' ? fields.projectValue : fields.value;
 
@@ -1241,20 +1171,6 @@ function PreviewCard({ state, contextNames, now, disabled, onConfirm, onBack }: 
       <View className="gap-2.5 rounded-xl bg-canvas p-3 dark:bg-canvas-dark">
         {projectTitle !== null ? <PreviewRow label="所属项目" value={projectTitle} /> : null}
         <PreviewRow label="标题" value={form === 'action' || form === 'project' ? fields.actionTitle : fields.title} />
-        <View className="flex-row items-center justify-between gap-2">
-          <Text className="w-16 shrink-0 font-sans text-xs text-muted dark:text-muted-dark">执行情境</Text>
-          {contextNamesSelected.length === 0 ? (
-            <Text className="flex-1 text-right font-sans text-xs font-medium text-ink dark:text-ink-dark">
-              随处可执行
-            </Text>
-          ) : (
-            <View className="flex-1 flex-row flex-wrap justify-end gap-1.5">
-              {contextNamesSelected.map((name) => (
-                <ContextChip key={name} name={name} />
-              ))}
-            </View>
-          )}
-        </View>
         {fields.estMinutes !== null ? (
           <PreviewRow label="预计耗时" value={`${fields.estMinutes} 分钟`} />
         ) : null}
@@ -1372,7 +1288,6 @@ export function ClarifyWizard({ mode, id, actionKind = null }: ClarifyWizardProp
       defaultTitle={title}
       currentProjectId={isReclarify ? action.projectId : null}
       capturedAt={isReclarify ? null : (inbox.item?.capturedAt ?? null)}
-      initialContextIds={isReclarify ? action.contextIds : []}
     />
   );
 }

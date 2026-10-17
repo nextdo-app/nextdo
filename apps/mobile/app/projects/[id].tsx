@@ -20,7 +20,7 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput,
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Button, Card, ContextChip, EmptyState, Tag, ValueChips, cn, type TagTone } from '@nextdo/ui';
+import { Button, Card, EmptyState, Tag, ValueChips, cn, type TagTone } from '@nextdo/ui';
 import { DateTimePicker } from '@/components/datetime-picker';
 import { FormField } from '@/components/form-field';
 import { PickerField } from '@/components/picker-field';
@@ -40,7 +40,6 @@ import { useTrashAction } from '@/hooks/use-trash-action';
 import { useTrashProject } from '@/hooks/use-trash-project';
 import { useTrashHabit } from '@/hooks/use-trash-habit';
 import { useAppClock } from '@/hooks/use-app-clock';
-import { useContexts } from '@/hooks/use-contexts';
 import { errorMessage } from '@/lib/error-messages';
 import { PROJECT_STATUS_LABELS } from '@/lib/status-labels';
 import { localDateTimeKey, localDateTimeToIso } from '@/lib/clarify-flow';
@@ -295,11 +294,9 @@ function EditProjectForm({ project, now, onDone, onSaved }: { project: Project; 
  *  that local day's 23:59:59; empty clears the deadline). */
 function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; now: Date; onDone: () => void; onSaved: () => void }) {
   const { update, error } = useUpdateNextAction();
-  const { data: contexts } = useContexts();
   const [title, setTitle] = useState(action.title);
   const [estMinutes, setEstMinutes] = useState<number | null>(action.estMinutes);
   const [value, setValue] = useState<Value>(action.value);
-  const [selectedContextIds, setSelectedContextIds] = useState<string[]>(action.contextIds ?? []);
   /** `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm` as picked (task 10-17); '' = none. */
   const [deadline, setDeadline] = useState(
     action.deadline === undefined || action.deadline === null
@@ -317,12 +314,6 @@ function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; 
   });
   const [customEst, setCustomEst] = useState('');
   const [submitting, setSubmitting] = useState(false);
-
-  const toggleContext = (ctxId: string) => {
-    setSelectedContextIds((prev) =>
-      prev.includes(ctxId) ? prev.filter((id) => id !== ctxId) : [...prev, ctxId],
-    );
-  };
 
   const canSubmit = title.trim() !== '' && estMinutes !== null && !submitting;
 
@@ -346,7 +337,6 @@ function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; 
         estMinutes,
         value,
         deadline: deadlineIso,
-        contextIds: selectedContextIds,
         ...(reminder.write !== undefined ? { reminderAt: reminder.write } : {}),
       },
     });
@@ -383,42 +373,6 @@ function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; 
         />
       </View>
       <ValueChips value={value} onChange={setValue} />
-      {contexts && contexts.length > 0 ? (
-        <View className="gap-1.5">
-          <Text className="text-sm font-medium text-ink dark:text-ink-dark">场景（可选）</Text>
-          <View className="flex-row flex-wrap gap-1.5">
-            {contexts.map((ctx) => {
-              const active = selectedContextIds.includes(ctx.id);
-              return (
-                <Pressable
-                  key={ctx.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={ctx.name}
-                  accessibilityState={{ selected: active }}
-                  onPress={() => toggleContext(ctx.id)}
-                  className={cn(
-                    'rounded-full border px-3 py-1',
-                    active
-                      ? 'border-accent bg-accent/15 dark:border-accent-dark dark:bg-accent-dark/25'
-                      : 'border-border bg-surface dark:border-border-dark dark:bg-surface-dark',
-                  )}
-                >
-                  <Text
-                    className={cn(
-                      'text-xs font-medium',
-                      active
-                        ? 'font-semibold text-accent dark:text-accent-dark'
-                        : 'text-ink dark:text-ink-dark',
-                    )}
-                  >
-                    {ctx.name}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-      ) : null}
       <FormField label="截止时间">
         <PickerField
           label="截止时间"
@@ -745,7 +699,6 @@ export default function ProjectDetailScreen() {
   const { data: actions, error: actionsError, reload } = useProjectActions(projectId);
   const now = useAppClock();
   const { data: habits, error: habitsError, reload: reloadHabits } = useProjectHabits(projectId, now);
-  const { data: contexts } = useContexts();
   const { error: addError } = useAddNextAction();
   const { complete, error: completeError } = useCompleteAction();
   const { snooze, error: snoozeError } = useSnoozeAction();
@@ -796,9 +749,6 @@ export default function ProjectDetailScreen() {
     updateProjectError ??
     trashProjectError ??
     trashHabitError;
-  // Action-row context ids → display names (unknown ids fall back to the id).
-  const contextName = (id: string) =>
-    contexts?.find((entry) => entry.id === id)?.name ?? id;
 
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -945,13 +895,6 @@ export default function ProjectDetailScreen() {
                         <Tag label={`价值 ${action.value}`} />
                         <DeadlineChip deadline={action.deadline} now={now} />
                       </View>
-                      {action.contextIds.length > 0 ? (
-                        <View className="flex-row flex-wrap gap-1.5">
-                          {action.contextIds.map((id) => (
-                            <ContextChip key={id} name={contextName(id)} />
-                          ))}
-                        </View>
-                      ) : null}
                       <View className="flex-row gap-2">
                         <Button
                           label="完成"

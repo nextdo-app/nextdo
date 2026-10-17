@@ -450,7 +450,9 @@ describe('Projects tab', () => {
     // The current next-action sub-card — p-1 AND p-2 both have one.
     expect(screen.getAllByText('▶ 当前下一步行动')).toHaveLength(2);
     expect(screen.getByText('运行 baseline A')).toBeTruthy();
-    expect(screen.getByText('电脑')).toBeTruthy();
+    // No context chips any more (#46 removed the 场景 feature) — neither on
+    // the sub-card nor anywhere else in the tab.
+    expect(screen.queryByText('电脑')).toBeNull();
     // The next-action sub-card's deadline chip (3 days out → 「M月D日 截止」,
     // spoken by core's `formatDeadline` rather than the card's own wording —
     // the project and action chips must never describe the same instant two
@@ -551,12 +553,12 @@ describe('Project detail', () => {
     );
   });
 
-  it('action rows show the read-only context chips (names resolved from contexts)', async () => {
+  it('action rows carry no context chips (#46: the 场景 feature is offline)', async () => {
     renderRouter('app', { initialUrl: '/projects/p-1' });
 
     await waitFor(() => expect(screen.getByText('运行 baseline A')).toBeTruthy());
-    // a-1 carries context c-1 (电脑) → the row renders the read-only chip.
-    expect(screen.getByText('电脑')).toBeTruthy();
+    // a-1 carries context c-1 (电脑) in the data — the row must NOT render it.
+    expect(screen.queryByText('电脑')).toBeNull();
   });
 
   it('pressing 完成 calls completeAction with the next kind + action id', async () => {

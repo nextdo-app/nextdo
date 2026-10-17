@@ -20,13 +20,6 @@ export { EmptyState } from './components/empty-state';
 export type { EmptyStateProps } from './components/empty-state';
 export { ContextChip, contextTone } from './components/context-chip';
 export type { ContextChipProps } from './components/context-chip';
-export {
-  SceneOption,
-  SCENE_OPTION_HIT_SLOP,
-  SCENE_OPTION_UNSELECTED_CLASS,
-  SCENE_OPTION_SELECTED_CLASS,
-} from './components/scene-option';
-export type { SceneOptionProps } from './components/scene-option';
 export { ProgressBar } from './components/progress-bar';
 export type { ProgressBarProps } from './components/progress-bar';
 export { ValueChips } from './components/value-chips';

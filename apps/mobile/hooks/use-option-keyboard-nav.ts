@@ -71,6 +71,15 @@ export function useOptionKeyboardNav(
 ): OptionKeyboardNav {
   const enabled = Platform.OS === 'web';
   const [activeIndex, setActiveIndex] = useState(0);
+  /**
+   * Whether the keyboard has actually driven this list yet. The ring is NOT
+   * painted before the first arrow/Home/End press: an option that lights up
+   * the moment a question appears reads as "recommended", and the wizard's
+   * questions must present their answers at equal weight (issue #44 R4).
+   * Enter follows the same rule — it confirms only once something is
+   * visibly lit, so a stray Enter can never answer an unseen selection.
+   */
+  const [keyboardEngaged, setKeyboardEngaged] = useState(false);
   const containerRef = useRef<View | null>(null);
   // `onConfirm` is a fresh closure every render; reading it through a ref
   // keeps the key handler's identity stable so it is not re-bound mid-key.
@@ -84,6 +93,7 @@ export function useOptionKeyboardNav(
 
   useEffect(() => {
     setActiveIndex(0);
+    setKeyboardEngaged(false);
     if (!enabled) return;
     // Focus lands on the wrapper, so the very first arrow key already works.
     containerRef.current?.focus?.();
@@ -92,8 +102,10 @@ export function useOptionKeyboardNav(
   const onKeyDown = useCallback(
     (event: KeyEventLike) => {
       if (count === 0) return;
+      const engage = () => setKeyboardEngaged(true);
       const move = (delta: number) => {
         event.preventDefault();
+        engage();
         // Wrapping: the list is a loop, so 「下」 on the last option returns to
         // the first — the user never has to look at where they are.
         setActiveIndex((current) => (current + delta + count) % count);
@@ -109,14 +121,19 @@ export function useOptionKeyboardNav(
           break;
         case 'Home':
           event.preventDefault();
+          engage();
           setActiveIndex(0);
           break;
         case 'End':
           event.preventDefault();
+          engage();
           setActiveIndex(count - 1);
           break;
         case 'Enter':
         case ' ':
+          // Only after the ring is visible — otherwise Enter would silently
+          // answer the first option the user never saw selected.
+          if (!keyboardEngaged) return;
           event.preventDefault();
           confirmRef.current(activeIndex);
           break;
@@ -124,7 +141,7 @@ export function useOptionKeyboardNav(
           break;
       }
     },
-    [activeIndex, count],
+    [activeIndex, count, keyboardEngaged],
   );
 
   return {
@@ -136,7 +153,7 @@ export function useOptionKeyboardNav(
       tabIndex: enabled ? 0 : undefined,
       ...(enabled ? { onKeyDown } : {}),
     },
-    ringClass: (index: number) => (index === activeIndex && enabled ? RING_CLASS : ''),
+    ringClass: (index: number) => (index === activeIndex && enabled && keyboardEngaged ? RING_CLASS : ''),
     enabled,
   };
 }

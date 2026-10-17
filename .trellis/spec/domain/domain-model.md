@@ -20,27 +20,26 @@ InboxItem
 │   │   ├─ 以后可能做            → SomedayMaybeItem     (title, note?)
 │   │   └─ 否                    → Trash (InboxItem soft-deleted, no target row)
 │   └─ YES
-│       ├─ 2. 需要多个步骤吗？(Multiple steps?)
-│       │   └─ YES / NO both continue to 2b. A multi-step item either
-│       │       attaches to an existing project (as one of its actions) or
-│       │       becomes a NEW project; a single-step item additionally gets
-│       │       the "不属于项目" option (the regular 3–5 chain).
-│       ├─ 2b. 属于哪个项目？(Part of which project?)
-│       │   ├─ <an existing ACTIVE project> → NextAction attached to it:
-│       │   │       `projectId` = the project's id; `value` defaults to the
-│       │   │       project's value (overridable in the action form).
-│       │   │       Questions 3–5 do NOT apply — a project-attached action is
-│       │   │       always a NextAction in v1 (a CalendarAction has no
-│       │   │       `projectId`; fixed-time and project membership are mutually
-│       │   │       exclusive). The project must exist and be `active`
-│       │   │       (db errors `clarify.project-not-found` /
-│       │   │       `clarify.project-not-active`; validated before the
-│       │   │       transaction — no partial writes).
+│       ├─ 2. 这件事属于某个项目吗？(Is it part of a project?)   ← issue #44
+│       │   ├─ 不属于项目 (No) → 3. the regular 3–5 chain below
+│       │   └─ 属于某个项目 (Yes) ↓
+│       ├─ 2b. 新建项目，还是加到已有项目？(New project, or an existing one?)
 │       │   ├─ 新建项目 (New project) → Project + its first NextAction, created
 │       │   │       ATOMICALLY in the same transaction. If the user aborts
 │       │   │       before both are confirmed, neither row exists
 │       │   │       (all-or-nothing; the InboxItem survives).
-│       │   └─ 不属于项目 (No project) ↓ [single-step answers only]
+│       │   └─ 添加到已有项目 (Existing) ↓
+│       ├─ 2c. 加到哪个项目？(Which project?)
+│       │   └─ <an existing ACTIVE project> → NextAction attached to it:
+│       │           `projectId` = the project's id; `value` defaults to the
+│       │           project's value (overridable in the action form).
+│       │           Questions 3–5 do NOT apply — a project-attached action is
+│       │           always a NextAction in v1 (a CalendarAction has no
+│       │           `projectId`; fixed-time and project membership are mutually
+│       │           exclusive). The project must exist and be `active`
+│       │           (db errors `clarify.project-not-found` /
+│       │           `clarify.project-not-active`; validated before the
+│       │           transaction — no partial writes).
 │       ├─ 3. 约 2 分钟内能完成吗？(Doable in ~2 min?)
 │       │   ├─ YES → DO NOW: the UI executes it immediately.
 │       │   │   • completed on the spot → CompletionRecord(action_kind="do_now",
@@ -71,9 +70,15 @@ Rules:
 - Re-clarify (triggered by the engine, see Next Action Engine) re-enters this table at
   question 2 for the existing action: the outcome replaces the old action row
   (old row soft-deleted; `sourceInboxId` chain preserved via the new row's
-  `replacesActionId`). Because it re-enters at question 2, re-clarify also passes
-  through question 2b — the user can keep the current project, re-attach to another,
-  or detach (the replacement action's `projectId` is null).
+  `replacesActionId`). Because it re-enters at question 2, re-clarify also asks
+  questions 2/2b/2c — the user can attach to a project, create a new one, or say
+  「不属于项目」 (detach: the replacement action's `projectId` is null).
+- **Answer payload** (`ClarifyAnswers`, core): `inProject: boolean` + (when true)
+  `projectChoice: 'new' | 'existing'`; `'existing'` requires a non-empty `projectId`
+  (`clarify.project-required`) and `'new'` requires a non-empty `projectOutcome`
+  (`project.needs-outcome`). An in-project answer without `projectChoice` is
+  `clarify.incomplete` — there is no implicit branch. `inProject: false` ignores a
+  stray `projectId` and walks 3–5.
 - Capture handoff (v1 UI): each saved capture enters this walk **immediately**
   (one item at a time; after the walk the UI offers "capture another" / "done").
   An aborted walk leaves the InboxItem in the inbox for later.
@@ -128,7 +133,8 @@ A single concrete step (Proposal §5.3: "运行 baseline A", never "完成论文
   a mis-completed action, issue 27; it is NOT a general un-complete and it never deletes
   history),
 - `sourceInboxId?`, `replacesActionId?` (Clarify/re-clarify traceability).
-- **Invariant:** one sitting, no sub-list. Enforced softly by Clarify question 2; the
+- **Invariant:** one sitting, no sub-list. Enforced softly by Clarify questions 2–2c
+  (an item either joins a project as one action or becomes a new project); the
   engine never splits actions itself.
 
 ### WaitingForItem
