@@ -61,7 +61,7 @@ export {
 } from './queries/actions';
 export type { CompletedAction } from './queries/actions';
 // Reminder read (the delivery layer's source of truth — task 09-30).
-export { listScheduledReminders } from './queries/reminders';
+export { listScheduledReminderFor, listScheduledReminders } from './queries/reminders';
 export type { ScheduledReminderRow } from './queries/reminders';
 // Project mutations.
 export { addProject, trashProject, updateProject } from './queries/projects';

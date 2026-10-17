@@ -18,6 +18,12 @@ export interface UpdateNextActionPatch {
   value?: Value;
   /** ISO datetime; an explicit `undefined` clears a stored deadline. */
   deadline?: string;
+  /**
+   * Task 10-17: the deadline reminder (ISO datetime). ABSENT = leave the
+   * stored reminder alone — a rename must not disarm a snooze reminder;
+   * `null` = clear it (see `ActionReminderInput` in packages/db).
+   */
+  reminderAt?: string | null;
   /** Context ids assigned to this action. */
   contextIds?: string[];
 }
@@ -43,11 +49,14 @@ export function useUpdateNextAction(): UseUpdateNextActionResult {
   const update = useCallback(
     async (args: UpdateNextActionArgs): Promise<boolean> => {
       try {
-        await updateNextAction(db, {
-          ...args.action,
-          ...args.patch,
-          updatedAt: toIso(now),
-        });
+        // `reminderAt` is pulled OUT of the row patch: it is not a column on
+        // the action, it is the reminder transaction's input.
+        const { reminderAt, ...patch } = args.patch;
+        await updateNextAction(
+          db,
+          { ...args.action, ...patch, updatedAt: toIso(now) },
+          reminderAt === undefined ? undefined : { reminderAt, now },
+        );
         setError(null);
         return true;
       } catch (err: unknown) {

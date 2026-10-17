@@ -458,7 +458,14 @@ describe('Now screen', () => {
         value: 5,
         contextIds: ['c-1'],
         projectId: 'p-9',
-        deadline: new Date(Date.now() + 24 * 3600_000).toISOString(),
+        // A date-only deadline: tomorrow's local end-of-day. A raw
+        // `now + 24h` carries a clock time too, which the chip now spells
+        // out (task 10-17) — that would make this label run-clock dependent.
+        deadline: (() => {
+          const day = new Date(Date.now() + 24 * 3600_000);
+          day.setHours(23, 59, 59, 0);
+          return day.toISOString();
+        })(),
       }),
       nextAction({ id: 'free', title: '不着急的事', contextIds: [] }),
     ]);

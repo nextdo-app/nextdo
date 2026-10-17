@@ -103,6 +103,7 @@ export {
   assertValidSomedayMaybeItem,
   assertValidWaitingForItem,
   calendarActionReminderSpec,
+  deadlineReminderSpec,
   habitWindowReminderSpec,
   snoozeReminderSpec,
 } from './domain/invariants';
@@ -128,7 +129,14 @@ export type {
   HabitReminderStage,
   HabitWindowFields,
 } from './domain/habit-checkin';
-export { DEADLINE_SOON_HOURS, deadlineStatus, formatDeadline } from './domain/deadline';
+export {
+  DATE_ONLY_DEADLINE_HHMM,
+  DEADLINE_SOON_HOURS,
+  DEFAULT_DATE_ONLY_REMINDER_HHMM,
+  deadlineStatus,
+  formatDeadline,
+  isDateOnlyDeadline,
+} from './domain/deadline';
 export type { DeadlineStatus } from './domain/deadline';
 
 // engine

@@ -443,5 +443,16 @@ export function habitWindowReminderSpec(now: Date, windowEnd: string): ReminderS
   return { firesAt: toIso(firesAt), intensity: 'normal' };
 }
 
+/**
+ * Deadline reminder (task 10-17): fires at the moment the user picked in the
+ * form's 「提醒时间」 field, normal intensity. Null when that moment is not in
+ * the future — the same rule `calendarActionReminderSpec` uses, so a reminder
+ * can never be armed for a time that already passed (PRD AC-5).
+ */
+export function deadlineReminderSpec(firesAt: Date, now: Date): ReminderSpec | null {
+  if (firesAt.getTime() <= now.getTime()) return null;
+  return { firesAt: toIso(firesAt), intensity: 'normal' };
+}
+
 // Repeated skips / "do nothing" nagging NEVER create reminders
 // (forbidden by Proposal §6.4) — there is deliberately no function here.

@@ -25,6 +25,7 @@ import {
   assertValidProject,
   assertValidReminder,
   calendarActionReminderSpec,
+  deadlineReminderSpec,
   habitWindowReminderSpec,
   snoozeReminderSpec,
 } from './invariants';
@@ -376,5 +377,17 @@ describe('reminder creation rules', () => {
       firesAt: '2026-09-22T07:30:00.000Z',
       intensity: 'normal',
     });
+  });
+
+  it('deadline reminder → fires at the picked moment, normal intensity', () => {
+    expect(deadlineReminderSpec(new Date('2026-09-21T10:00:00.000Z'), NOW_DATE)).toEqual({
+      firesAt: '2026-09-21T10:00:00.000Z',
+      intensity: 'normal',
+    });
+  });
+
+  it('deadline reminder in the past (or right now) → no reminder', () => {
+    expect(deadlineReminderSpec(new Date('2026-09-21T08:59:59.000Z'), NOW_DATE)).toBeNull();
+    expect(deadlineReminderSpec(NOW_DATE, NOW_DATE)).toBeNull();
   });
 });

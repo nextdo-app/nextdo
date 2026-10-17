@@ -11,6 +11,7 @@ import {
   assertHabitCheckInWindow,
   assertTransition,
   assertValidNextAction,
+  deadlineReminderSpec,
   localDateKey,
   parseIso,
   snoozeReminderSpec,
@@ -19,8 +20,9 @@ import {
   ulid,
   type ActionStatus,
   type NextAction,
+  type ReminderSpec,
 } from '@nextdo/core';
-import { sql } from 'kysely';
+import { sql, type Transaction } from 'kysely';
 import { nextActionFromRow, nextActionToRow, parseJson, type Database } from '../schema';
 import type { ActionKind, NextdoDb } from '../types';
 
@@ -192,22 +194,92 @@ export async function listCompletedActions(db: NextdoDb): Promise<CompletedActio
 // NextAction CRUD
 // ---------------------------------------------------------------------------
 
-export async function addNextAction(db: NextdoDb, action: NextAction): Promise<NextAction> {
-  assertValidNextAction(action);
-  await db
-    .insertInto('next_actions')
-    .values({ id: action.id, ...nextActionToRow(action) })
+/**
+ * The deadline reminder a form wants armed when it saves the action (task
+ * 10-17). ABSENT = leave whatever the action already has alone — renaming an
+ * action must not cancel a snooze reminder; PRESENT = this save reconciles the
+ * action's reminder to exactly this value (`null` clears it).
+ */
+export interface ActionReminderInput {
+  /** The moment the user picked (ISO UTC), or null for "no reminder". */
+  reminderAt: string | null;
+  /** The clock the past-moment rule runs against — core owns that rule. */
+  now: Date;
+}
+
+/** A form's 「提醒时间」 resolved to the spec core allows, or null for none. */
+function resolveReminderSpec(input: ActionReminderInput): ReminderSpec | null {
+  if (input.reminderAt === null || input.reminderAt === '') return null;
+  const at = new Date(input.reminderAt);
+  if (Number.isNaN(at.getTime())) return null;
+  return deadlineReminderSpec(at, input.now);
+}
+
+/**
+ * Cancel the action's still-scheduled reminders and arm the new one — the
+ * snooze transaction's reminder steps, shared by add / update / snooze so
+ * "one action, at most one pending reminder" holds everywhere it is written.
+ */
+async function reconcileReminder(
+  tx: Transaction<Database>,
+  kind: ActionKind,
+  actionId: string,
+  spec: ReminderSpec | null,
+  now: Date,
+): Promise<void> {
+  const nowIso = toIso(now);
+  await tx
+    .updateTable('reminders')
+    .set({ state: 'cancelled', updated_at: nowIso })
+    .where('action_id', '=', actionId)
+    .where('state', '=', 'scheduled')
     .execute();
+  if (spec === null) return;
+  await tx
+    .insertInto('reminders')
+    .values({
+      id: ulid(now),
+      created_at: nowIso,
+      updated_at: nowIso,
+      deleted_at: null,
+      action_kind: kind,
+      action_id: actionId,
+      fires_at: spec.firesAt,
+      intensity: spec.intensity,
+      state: 'scheduled',
+    })
+    .execute();
+}
+
+export async function addNextAction(
+  db: NextdoDb,
+  action: NextAction,
+  reminder?: ActionReminderInput,
+): Promise<NextAction> {
+  assertValidNextAction(action);
+  const spec = reminder === undefined ? null : resolveReminderSpec(reminder);
+  await db.transaction().execute(async (tx) => {
+    await tx
+      .insertInto('next_actions')
+      .values({ id: action.id, ...nextActionToRow(action) })
+      .execute();
+    if (reminder !== undefined) await reconcileReminder(tx, 'next', action.id, spec, reminder.now);
+  });
   return action;
 }
 
 /**
  * Full-row update. Resets `consecutiveSkips` to 0 when the user redefined
  * the action (title or estimate changed) — engine spec "Skip & Re-clarify".
+ *
+ * `reminder` (task 10-17) runs in the SAME transaction as the row update, so
+ * a failed save can never leave an armed reminder behind (and a save that
+ * only renames cannot touch a snooze reminder — pass nothing for that).
  */
 export async function updateNextAction(
   db: NextdoDb,
   action: NextAction,
+  reminder?: ActionReminderInput,
 ): Promise<NextAction> {
   assertValidNextAction(action);
   const previous = await loadActionRow(db, 'next', action.id);
@@ -217,11 +289,15 @@ export async function updateNextAction(
   const next = redefined
     ? { ...action, consecutiveSkips: 0, lastSkippedAt: undefined }
     : action;
-  await db
-    .updateTable('next_actions')
-    .set({ ...nextActionToRow(next), updated_at: next.updatedAt })
-    .where('id', '=', action.id)
-    .execute();
+  const spec = reminder === undefined ? null : resolveReminderSpec(reminder);
+  await db.transaction().execute(async (tx) => {
+    await tx
+      .updateTable('next_actions')
+      .set({ ...nextActionToRow(next), updated_at: next.updatedAt })
+      .where('id', '=', action.id)
+      .execute();
+    if (reminder !== undefined) await reconcileReminder(tx, 'next', action.id, spec, reminder.now);
+  });
   return next;
 }
 
@@ -483,27 +559,8 @@ export async function snoozeAction(
       .execute();
     // The previous scheduled reminder (if any) is cancelled in the same
     // transaction — otherwise a re-snooze would keep the old target time
-    // armed alongside the new one.
-    await tx
-      .updateTable('reminders')
-      .set({ state: 'cancelled', updated_at: nowIso })
-      .where('action_id', '=', actionId)
-      .where('state', '=', 'scheduled')
-      .execute();
-    await tx
-      .insertInto('reminders')
-      .values({
-        id: ulid(now),
-        created_at: nowIso,
-        updated_at: nowIso,
-        deleted_at: null,
-        action_kind: actionKind,
-        action_id: actionId,
-        fires_at: reminder.firesAt,
-        intensity: reminder.intensity,
-        state: 'scheduled',
-      })
-      .execute();
+    // armed alongside the new one. Same helper the add / update paths use.
+    await reconcileReminder(tx, actionKind, actionId, reminder, now);
   });
 }
 

@@ -32,7 +32,8 @@ import { DateTimePicker } from '@/components/datetime-picker';
 import { DeadlineChip } from '@/components/deadline-chip';
 import { FormField } from '@/components/form-field';
 import { PickerField } from '@/components/picker-field';
-import { endOfLocalDayIso } from '@/lib/clarify-flow';
+import { localDateTimeToIso } from '@/lib/clarify-flow';
+import { formatDateTimeValue } from '@/lib/datetime-field';
 import { errorMessage } from '@/lib/error-messages';
 
 type FilterKind = 'active' | 'no-next' | 'archived';
@@ -49,7 +50,7 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
   const [title, setTitle] = useState('');
   const [outcome, setOutcome] = useState('');
   const [value, setValue] = useState<Value>(3);
-  /** `YYYY-MM-DD` as picked; the row stores it as an ISO datetime. */
+  /** `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm` as picked (task 10-17); '' = none. */
   const [deadline, setDeadline] = useState('');
   const [showDeadlinePicker, setShowDeadlinePicker] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -59,7 +60,7 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
   const create = () => {
     if (!canSubmit) return;
     setSubmitting(true);
-    const deadlineIso = deadline === '' ? undefined : (endOfLocalDayIso(deadline) ?? undefined);
+    const deadlineIso = deadline === '' ? undefined : (localDateTimeToIso(deadline) ?? undefined);
     void add({ title, outcome, value, deadline: deadlineIso }).then(() => {
       setSubmitting(false);
       setTitle('');
@@ -90,19 +91,19 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
         />
       </FormField>
       <ValueChips value={value} onChange={setValue} />
-      <FormField label="截止日期">
+      <FormField label="截止时间">
         <PickerField
-          label="截止"
-          value={deadline}
-          placeholder="截止日期（可选）"
+          label="截止时间"
+          value={formatDateTimeValue(deadline)}
+          placeholder="截止时间（可选）"
           onPress={() => setShowDeadlinePicker(true)}
           onClear={() => setDeadline('')}
         />
       </FormField>
       {showDeadlinePicker ? (
         <DateTimePicker
-          mode="date"
-          title="选择截止日期"
+          mode="datetime"
+          title="选择截止时间"
           value={deadline}
           now={now}
           onConfirm={setDeadline}

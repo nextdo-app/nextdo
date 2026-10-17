@@ -25,7 +25,7 @@ import { DateTimePicker } from '@/components/datetime-picker';
 import { FormField } from '@/components/form-field';
 import { PickerField } from '@/components/picker-field';
 import { DeadlineChip } from '@/components/deadline-chip';
-import { localDateKey, type Habit, type NextAction, type Project, type ProjectStatus, type Value } from '@nextdo/core';
+import type { Habit, NextAction, Project, ProjectStatus, Value } from '@nextdo/core';
 import { useProjects } from '@/hooks/use-projects';
 import { useProjectActions } from '@/hooks/use-project-actions';
 import { useProjectHabits, type ProjectHabitEntry } from '@/hooks/use-project-habits';
@@ -33,6 +33,7 @@ import { useAddNextAction } from '@/hooks/use-add-next-action';
 import { useStartHabit } from '@/hooks/use-start-habit';
 import { useUpdateProject } from '@/hooks/use-update-project';
 import { useUpdateNextAction } from '@/hooks/use-update-next-action';
+import { useActionReminderField } from '@/hooks/use-action-reminder';
 import { useCompleteAction } from '@/hooks/use-complete-action';
 import { useSnoozeAction } from '@/hooks/use-snooze-action';
 import { useTrashAction } from '@/hooks/use-trash-action';
@@ -42,7 +43,8 @@ import { useAppClock } from '@/hooks/use-app-clock';
 import { useContexts } from '@/hooks/use-contexts';
 import { errorMessage } from '@/lib/error-messages';
 import { PROJECT_STATUS_LABELS } from '@/lib/status-labels';
-import { endOfLocalDayIso } from '@/lib/clarify-flow';
+import { localDateTimeKey, localDateTimeToIso } from '@/lib/clarify-flow';
+import { formatDateTimeValue } from '@/lib/datetime-field';
 import { goBack } from '@/lib/go-back';
 import { SnoozeSheet } from '@/components/snooze-sheet';
 import { EditHabitForm } from '@/components/edit-habit-form';
@@ -84,10 +86,15 @@ function AddActionForm({ projectId, now, onDone, onAdded }: { projectId: string;
   const [title, setTitle] = useState('');
   const [estMinutes, setEstMinutes] = useState<number | null>(null);
   const [value, setValue] = useState<Value>(3);
+  /** `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm` as picked (task 10-17); '' = none. */
   const [deadline, setDeadline] = useState('');
   const [showPicker, setShowPicker] = useState(false);
+  const [showReminderPicker, setShowReminderPicker] = useState(false);
   const [customEst, setCustomEst] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Task 10-17: nothing is stored yet for a new action, so the field is
+  // pre-filled purely from the deadline (10:00 when it is date-only).
+  const reminder = useActionReminderField({ actionId: null, deadlineValue: deadline, now });
 
   const canSubmit = title.trim() !== '' && estMinutes !== null && !submitting;
 
@@ -103,9 +110,16 @@ function AddActionForm({ projectId, now, onDone, onAdded }: { projectId: string;
     // date — compose that local day's 23:59:59 (the same convention as the
     // Clarify wizard). The picker only ever emits a real `YYYY-MM-DD`, so
     // there is nothing left to reject here.
-    const deadlineIso = deadline === '' ? undefined : (endOfLocalDayIso(deadline) ?? undefined);
+    const deadlineIso = deadline === '' ? undefined : (localDateTimeToIso(deadline) ?? undefined);
     setSubmitting(true);
-    void add({ title, estMinutes, value, projectId, deadline: deadlineIso }).then(() => {
+    void add({
+      title,
+      estMinutes,
+      value,
+      projectId,
+      deadline: deadlineIso,
+      reminderAt: reminder.write ?? null,
+    }).then(() => {
       setSubmitting(false);
       setTitle('');
       setEstMinutes(null);
@@ -145,19 +159,28 @@ function AddActionForm({ projectId, now, onDone, onAdded }: { projectId: string;
         />
       </View>
       <ValueChips value={value} onChange={setValue} />
-      <FormField label="截止日期">
+      <FormField label="截止时间">
         <PickerField
-          label="截止"
-          value={deadline}
-          placeholder="截止日期（可选）"
+          label="截止时间"
+          value={formatDateTimeValue(deadline)}
+          placeholder="截止时间（可选）"
           onPress={() => setShowPicker(true)}
           onClear={() => setDeadline('')}
         />
       </FormField>
+      <FormField label="提醒时间（可选）">
+        <PickerField
+          label="提醒时间"
+          value={formatDateTimeValue(reminder.value)}
+          placeholder="不提醒"
+          onPress={() => setShowReminderPicker(true)}
+          onClear={() => reminder.setValue('')}
+        />
+      </FormField>
       {showPicker ? (
         <DateTimePicker
-          mode="date"
-          title="选择截止日期"
+          mode="datetime"
+          title="选择截止时间"
           value={deadline}
           now={now}
           onConfirm={(val) => {
@@ -165,6 +188,19 @@ function AddActionForm({ projectId, now, onDone, onAdded }: { projectId: string;
             setShowPicker(false);
           }}
           onClose={() => setShowPicker(false)}
+        />
+      ) : null}
+      {showReminderPicker ? (
+        <DateTimePicker
+          mode="datetime"
+          title="选择提醒时间"
+          value={reminder.value}
+          now={now}
+          onConfirm={(val) => {
+            reminder.setValue(val);
+            setShowReminderPicker(false);
+          }}
+          onClose={() => setShowReminderPicker(false)}
         />
       ) : null}
       {error !== null ? <Text className="text-sm text-danger">{errorMessage(error)}</Text> : null}
@@ -185,9 +221,9 @@ function EditProjectForm({ project, now, onDone, onSaved }: { project: Project; 
   const [title, setTitle] = useState(project.title);
   const [outcome, setOutcome] = useState(project.outcome);
   const [value, setValue] = useState<Value>(project.value);
-  /** `YYYY-MM-DD` as picked; the row stores it as an ISO datetime. */
+  /** `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm` as picked (task 10-17); '' = none. */
   const [deadline, setDeadline] = useState(
-    project.deadline === undefined ? '' : localDateKey(new Date(project.deadline)),
+    project.deadline === undefined ? '' : localDateTimeKey(project.deadline),
   );
   const [showDeadlinePicker, setShowDeadlinePicker] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -199,7 +235,7 @@ function EditProjectForm({ project, now, onDone, onSaved }: { project: Project; 
     setSubmitting(true);
     // `deadline: undefined` CLEARS the column (`projectToRow` maps a missing
     // deadline to NULL) — that is how 「清除」 removes an existing one.
-    const deadlineIso = deadline === '' ? undefined : (endOfLocalDayIso(deadline) ?? undefined);
+    const deadlineIso = deadline === '' ? undefined : (localDateTimeToIso(deadline) ?? undefined);
     const ok = await update({ project, patch: { title: title.trim(), outcome: outcome.trim(), value, deadline: deadlineIso } });
     setSubmitting(false);
     if (ok) onSaved();
@@ -225,19 +261,19 @@ function EditProjectForm({ project, now, onDone, onSaved }: { project: Project; 
         />
       </FormField>
       <ValueChips value={value} onChange={setValue} />
-      <FormField label="截止日期">
+      <FormField label="截止时间">
         <PickerField
-          label="截止"
-          value={deadline}
-          placeholder="截止日期（可选）"
+          label="截止时间"
+          value={formatDateTimeValue(deadline)}
+          placeholder="截止时间（可选）"
           onPress={() => setShowDeadlinePicker(true)}
           onClear={() => setDeadline('')}
         />
       </FormField>
       {showDeadlinePicker ? (
         <DateTimePicker
-          mode="date"
-          title="选择截止日期"
+          mode="datetime"
+          title="选择截止时间"
           value={deadline}
           now={now}
           onConfirm={setDeadline}
@@ -264,12 +300,21 @@ function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; 
   const [estMinutes, setEstMinutes] = useState<number | null>(action.estMinutes);
   const [value, setValue] = useState<Value>(action.value);
   const [selectedContextIds, setSelectedContextIds] = useState<string[]>(action.contextIds ?? []);
+  /** `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm` as picked (task 10-17); '' = none. */
   const [deadline, setDeadline] = useState(
     action.deadline === undefined || action.deadline === null
       ? ''
-      : localDateKey(new Date(action.deadline)),
+      : localDateTimeKey(action.deadline),
   );
   const [showPicker, setShowPicker] = useState(false);
+  const [showReminderPicker, setShowReminderPicker] = useState(false);
+  // Task 10-17: the stored reminder is loaded once; a save only touches the
+  // row when the user actually changed the field (see `reminder.write`).
+  const reminder = useActionReminderField({
+    actionId: action.id,
+    deadlineValue: deadline,
+    now,
+  });
   const [customEst, setCustomEst] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -292,7 +337,7 @@ function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; 
     // Same convention as AddActionForm: the domain deadline is an ISO
     // *datetime*; the picker hands back a local date — compose that local
     // day's 23:59:59. `undefined` CLEARS an existing deadline.
-    const deadlineIso = deadline === '' ? undefined : (endOfLocalDayIso(deadline) ?? undefined);
+    const deadlineIso = deadline === '' ? undefined : (localDateTimeToIso(deadline) ?? undefined);
     setSubmitting(true);
     const ok = await update({
       action,
@@ -302,6 +347,7 @@ function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; 
         value,
         deadline: deadlineIso,
         contextIds: selectedContextIds,
+        ...(reminder.write !== undefined ? { reminderAt: reminder.write } : {}),
       },
     });
     setSubmitting(false);
@@ -373,19 +419,28 @@ function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; 
           </View>
         </View>
       ) : null}
-      <FormField label="截止日期">
+      <FormField label="截止时间">
         <PickerField
-          label="截止"
-          value={deadline}
-          placeholder="截止日期（可选）"
+          label="截止时间"
+          value={formatDateTimeValue(deadline)}
+          placeholder="截止时间（可选）"
           onPress={() => setShowPicker(true)}
           onClear={() => setDeadline('')}
         />
       </FormField>
+      <FormField label="提醒时间（可选）">
+        <PickerField
+          label="提醒时间"
+          value={formatDateTimeValue(reminder.value)}
+          placeholder="不提醒"
+          onPress={() => setShowReminderPicker(true)}
+          onClear={() => reminder.setValue('')}
+        />
+      </FormField>
       {showPicker ? (
         <DateTimePicker
-          mode="date"
-          title="选择截止日期"
+          mode="datetime"
+          title="选择截止时间"
           value={deadline}
           now={now}
           onConfirm={(val) => {
@@ -393,6 +448,19 @@ function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; 
             setShowPicker(false);
           }}
           onClose={() => setShowPicker(false)}
+        />
+      ) : null}
+      {showReminderPicker ? (
+        <DateTimePicker
+          mode="datetime"
+          title="选择提醒时间"
+          value={reminder.value}
+          now={now}
+          onConfirm={(val) => {
+            reminder.setValue(val);
+            setShowReminderPicker(false);
+          }}
+          onClose={() => setShowReminderPicker(false)}
         />
       ) : null}
       {error !== null ? <Text className="text-sm text-danger">{errorMessage(error)}</Text> : null}

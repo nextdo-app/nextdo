@@ -96,3 +96,25 @@ export async function listScheduledReminders(db: NextdoDb): Promise<ScheduledRem
     title: row.title,
   }));
 }
+
+/**
+ * The moment a form should SHOW as one action's reminder (task 10-17), or
+ * null when it has none. Deliberately not `listScheduledReminders`: a form
+ * needs one value for one action and must not pay for the three title joins.
+ */
+export async function listScheduledReminderFor(
+  db: NextdoDb,
+  actionKind: ActionKind,
+  actionId: string,
+): Promise<string | null> {
+  const row = await db
+    .selectFrom('reminders')
+    .select('fires_at')
+    .where('action_kind', '=', actionKind)
+    .where('action_id', '=', actionId)
+    .where('state', '=', 'scheduled')
+    .where('deleted_at', 'is', null)
+    .orderBy('fires_at')
+    .executeTakeFirst();
+  return row?.fires_at ?? null;
+}
