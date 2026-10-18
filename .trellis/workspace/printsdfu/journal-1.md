@@ -1623,3 +1623,25 @@ NextAction / CalendarAction / HabitDay 并支持逐条恢复为未完成；顺�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 52: 深色模式跟随系统主题、桌面端关闭最小化与移动端主动申请通知权限
+<!-- trellis-session: v=2 fp=70817368e75e41aa -->
+
+**Date**: 2026-10-18
+**Task**: 深色模式跟随系统主题、桌面端关闭最小化与移动端主动申请通知权限
+**Branch**: `release/0.1.8-beta.1`
+
+### Summary
+
+修复外观主题跟随系统在深色模式下半浅半黑问题；桌面端关闭改为隐藏到托盘/Dock而非立即退出；移动端主动向手机系统申请通知权限
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b3605fa` | fix(mobile,desktop): 修复跟随系统深色主题、桌面端关闭最小化与移动端主动申请通知权限 |
+
+### Status
+
+[OK] **Completed**

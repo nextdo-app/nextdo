@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 51
+- **Total Sessions**: 52
 - **Last Active**: 2026-10-18
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1625 | Active |
+| `journal-1.md` | ~1647 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 52 | 2026-10-18 | 深色模式跟随系统主题、桌面端关闭最小化与移动端主动申请通知权限 | `b3605fa` | `release/0.1.8-beta.1` |
 | 51 | 2026-10-18 | UI 体验与交互全栈优化 | `d3df034` | `release/0.1.8-beta.1` |
 | 50 | 2026-10-18 | 修复 issues #50 #51：习惯时间选择器坍缩与两分钟行动即时专注流转 | `81ac1b1`, `5133c7b` | `feat/issues-50-51` |
 | 49 | 2026-10-18 | issues #44/#45/#46：澄清项目优先、通知有效状态、场景能力下线 | `731563e`, `a28b32b` | `feat/issues-44-45-46` |
