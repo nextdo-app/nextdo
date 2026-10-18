@@ -1601,3 +1601,25 @@ NextAction / CalendarAction / HabitDay 并支持逐条恢复为未完成；顺�
 
 - 推送 feat/issues-50-51 并开 PR，CI 通过后合并
 - 建发布分支 bump 六处版本号到测试版 0.1.8-beta.1，合并后打 tag 触发 release 流水线并核验资产
+
+
+## Session 51: UI 体验与交互全栈优化
+<!-- trellis-session: v=2 fp=e46fe8a8ff622844 -->
+
+**Date**: 2026-10-18
+**Task**: UI 体验与交互全栈优化
+**Branch**: `release/0.1.8-beta.1`
+
+### Summary
+
+全面审查并优化 Nextdo UI 设计系统与核心流体验：设计令牌纯度、圆角几何规范、现在Tab情境排版、专注Timer沉浸感、桌面宽屏自适应与无障碍微字号容错
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d3df034` | feat(mobile,ui): 全面优化 UI 设计令牌、核心流排版、专注计时器与大屏响应式 |
+
+### Status
+
+[OK] **Completed**
