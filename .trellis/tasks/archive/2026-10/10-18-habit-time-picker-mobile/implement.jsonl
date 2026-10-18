@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/10-18-habit-time-picker-mobile/research/time-picker-layout.md", "reason": "Issue 50 根因分析：Yoga flex-1 在未设高容器中导致 ScrollView 坍缩为 0"}
+{"file": ".trellis/spec/app/component-guidelines.md", "reason": "表单与弹窗组件规范、时间控件规范"}
+{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "跨端与响应式验证口径"}
