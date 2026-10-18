@@ -1666,3 +1666,17 @@ NextAction / CalendarAction / HabitDay 并支持逐条恢复为未完成；顺�
 ### Status
 
 [OK] **Completed**
+
+## Session 54: 桌面端 Reopen 事件平台编译错误
+
+**Date**: 2026-10-18
+**Task**: 桌面端 Reopen 事件平台编译错误
+**Branch**: `release/0.1.8-beta.1`
+
+### Summary
+
+v0.1.9-beta.1 发布构建中 Windows / Linux 因 RunEvent::Reopen 仅存在于 macOS 而报 E0599；用 cfg(target_os = "macos") 隔离，cargo check 通过后重新发布 0.1.9-beta.2。
+
+### Status
+
+[OK] **Completed**
