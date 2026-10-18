@@ -71,6 +71,10 @@ interface CalendarBlock {
 }
 interface EngineContext {
   contextIds: string[];          // where the user is: ["computer", "office"]
+                                 // NOTE (#46): the app always feeds `[]` — the
+                                 // 场景 UI is offline, so nothing is filtered by
+                                 // location. The contract stays: `[]` means
+                                 // "anywhere" and legacy tagged rows keep matching.
   availableMinutes: number;      // the time slot the user can give right now
 }
 

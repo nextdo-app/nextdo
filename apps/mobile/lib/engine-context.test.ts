@@ -40,22 +40,19 @@ describe('parseEngineContext', () => {
   });
 
   it('parses a valid blob', () => {
-    const parsed = parseEngineContext(
-      JSON.stringify({ contextIds: ['ctx-1', 'ctx-2'], availableMinutes: 30 }),
-    );
-    expect(parsed).toEqual({ contextIds: ['ctx-1', 'ctx-2'], availableMinutes: 30 });
+    const parsed = parseEngineContext(JSON.stringify({ availableMinutes: 30 }));
+    expect(parsed).toEqual({ availableMinutes: 30 });
   });
 
-  it('drops non-string context ids and clamps availableMinutes', () => {
+  it('ignores the retired contextIds key (#46) and clamps availableMinutes', () => {
     const parsed = parseEngineContext(
       JSON.stringify({ contextIds: ['ok', 7, null], availableMinutes: 999999 }),
     );
-    expect(parsed.contextIds).toEqual(['ok']);
-    expect(parsed.availableMinutes).toBe(1440);
+    expect(parsed).toEqual({ availableMinutes: 1440 });
   });
 
   it('falls back per-field (missing / invalid fields never crash)', () => {
-    expect(parseEngineContext(JSON.stringify({ contextIds: 'nope' })).contextIds).toEqual([]);
+    expect(parseEngineContext(JSON.stringify({ contextIds: 'nope' }))).toEqual(DEFAULT_ENGINE_CONTEXT);
     expect(parseEngineContext(JSON.stringify({ availableMinutes: -5 }))).toEqual(DEFAULT_ENGINE_CONTEXT);
     expect(parseEngineContext(JSON.stringify({ contextIds: ['a'] })).availableMinutes).toBe(60);
   });
@@ -70,7 +67,7 @@ describe('load/save round-trip', () => {
   it('persists and re-reads the settings', async () => {
     const store = memoryStore();
     __setEngineContextStoreForTests(store);
-    const settings: EngineContextSettings = { contextIds: ['office'], availableMinutes: 15 };
+    const settings: EngineContextSettings = { availableMinutes: 15 };
     await saveEngineContext(settings);
     await expect(loadEngineContext()).resolves.toEqual(settings);
     expect(store.map.size).toBe(1);
@@ -102,7 +99,7 @@ describe('load/save round-trip', () => {
     try {
       // Clear any cached test backend
       __setEngineContextStoreForTests(null);
-      const settings: EngineContextSettings = { contextIds: ['desktop-home'], availableMinutes: 45 };
+      const settings: EngineContextSettings = { availableMinutes: 45 };
       await saveEngineContext(settings);
 
       // Reset cache to simulate app restart/re-mount

@@ -1,6 +1,9 @@
 /**
  * Engine-context persistence (design.md §4.1): the Now screen's
- * `{ contextIds, availableMinutes }` survives restarts.
+ * `{ availableMinutes }` survives restarts.
+ *
+ * (The 场景 / contextIds half was removed with issue #46 — the engine input
+ * is now a constant empty list, see `hooks/use-now.ts`.)
  *
  * Storage follows the owner-token platform matrix (the schema has NO
  * settings table — adding one would touch the sync surface, which this
@@ -16,16 +19,21 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 export const ENGINE_CONTEXT_KEY = 'nextdo.settings.engine-context';
 
+/**
+ * The Now screen's engine inputs that survive a restart.
+ *
+ * `contextIds` used to live here too; the 场景 (contexts) feature was taken
+ * offline in issue #46, so the engine now always receives an empty context
+ * list (= anywhere / no filtering). The stored blob may still carry the old
+ * key — `parseEngineContext` ignores unknown fields, so no migration runs.
+ */
 export interface EngineContextSettings {
-  /** The scenes the user is in now; `[]` = anywhere (matches the engine
-   *  contract: empty contextIds match any action context). */
-  contextIds: string[];
   /** The time slot the user can give right now (minutes). */
   availableMinutes: number;
 }
 
 /** Scaffold defaults — the same values the vertical slice hardcoded. */
-export const DEFAULT_ENGINE_CONTEXT: EngineContextSettings = { contextIds: [], availableMinutes: 60 };
+export const DEFAULT_ENGINE_CONTEXT: EngineContextSettings = { availableMinutes: 60 };
 
 const MAX_AVAILABLE_MINUTES = 1440;
 
@@ -139,28 +147,23 @@ export function __setEngineContextStoreForTests(store: KeyValue | null): void {
 
 /**
  * Parse a stored blob; ANY corruption or missing field falls back to the
- * defaults (the setting must never take the Now screen down).
+ * defaults (the setting must never take the Now screen down). Unknown keys
+ * (e.g. the retired `contextIds`) are ignored on purpose.
  */
 export function parseEngineContext(raw: string | null): EngineContextSettings {
-  if (raw === null) {
-    return { contextIds: [], availableMinutes: DEFAULT_ENGINE_CONTEXT.availableMinutes };
-  }
+  const fallback = { availableMinutes: DEFAULT_ENGINE_CONTEXT.availableMinutes };
+  if (raw === null) return fallback;
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== 'object' || parsed === null) {
-      return { contextIds: [], availableMinutes: DEFAULT_ENGINE_CONTEXT.availableMinutes };
-    }
-    const obj = parsed as { contextIds?: unknown; availableMinutes?: unknown };
-    const contextIds = Array.isArray(obj.contextIds)
-      ? obj.contextIds.filter((entry): entry is string => typeof entry === 'string')
-      : [];
+    if (typeof parsed !== 'object' || parsed === null) return fallback;
+    const obj = parsed as { availableMinutes?: unknown };
     const availableMinutes =
       typeof obj.availableMinutes === 'number' && Number.isFinite(obj.availableMinutes) && obj.availableMinutes >= 1
         ? Math.min(Math.round(obj.availableMinutes), MAX_AVAILABLE_MINUTES)
         : DEFAULT_ENGINE_CONTEXT.availableMinutes;
-    return { contextIds, availableMinutes };
+    return { availableMinutes };
   } catch {
-    return { contextIds: [], availableMinutes: DEFAULT_ENGINE_CONTEXT.availableMinutes };
+    return fallback;
   }
 }
 
@@ -190,7 +193,7 @@ export async function saveEngineContext(settings: EngineContextSettings): Promis
   cachedSettings = settings;
   await getBackend().setItem(
     ENGINE_CONTEXT_KEY,
-    JSON.stringify({ contextIds: settings.contextIds, availableMinutes: settings.availableMinutes }),
+    JSON.stringify({ availableMinutes: settings.availableMinutes }),
   );
 }
 
@@ -241,7 +244,6 @@ export function useEngineContextSettings(): UseEngineContextSettingsResult {
     // next load reads back 1440).
     const minutes = patch.availableMinutes ?? current.availableMinutes;
     const next: EngineContextSettings = {
-      contextIds: patch.contextIds ?? current.contextIds,
       availableMinutes:
         typeof minutes === 'number' && Number.isFinite(minutes)
           ? Math.min(Math.max(Math.round(minutes), 1), MAX_AVAILABLE_MINUTES)

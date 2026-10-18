@@ -70,7 +70,7 @@ async function capture(pageRoute, filename, { width, height, mobile }) {
   // Suppress notification opt-in prompt
   await send('Runtime.evaluate', {
     expression: `
-      localStorage.setItem('nextdo.settings.notifications', JSON.stringify({ masterEnabled: true, optInPromptSeen: true }));
+      localStorage.setItem('nextdo.settings.notifications', JSON.stringify({ masterEnabled: true }));
     `,
   });
 

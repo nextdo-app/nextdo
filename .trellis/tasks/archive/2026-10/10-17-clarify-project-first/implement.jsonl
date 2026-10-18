@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/10-17-clarify-project-first/research/clarify-flow-surface.md", "reason": "现状：问答链、提交契约、测试面与旧→新映射"}
+{"file": ".trellis/spec/domain/domain-model.md", "reason": "Clarify 决策表与答复语义"}
+{"file": ".trellis/spec/app/component-guidelines.md", "reason": "向导/表单组件与文案约定"}
+{"file": ".trellis/spec/app/testing-guidelines.md", "reason": "单测写法约定"}

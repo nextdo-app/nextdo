@@ -2,25 +2,24 @@
  * The Now tab (design stitch_scene_design/_1 & _2 rework):
  *
  *   TopHeader (Now + 专注模式 badge + subhead + quick action button) →
- *   FilterContextCard (Current Context scrollable pills with + 添加场景
- *     triggering AddSceneModal bottom sheet, and 5-col Available Time pills) →
+ *   FilterContextCard (5-col Available Time pills; the 场景/context pills
+ *     were retired in issue #46) →
  *   re-clarify banner →
  *   STATS ROW (可执行 n/总 · 预计耗时 Σ est · 认知负荷 三档) →
  *   Recommendation Hero Card (kind / est / 项目·截止 / Why this? top-3 / 开始 / 换一个 / 稍后) →
- *   CONTEXT FILTER chips (local UI state — list area only) →
  *   The eligible list (collapsible with counter) →
  *   EmptyExecutionPool (delicate clock illustration + capture button) →
  *   TodayHabitSection (today's habit cards with daily rhythm guide).
  *
- * Presentational only: data arrives from `useNow` (+ contexts / habit-days
- * hooks); every mutation goes through a mutation hook.
+ * Presentational only: data arrives from `useNow` (+ habit-days hooks);
+ * every mutation goes through a mutation hook.
  */
 import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { Animated, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { router, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Button, Card, ContextChip, SceneOption, Tag, colors, cn } from '@nextdo/ui';
+import { Button, Card, Tag, colors, cn } from '@nextdo/ui';
 import { formatDeadline, toIso, type CandidateKind, type NextAction, type NextCandidate } from '@nextdo/core';
 import { useNow, shouldOfferReclarify, type NowEligible } from '@/hooks/use-now';
 import { useAppClock } from '@/hooks/use-app-clock';
@@ -28,7 +27,6 @@ import { useSkipAction } from '@/hooks/use-skip-action';
 import { useSnoozeAction } from '@/hooks/use-snooze-action';
 import { useTrashAction } from '@/hooks/use-trash-action';
 import { useCompleteAction } from '@/hooks/use-complete-action';
-import { useContexts } from '@/hooks/use-contexts';
 import { useHabits, type HabitWithProgress } from '@/hooks/use-habits';
 import { useProjectTitles } from '@/hooks/use-project-titles';
 import { useEngineContextSettings, type EngineContextSettings } from '@/lib/engine-context';
@@ -40,7 +38,6 @@ import { formatLocalDateTime } from '@/lib/format';
 import { SnoozeSheet } from '@/components/snooze-sheet';
 import { useSwipeReveal } from '@/hooks/use-swipe-reveal';
 import { DeadlineChip } from '@/components/deadline-chip';
-import { AddSceneModal } from '@/components/add-scene-modal';
 import { EditActionModal } from '@/components/edit-action-modal';
 import { HabitWindowConfirmModal } from '@/components/habit-window-confirm-modal';
 import { useAppTheme } from '@/lib/theme';
@@ -107,12 +104,12 @@ function TopHeader({ onQuickAction }: { onQuickAction?: () => void }) {
 
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="管理场景快捷入口"
+        accessibilityLabel="快速记录"
         hitSlop={CHIP_HIT_SLOP}
-        onPress={onQuickAction ?? (() => router.push('/contexts'))}
+        onPress={onQuickAction ?? (() => router.push('/inbox'))}
         className="h-8 w-8 items-center justify-center rounded-full border border-border/80 bg-surface shadow-2xs active:scale-95 dark:border-border-dark dark:bg-surface-dark"
       >
-        <Ionicons name="options-outline" size={16} color={isDark ? colors.mutedDark : colors.muted} />
+        <Ionicons name="add" size={16} color={isDark ? colors.mutedDark : colors.muted} />
       </Pressable>
     </View>
   );
@@ -235,9 +232,9 @@ function CustomMinutesInput({
 }
 
 /**
- * FilterContextCard (stitch_scene_design/_1 & _2):
- * Displays the current context pills with "+ 添加场景" button,
- * and the 5-col available time selector.
+ * FilterContextCard:
+ * The Now screen's engine input — the 5-col available-time selector.
+ * (The scene pills and the add-scene sheet were removed in issue #46.)
  */
 function FilterContextCard({
   settings,
@@ -246,33 +243,7 @@ function FilterContextCard({
   settings: EngineContextSettings | null;
   update: (patch: Partial<EngineContextSettings>) => Promise<void>;
 }) {
-  const { data: contexts, add, reload: reloadContexts } = useContexts();
-  const [modalVisible, setModalVisible] = useState(false);
-  const { isDark } = useAppTheme();
-
-  useFocusEffect(
-    useCallback(() => {
-      reloadContexts();
-    }, [reloadContexts]),
-  );
-
-  const contextIds = settings?.contextIds ?? [];
   const availableMinutes = settings?.availableMinutes ?? 60;
-  const anyScene = contextIds.length === 0;
-
-  const toggleContext = (id: string) => {
-    const next = contextIds.includes(id)
-      ? contextIds.filter((entry) => entry !== id)
-      : [...contextIds, id];
-    void update({ contextIds: next });
-  };
-
-  const handleSaveAndActivate = async (name: string) => {
-    const createdId = await add(name);
-    if (createdId) {
-      void update({ contextIds: [...contextIds, createdId] });
-    }
-  };
 
   const timeEstimateText = useMemo(() => {
     if (availableMinutes >= 120) return `预计当前空闲 ~${Math.round(availableMinutes / 60)}小时`;
@@ -282,96 +253,7 @@ function FilterContextCard({
 
   return (
     <Card variant="outlined" className="gap-3.5 p-4 rounded-2xl border-border/70 bg-surface dark:border-border-dark/70 dark:bg-surface-dark shadow-2xs">
-      {/* Dimension 1: Scene row */}
-      <View className="gap-2.5">
-        <View className="flex-row items-center justify-between">
-          <View className="flex-row items-center gap-1.5">
-            <View className="h-1.5 w-1.5 rounded-full bg-accent dark:bg-accent-dark" />
-            <Text className="font-sans text-xs font-semibold tracking-wider text-muted dark:text-muted-dark">
-              当前场景
-            </Text>
-          </View>
-
-          <View className="flex-row items-center gap-2">
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="管理场景"
-              hitSlop={CHIP_HIT_SLOP}
-              onPress={() => router.push('/contexts')}
-              className="flex-row items-center gap-1 py-0.5 active:opacity-75"
-            >
-              <Text className="font-sans text-[11px] font-medium text-muted dark:text-muted-dark">
-                管理场景
-              </Text>
-              <Ionicons name="chevron-forward" size={12} color={isDark ? colors.mutedDark : colors.muted} />
-            </Pressable>
-
-            {/* Any scene toggle pill */}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="清除场景选择，回到任意"
-              accessibilityState={{ selected: anyScene }}
-              hitSlop={CHIP_HIT_SLOP}
-              onPress={() => void update({ contextIds: [] })}
-              className={cn(
-                'flex-row items-center gap-1 rounded-full px-2.5 py-0.5 active:scale-95',
-                anyScene
-                  ? 'bg-surface-container dark:bg-surface-container-dark'
-                  : 'border border-accent/40 bg-accent/10 dark:border-accent-dark/40 dark:bg-accent-dark/20',
-              )}
-            >
-              <Text
-                className={cn(
-                  'font-sans text-xs font-medium',
-                  anyScene
-                    ? 'text-ink dark:text-ink-dark'
-                    : 'text-accent dark:text-accent-dark',
-                )}
-              >
-                {anyScene ? '任意' : `已选 ${contextIds.length} 个`}
-              </Text>
-              {!anyScene ? (
-                <Text className="font-sans text-xs text-accent dark:text-accent-dark">✕</Text>
-              ) : null}
-            </Pressable>
-          </View>
-        </View>
-
-        {/* Horizontal scroll of scene options */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 8, alignItems: 'center', paddingVertical: 2 }}
-        >
-          {(contexts ?? []).map((context) => (
-            <SceneOption
-              key={context.id}
-              label={context.name}
-              selected={contextIds.includes(context.id)}
-              onPress={() => toggleContext(context.id)}
-            />
-          ))}
-
-          {/* "+ 添加场景" pill button */}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="新建场景"
-            hitSlop={CHIP_HIT_SLOP}
-            onPress={() => setModalVisible(true)}
-            className="h-8 flex-row items-center gap-1 rounded-full border border-dashed border-border/80 bg-surface px-3 active:scale-95 dark:border-border-dark dark:bg-surface-dark"
-          >
-            <Ionicons name="add" size={14} color={isDark ? colors.mutedDark : colors.muted} />
-            <Text className="font-sans text-xs font-medium text-muted dark:text-muted-dark">
-              添加场景
-            </Text>
-          </Pressable>
-        </ScrollView>
-      </View>
-
-      {/* Subtle divider */}
-      <View className="h-px bg-border/40 dark:bg-border-dark/40" />
-
-      {/* Dimension 2: Available time row */}
+      {/* The available-time row (the only engine input left) */}
       <View className="gap-2">
         <View className="flex-row items-center justify-between">
           <View className="flex-row items-center gap-1.5">
@@ -403,54 +285,7 @@ function FilterContextCard({
         </View>
       </View>
 
-      <AddSceneModal
-        visible={modalVisible}
-        onClose={() => setModalVisible(false)}
-        onSaveAndActivate={handleSaveAndActivate}
-      />
     </Card>
-  );
-}
-
-/**
- * Filter chip for the candidate list area.
- * Intentionally uses a subtle segmented tag style (rounded-xl) with neutral ink tones,
- * clearly distinguishing it from the engine's primary SceneOption chips above.
- */
-function Chip({
-  label,
-  active,
-  onPress,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ selected: active }}
-      hitSlop={CHIP_HIT_SLOP}
-      onPress={onPress}
-      className={cn(
-        'h-8 flex-row items-center justify-center rounded-xl px-3.5 transition-colors active:scale-95',
-        active
-          ? 'bg-ink shadow-2xs dark:bg-ink-dark'
-          : 'border border-border/80 bg-surface active:bg-surface-container dark:border-border-dark dark:bg-surface-dark dark:active:bg-surface-container-dark',
-      )}
-    >
-      <Text
-        className={cn(
-          'font-sans text-xs',
-          active
-            ? 'font-semibold text-canvas dark:text-canvas-dark'
-            : 'font-medium text-muted dark:text-muted-dark',
-        )}
-      >
-        {label}
-      </Text>
-    </Pressable>
   );
 }
 
@@ -469,7 +304,6 @@ const ActionRow = memo(function ActionRow({
   entry,
   now,
   projectName,
-  contextName,
   onComplete,
   onSnooze,
   onTrash,
@@ -478,7 +312,6 @@ const ActionRow = memo(function ActionRow({
   entry: NowEligible;
   now: Date;
   projectName: string | undefined;
-  contextName: (id: string) => string;
   onComplete: (kind: CandidateKind, id: string) => void;
   onSnooze: (kind: CandidateKind, id: string) => void;
   onTrash: (kind: CandidateKind, id: string) => void;
@@ -537,9 +370,6 @@ const ActionRow = memo(function ActionRow({
             </View>
             <View className="flex-row flex-wrap items-center gap-1.5">
               {projectName !== undefined ? <Tag label={projectName} tone="neutral" /> : null}
-              {action.contextIds.map((id) => (
-                <ContextChip key={id} name={contextName(id)} />
-              ))}
               <View className="ml-auto flex-row items-center gap-1">
                 {action.kind === 'calendar' && action.startsAt !== undefined ? (
                   <Text className="font-sans text-xs text-muted dark:text-muted-dark">
@@ -794,7 +624,6 @@ export default function NowScreen() {
   );
 
   const projectTitles = useProjectTitles();
-  const { data: contexts } = useContexts();
   const [snoozeTarget, setSnoozeTarget] = useState<{ kind: CandidateKind; id: string } | null>(null);
   const [editingAction, setEditingAction] = useState<NextAction | null>(null);
   const [skippedViewIds, setSkippedViewIds] = useState<string[]>([]);
@@ -804,7 +633,6 @@ export default function NowScreen() {
     windowStart: string;
     windowEnd: string;
   } | null>(null);
-  const [selectedContextIds, setSelectedContextIds] = useState<string[]>([]);
   const [isListExpanded, setIsListExpanded] = useState(true);
   const insets = useAppInsets();
   const topPadding = Math.max(insets.top, 16);
@@ -823,30 +651,6 @@ export default function NowScreen() {
   const totalEst = useMemo(
     () => eligible.reduce((sum, entry) => sum + entry.action.estMinutes, 0),
     [eligible],
-  );
-
-  const visible = useMemo(
-    () =>
-      eligible.filter(
-        (entry) =>
-          selectedContextIds.length === 0 ||
-          entry.action.contextIds.length === 0 ||
-          entry.action.contextIds.some((id) => selectedContextIds.includes(id)),
-      ),
-    [eligible, selectedContextIds],
-  );
-
-  const toggleFilterContext = useCallback(
-    (contextId: string) =>
-      setSelectedContextIds((prev) =>
-        prev.includes(contextId) ? prev.filter((id) => id !== contextId) : [...prev, contextId],
-      ),
-    [],
-  );
-
-  const contextName = useCallback(
-    (id: string) => contexts?.find((entry) => entry.id === id)?.name ?? id,
-    [contexts],
   );
 
   const handleSkip = useCallback(() => {
@@ -1095,10 +899,10 @@ export default function NowScreen() {
               ) : (
                 <Card className="items-center p-6 text-center">
                   <Text className="font-sans text-base font-semibold text-ink dark:text-ink-dark">
-                    没有任何适合当前场景与时间的行动
+                    没有任何适合当前可用时间的行动
                   </Text>
                   <Text className="mt-1 font-sans text-xs text-muted dark:text-muted-dark">
-                    试试切换下方的场景或时间。
+                    试试调整可用时间。
                   </Text>
                   {data.filtered.length > 0 ? (
                     <View className="mt-4 w-full gap-1 border-t border-border/40 pt-3 dark:border-border-dark/40">
@@ -1154,38 +958,21 @@ export default function NowScreen() {
 
               {displayed !== null ? (
                 <>
-                  {/* Context filter chips for list area */}
-                  <View className="flex-row flex-wrap gap-2">
-                    <Chip
-                      label="全部"
-                      active={selectedContextIds.length === 0}
-                      onPress={() => setSelectedContextIds([])}
-                    />
-                    {(contexts ?? []).map((context) => (
-                      <Chip
-                        key={context.id}
-                        label={context.name}
-                        active={selectedContextIds.includes(context.id)}
-                        onPress={() => toggleFilterContext(context.id)}
-                      />
-                    ))}
-                  </View>
-
                   {/* Eligible list header & collapsible body */}
-                  {visible.length === 0 ? (
+                  {eligible.length === 0 ? (
                     <Card className="items-center p-6 text-center">
                       <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
-                        没有匹配当前情境的可执行事项
+                        没有可执行的事项
                       </Text>
                       <Text className="mt-1 font-sans text-xs text-muted dark:text-muted-dark">
-                        换一批情境 chip，或点「全部」看所有可执行事项。
+                        换个可用时间，或先去收集箱记一条。
                       </Text>
                     </Card>
                   ) : (
                     <View className="gap-2.5">
                       <View className="flex-row items-center justify-between px-1">
                         <Text className="font-sans text-xs font-semibold text-muted dark:text-muted-dark">
-                          可执行备选事项 ({visible.length})
+                          可执行备选事项 ({eligible.length})
                         </Text>
                         <Button
                           size="sm"
@@ -1195,7 +982,7 @@ export default function NowScreen() {
                         />
                       </View>
                       {isListExpanded ? (
-                        visible.map((entry) => (
+                        eligible.map((entry) => (
                           <ActionRow
                             key={entry.action.id}
                             entry={entry}
@@ -1205,7 +992,6 @@ export default function NowScreen() {
                                 ? projectTitles[entry.action.projectId]
                                 : undefined
                             }
-                            contextName={contextName}
                             onComplete={() => handleComplete(entry.action.kind, entry.action.id)}
                             onSnooze={handleSnooze}
                             onTrash={handleTrash}
@@ -1220,7 +1006,7 @@ export default function NowScreen() {
                           className="rounded-xl border border-border/50 bg-surface/40 p-3.5 dark:border-border-dark/50 dark:bg-surface-dark/40"
                         >
                           <Text className="text-center font-sans text-xs text-muted dark:text-muted-dark">
-                            已折叠 {visible.length} 项备选事项 · 点击展开查看完整列表
+                            已折叠 {eligible.length} 项备选事项 · 点击展开查看完整列表
                           </Text>
                         </Pressable>
                       )}

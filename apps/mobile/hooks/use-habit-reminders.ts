@@ -16,6 +16,7 @@ import {
   type HabitReminderOptions,
 } from '@nextdo/db';
 import { logger } from '@nextdo/core';
+import { maybeRequestNotificationPermission } from '@/lib/reminders/permission';
 import {
   loadHabitReminderOptions,
   saveHabitReminderOptions,
@@ -81,6 +82,14 @@ export function useHabitReminders(now: Date): UseHabitRemindersResult {
       try {
         await saveHabitReminderOptions(next);
         setError(null);
+        // Issue #45 R3: turning habit reminders ON is the first moment this
+        // device truly needs notifications — ask the OS right here (native +
+        // undetermined only, fire-and-forget; a denial never blocks the save).
+        // Only the OFF→ON transition arms anything: a plain time change while
+        // they are already on schedules nothing new for the permission model.
+        if (next.enabled && !current.enabled) {
+          void maybeRequestNotificationPermission().catch(() => undefined);
+        }
         await runSync(next);
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : String(err));

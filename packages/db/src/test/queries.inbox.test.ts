@@ -52,7 +52,7 @@ function makeInboxItem(overrides: Partial<InboxItem> = {}): InboxItem {
 function answers(overrides: Partial<ClarifyAnswers> = {}): ClarifyAnswers {
   return {
     actionable: true,
-    multipleSteps: false,
+    inProject: false,
     twoMinutes: false,
     myResponsibility: false,
     fixedTime: false,
@@ -237,7 +237,7 @@ describe('applyClarify', () => {
       const before = (await db.selectFrom('projects').selectAll().execute()).length;
       const result = await applyClarify(db, {
         inboxId: I.plain,
-        answers: answers({ multipleSteps: true, projectOutcome: '设备恢复可用' }),
+        answers: answers({ inProject: true, projectChoice: 'new', projectOutcome: '设备恢复可用' }),
         target: { projectValue: 4, estMinutes: 30, actionTitle: '报修第一台' },
         now: FIXTURE_NOW,
       });
@@ -345,7 +345,7 @@ describe('applyClarify', () => {
     try {
       const result = await applyClarify(db, {
         inboxId: I.plain,
-        answers: answers({ myResponsibility: true, fixedTime: false, projectId: P.paper }),
+        answers: answers({ inProject: true, projectChoice: 'existing', projectId: P.paper }),
         target: { estMinutes: 15 },
         now: FIXTURE_NOW,
       });
@@ -367,7 +367,7 @@ describe('applyClarify', () => {
     try {
       const result = await applyClarify(db, {
         inboxId: I.plain,
-        answers: answers({ myResponsibility: true, fixedTime: false, projectId: P.paper }),
+        answers: answers({ inProject: true, projectChoice: 'existing', projectId: P.paper }),
         target: { estMinutes: 15, value: 2 },
         now: FIXTURE_NOW,
       });
@@ -385,7 +385,7 @@ describe('applyClarify', () => {
       await expect(
         applyClarify(db, {
           inboxId: I.plain,
-          answers: answers({ myResponsibility: true, projectId: '01TST00000000000000000000099' }),
+          answers: answers({ inProject: true, projectChoice: 'existing', projectId: '01TST00000000000000000000099' }),
           target: { estMinutes: 15 },
           now: FIXTURE_NOW,
         }),
@@ -409,7 +409,7 @@ describe('applyClarify', () => {
       await expect(
         applyClarify(db, {
           inboxId: I.plain,
-          answers: answers({ myResponsibility: true, projectId: P.held }),
+          answers: answers({ inProject: true, projectChoice: 'existing', projectId: P.held }),
           target: { estMinutes: 15 },
           now: FIXTURE_NOW,
         }),
@@ -425,7 +425,7 @@ describe('applyClarify', () => {
       await expect(
         applyClarify(db, {
           inboxId: I.plain,
-          answers: answers({ myResponsibility: true, projectId: P.held }),
+          answers: answers({ inProject: true, projectChoice: 'existing', projectId: P.held }),
           target: { estMinutes: 15 },
           now: FIXTURE_NOW,
         }),
@@ -456,7 +456,7 @@ describe('applyClarify', () => {
       await expect(
         applyClarify(db, {
           inboxId: I.plain,
-          answers: answers({ multipleSteps: true }),
+          answers: answers({ inProject: true, projectChoice: 'new' }),
           target: { projectValue: 4, estMinutes: 30 },
           now: FIXTURE_NOW,
         }),
@@ -496,7 +496,7 @@ describe('applyClarify', () => {
 
 describe('reclarifyAction', () => {
   const reclarify = (overrides: Partial<ReclarifyAnswers> = {}): ReclarifyAnswers => ({
-    multipleSteps: false,
+    inProject: false,
     twoMinutes: false,
     myResponsibility: true,
     fixedTime: false,
@@ -593,7 +593,7 @@ describe('reclarifyAction', () => {
       const result = await reclarifyAction(db, {
         actionKind: 'next',
         actionId: A.a,
-        answers: reclarify({ projectId: P.empty }),
+        answers: reclarify({ inProject: true, projectChoice: 'existing', projectId: P.empty }),
         target: { estMinutes: 5 },
         now: FIXTURE_NOW,
       });
@@ -613,7 +613,7 @@ describe('reclarifyAction', () => {
       const result = await reclarifyAction(db, {
         actionKind: 'next',
         actionId: A.a,
-        answers: reclarify({ projectId: P.paper }),
+        answers: reclarify({ inProject: true, projectChoice: 'existing', projectId: P.paper }),
         target: { estMinutes: 5, value: 1 },
         now: FIXTURE_NOW,
       });
@@ -632,7 +632,7 @@ describe('reclarifyAction', () => {
         reclarifyAction(db, {
           actionKind: 'next',
           actionId: A.a,
-          answers: reclarify({ projectId: '01TST00000000000000000000099' }),
+          answers: reclarify({ inProject: true, projectChoice: 'existing', projectId: '01TST00000000000000000000099' }),
           target: { estMinutes: 5 },
           now: FIXTURE_NOW,
         }),
@@ -651,7 +651,7 @@ describe('reclarifyAction', () => {
         reclarifyAction(db, {
           actionKind: 'next',
           actionId: A.a,
-          answers: reclarify({ projectId: P.held }),
+          answers: reclarify({ inProject: true, projectChoice: 'existing', projectId: P.held }),
           target: { estMinutes: 5 },
           now: FIXTURE_NOW,
         }),
@@ -661,7 +661,7 @@ describe('reclarifyAction', () => {
     }
   });
 
-  it('detach (projectId null): the replacement row has no project', async () => {
+  it('detach (不属于项目 → projectId null): the replacement row has no project', async () => {
     const { db, close } = await open(true);
     try {
       // A.b belongs to the paper project; detach it explicitly.

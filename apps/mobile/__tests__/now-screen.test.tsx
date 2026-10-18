@@ -105,11 +105,6 @@ jest.mock('@nextdo/db', () => {
     snoozeAction: async () => undefined,
     trashAction: async () => undefined,
     listProjects: async () => projectsRef.current,
-    listContexts: async () => {
-      contextReads.count += 1;
-      return ctxRef.current;
-    },
-    addContext: async () => undefined,
     listHabits: async () => {
       habitReads.habits += 1;
       return habitListRef.current;
@@ -121,10 +116,6 @@ jest.mock('@nextdo/db', () => {
     // HabitsScreen mounts on the /habits route these tests navigate to.
     startHabit: async () => ({ habit: null, today: null }),
     trashHabit: async () => undefined,
-    // ContextsScreen mounts on the /contexts route (the scene bar's
-    // 「管理场景」 entry) — the mock must provide every export the tree
-    // touches or the screen renders nothing (testing-guidelines).
-    trashContext: async () => undefined,
     getRecentUploadRejections: async () => [],
     subscribeToUploadRejections: () => () => undefined,
     clearUploadRejections: async () => undefined,
@@ -248,20 +239,6 @@ async function flushRenders(rounds = 10): Promise<void> {
   await p;
 }
 
-/**
- * Preset the persisted engine context (the scene bar's store). The engine
- * contract excludes a context-TAGGED action when the engine context
- * doesn't contain one of its ids (spec: context-mismatch), so tests with
- * tagged actions must select the matching scenes here — independent of the
- * screen's list-filter chips under test.
- */
-function presetEngineContext(contextIds: string[], availableMinutes = 60) {
-  __setEngineContextStoreForTests({
-    getItem: async () => JSON.stringify({ contextIds, availableMinutes }),
-    setItem: async () => undefined,
-  });
-}
-
 beforeEach(() => {
   setPool([]);
   ctxRef.current = [];
@@ -323,9 +300,9 @@ describe('Now screen', () => {
     // row carries its own 稍后 (hero button + 2 rows = 3).
     expect(screen.getByText('整理桌面')).toBeTruthy();
     expect(screen.getAllByText('稍后')).toHaveLength(3);
-    // The context bar (scenes + time chips).
-    expect(screen.getByText('当前场景')).toBeTruthy();
-    expect(screen.getByText('任意')).toBeTruthy();
+    // The condition bar is 可用时间-only now (#46 removed the scenes).
+    expect(screen.getByText(/可用时间/)).toBeTruthy();
+    expect(screen.queryByText('当前场景')).toBeNull();
   });
 
   it('allows collapsing and expanding the eligible items list to reduce visual distraction', async () => {
@@ -387,69 +364,7 @@ describe('Now screen', () => {
     expect(screen.getByText('重')).toBeTruthy();
   });
 
-  it('context chips filter the list only — the hero recommendation stays put', async () => {
-    // Engine context selects BOTH scenes → every tagged action is eligible
-    // (the engine's context-mismatch rule); the list filter starts empty.
-    presetEngineContext(['c-1', 'c-2']);
-    ctxRef.current = [context('c-1', '电脑'), context('c-2', '手机')];
-    setPool([
-      nextAction({ id: 'desk', title: '电脑上的事', value: 5, contextIds: ['c-1'] }),
-      nextAction({ id: 'phone', title: '手机上的事', value: 1, contextIds: ['c-2'] }),
-      nextAction({ id: 'any', title: '随地可做', value: 1, contextIds: [] }),
-    ]);
-    renderRouter('app', { initialUrl: '/(tabs)/now' });
-
-    await waitFor(() => expect(screen.getByText('全部')).toBeTruthy());
-    // Filter chips are name-only (counts removed 2026-09-24) and repeat the
-    // engine bar's context names; each visible list row adds its read-only
-    // context chip. DOM order: bar chip, filter chip, row chip.
-    expect(screen.getAllByText('电脑')).toHaveLength(3);
-    expect(screen.getAllByText('手机')).toHaveLength(3);
-
-    // Select 手机 (filter chip) → the 电脑-only action leaves the LIST,
-    // while the phone and the context-less actions stay (context-less
-    // actions survive every filter)…
-    fireEvent.press(screen.getAllByText('手机')[1]!);
-    await waitFor(() => expect(screen.getByText('手机上的事')).toBeTruthy());
-    expect(screen.getByText('随地可做')).toBeTruthy();
-    // …and the HERO still shows the 电脑 action (exactly one occurrence —
-    // the hero, not the list).
-    expect(screen.getAllByText('电脑上的事')).toHaveLength(1);
-
-    // 全部 resets the filter → all three rows back (the 电脑 action is in
-    // the hero AND its row again).
-    fireEvent.press(screen.getByText('全部'));
-    await waitFor(() => expect(screen.getAllByText('电脑上的事')).toHaveLength(2));
-    expect(screen.getByText('手机上的事')).toBeTruthy();
-    expect(screen.getByText('随地可做')).toBeTruthy();
-  });
-
-  it('a context that matches nothing shows the filtered empty state (hero untouched)', async () => {
-    presetEngineContext(['c-1', 'c-2', 'c-9']);
-    ctxRef.current = [context('c-1', '电脑'), context('c-9', '沟通')];
-    setPool([
-      nextAction({ id: 'desk', title: '电脑上的事', value: 5, contextIds: ['c-1'] }),
-      // c-2 has no context entity: no filter chip for it, and its action
-      // matches no name-based filter selection.
-      nextAction({ id: 'orphan', title: '手机上的事', contextIds: ['c-2'] }),
-    ]);
-    renderRouter('app', { initialUrl: '/(tabs)/now' });
-
-    await waitFor(() => expect(screen.getByText('全部')).toBeTruthy());
-    // Filter chips are name-only: 沟通 appears twice (bar + filter — no
-    // 沟通-tagged row), 电脑 thrice (bar + filter + the desk row's chip).
-    expect(screen.getAllByText('沟通')).toHaveLength(2);
-    expect(screen.getAllByText('电脑')).toHaveLength(3);
-
-    fireEvent.press(screen.getAllByText('沟通')[1]!);
-    await waitFor(() => expect(screen.getByText('没有匹配当前情境的可执行事项')).toBeTruthy());
-    // The hero (电脑上的事) is untouched.
-    expect(screen.getByText('电脑上的事')).toBeTruthy();
-  });
-
-  it('list rows show the project chip, read-only context chips and the due label', async () => {
-    presetEngineContext(['c-1']);
-    ctxRef.current = [context('c-1', '电脑')];
+  it('list rows show the project chip and the due label (no context chips, #46)', async () => {
     projectsRef.current = [{ id: 'p-9', title: '周报项目' }];
     setPool([
       nextAction({
@@ -475,8 +390,8 @@ describe('Now screen', () => {
     await waitFor(() => expect(screen.getAllByText('快截止的事')).toHaveLength(2));
     // Project chip (the hero subtitle is a joined string, not this exact text).
     expect(screen.getByText('周报项目')).toBeTruthy();
-    // Read-only context chip — in the engine bar, the filter chips AND the row.
-    expect(screen.getAllByText('电脑')).toHaveLength(3);
+    // The scene chips are gone everywhere (bar, list filter, row).
+    expect(screen.queryByText('电脑')).toBeNull();
     // Due chips: tomorrow's deadline → 明天截止 (inside the 48h 「临近」
     // window); the deadline-less row → 随时.
     expect(screen.getByText('明天截止')).toBeTruthy();
@@ -571,7 +486,7 @@ describe('Now screen', () => {
     renderRouter('app', { initialUrl: '/(tabs)/now' });
 
     await waitFor(() =>
-      expect(screen.getByText('没有任何适合当前场景与时间的行动')).toBeTruthy(),
+      expect(screen.getByText('没有任何适合当前可用时间的行动')).toBeTruthy(),
     );
     expect(screen.getByText('被过滤的事项：')).toBeTruthy();
     expect(screen.getByText('• 写季度总结 — 预估时长超过可用时间')).toBeTruthy();
@@ -669,180 +584,41 @@ describe('Now screen', () => {
     await waitFor(() => expect(screen.getByText('25 分钟')).toBeTruthy());
   });
 
-  // ── Engine-context bar (the redone 条件栏) ────────────────────────────
-  // Regression guard for the rejected design: the selector used to reuse
-  // `ContextChip`, whose djb2 name hash gave `office` a warm earth-3 fill
-  // that read as "selected" while it was not. Selection must be the ONLY
-  // thing that changes a scene option's appearance.
-  describe('engine-context bar', () => {
-    it('an unselected scene looks identical whatever its name, and only selection lights up', async () => {
-      ctxRef.current = [
-        context('c-1', 'office'), // the hash that used to fake a selection
-        context('c-2', 'computer'),
-        context('c-3', '厨房'), // a user-created name, longer label
-      ];
+  // ── The 场景 (contexts) feature is offline (#46) ────────────────────
+  describe('the scene bar is gone', () => {
+    it('renders no scene pills, no 任意 readout and no 管理场景 entry', async () => {
+      ctxRef.current = [context('c-1', 'office'), context('c-2', 'computer')];
       setPool([nextAction({ id: 'a', title: '任务甲', contextIds: ['c-1'] })]);
       renderRouter('app', { initialUrl: '/(tabs)/now' });
 
-      // Nothing selected yet → the bar reports 任意 and NO scene is lit.
-      // (Wait on a SCENE, not on 任意 — 任意 renders before the context
-      // query resolves, so it is not a readiness signal.)
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: '选择场景：office' })).toBeTruthy(),
-      );
-      expect(screen.getByText('任意')).toBeTruthy();
-      for (const name of ['office', 'computer', '厨房']) {
-        expect(screen.getByRole('button', { name: `选择场景：${name}` })).toBeTruthy();
-        expect(screen.queryByRole('button', { name: `取消场景：${name}` })).toBeNull();
-      }
-      expect(screen.queryByText(/已选 \d+ 个/)).toBeNull();
+      // The time selector is still there — it is the only engine input left.
+      await waitFor(() => expect(screen.getByRole('button', { name: '设置可用时间：60 分钟' })).toBeTruthy());
 
-      // The real guard: an UNSELECTED option's rendered style is byte-identical
-      // across names. The rejected design gave `office` a warmer earth-3
-      // fill purely from `contextTone('office')`, so it read as "selected"
-      // while it was not. Every unselected scene — seed or user-created —
-      // must share one class string.
-      const unselectedClasses = ['office', 'computer', '厨房'].map(
-        (name) => screen.getByRole('button', { name: `选择场景：${name}` }).props.className,
-      );
-      expect(new Set(unselectedClasses).size).toBe(1);
+      expect(screen.queryByText('当前场景')).toBeNull();
+      expect(screen.queryByText('任意')).toBeNull();
+      expect(screen.queryByRole('button', { name: /^选择场景：/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: '管理场景' })).toBeNull();
+      expect(screen.queryByRole('button', { name: '新建场景' })).toBeNull();
+      expect(screen.queryByRole('button', { name: /清除场景选择/ })).toBeNull();
+    });
 
-      // …and selection is the one thing that changes it.
-      fireEvent.press(screen.getByRole('button', { name: '选择场景：office' }));
-      await waitFor(() => expect(screen.getByText('已选 1 个')).toBeTruthy());
-      const selectedClass = screen.getByRole('button', { name: '取消场景：office' }).props
-        .className;
-      expect(selectedClass).not.toBe(unselectedClasses[0]);
-      expect(screen.getByRole('button', { name: '选择场景：computer' }).props.className).toBe(
-        unselectedClasses[0],
-      );
-      expect(screen.getByRole('button', { name: '选择场景：厨房' }).props.className).toBe(
-        unselectedClasses[0],
-      );
-
-      expect(screen.getByRole('button', { name: '取消场景：office' })).toBeTruthy();
-      expect(screen.queryByRole('button', { name: '选择场景：office' })).toBeNull();
-      // The other two are untouched — `computer` (same earth tone as
-      // before) never gains a selected state.
-      expect(screen.getByRole('button', { name: '选择场景：computer' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: '选择场景：厨房' })).toBeTruthy();
-      // 「任意」 is no longer a peer chip in the flow; it is the state
-      // readout, and clearing is a labelled action on it.
-      expect(
-        screen.getByRole('button', { name: '清除场景选择，回到任意' }),
-      ).toBeTruthy();
-
-      fireEvent.press(screen.getByRole('button', { name: '清除场景选择，回到任意' }));
-      await waitFor(() => expect(screen.getByText('任意')).toBeTruthy());
-      expect(screen.queryByText(/已选 \d+ 个/)).toBeNull();    });
-
-    it('scenes are multi-select (OR) and minutes are single-select', async () => {
-      ctxRef.current = [context('c-1', '电脑'), context('c-2', '手机')];
+    it('a context-tagged action is still eligible — the engine input is always [] (#46)', async () => {
+      // The engine contract excludes a tagged action only when the engine
+      // context holds none of its ids; the app now always feeds [], which
+      // means "anywhere" — legacy rows with contextIds must keep surfacing.
+      ctxRef.current = [context('c-1', 'office')];
       setPool([
-        nextAction({ id: 'a', title: '电脑活', contextIds: ['c-1'] }),
-        nextAction({ id: 'b', title: '手机活', contextIds: ['c-2'] }),
+        nextAction({ id: 'tagged', title: '带场景的事', contextIds: ['c-1'] }),
+        nextAction({ id: 'plain', title: '普通的事', contextIds: [] }),
       ]);
       renderRouter('app', { initialUrl: '/(tabs)/now' });
 
-      // Two scenes lit at once — the multi/OR semantics, no hint text.
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: '选择场景：电脑' })).toBeTruthy(),
-      );
-      fireEvent.press(screen.getByRole('button', { name: '选择场景：电脑' }));
-      fireEvent.press(screen.getByRole('button', { name: '选择场景：手机' }));
-      await waitFor(() => expect(screen.getByText('已选 2 个')).toBeTruthy());
-      expect(screen.getByRole('button', { name: '取消场景：电脑' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: '取消场景：手机' })).toBeTruthy();
-      // Both tagged actions are eligible under the engine's OR contract.
       await waitFor(() => expect(screen.getByText('2/2 项')).toBeTruthy());
-
-      // Minutes: picking 120 REPLACES the previous choice (single-select),
-      // and the newly chosen one is the only one reporting selected.
-      fireEvent.press(screen.getByRole('button', { name: '设置可用时间：60 分钟' }));
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: '设置可用时间：120 分钟' })).toBeTruthy(),
-      );
-      // 60 is the default → re-selecting it changes nothing.
-      fireEvent.press(screen.getByRole('button', { name: '设置可用时间：120 分钟' }));
-      await waitFor(() => expect(screen.getByText('2/2 项')).toBeTruthy());
-    });
-
-    it('the scene bar offers a 管理场景 entry (delete lives on its own screen)', async () => {
-      ctxRef.current = [context('c-1', '客厅')];
-      renderRouter('app', { initialUrl: '/(tabs)/now' });
-
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: '选择场景：客厅' })).toBeTruthy(),
-      );
-      // The entry is labelled 「管理场景」, NOT 「管理」 — the habit block's
-      // own 管理 button (now-screen.test.tsx 「the one-tap complete chips and
-      // the 管理 entry」) must stay unambiguous.
-      fireEvent.press(screen.getByRole('button', { name: '管理场景' }));
-
-      await waitFor(() =>
-        expect(
-          screen.getByText('场景是行动的运行环境 —— Now 屏按当前场景筛选待办。不选即随处可执行。'),
-        ).toBeTruthy(),
-      );
-      expect(screen.getByRole('button', { name: '← 返回' })).toBeTruthy();
-    });
-
-    it('re-reads the scenes when the tab regains focus (Rule 7 refresh path)', async () => {
-      // The `/contexts` screen writes the same rows, and this bar stays
-      // MOUNTED while that route is pushed on top — so a scene deleted
-      // there used to linger in the chips until an app restart (found in
-      // browser testing). `useFocusEffect` → `useContexts().reload()` is the
-      // fix.
-      //
-      // Asserted via the READ COUNTER, not the chip: under renderRouter the
-      // tab remounts on the stack navigation, so the mount-time read already
-      // picks the new rows up and "the chip disappeared" passes with `reload`
-      // deleted (hook-guidelines Rule 8 — verified by mutation). Counting
-      // reads is what actually pins the focus path: on RETURN to an
-      // already-mounted bar, a read can only come from the focus effect.
-      ctxRef.current = [context('c-1', '客厅')];
-      renderRouter('app', { initialUrl: '/(tabs)/now' });
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: '选择场景：客厅' })).toBeTruthy(),
-      );
-
-      // Baseline AFTER mount — the mount read is not the focus read.
-      const base = contextReads.count;
-
-      // Focus the tab again the way returning from a stack route does.
-      testRouter.navigate('/settings');
-      await waitFor(() => expect(screen.getByText('设备与云同步。')).toBeTruthy());
-      testRouter.navigate('/now');
-
-      await waitFor(() => expect(contextReads.count).toBeGreaterThan(base));
-    });
-
-    it('opens AddSceneModal when tapping "+ 添加场景" and allows quick creation', async () => {
-      renderRouter('app', { initialUrl: '/(tabs)/now' });
-      await waitFor(() => expect(screen.getByText('当前场景')).toBeTruthy());
-
-      // Tap "+ 添加场景" button
-      fireEvent.press(screen.getByRole('button', { name: '新建场景' }));
-
-      // AddSceneModal appears with title and presets
-      await waitFor(() => expect(screen.getByText('添加新场景')).toBeTruthy());
-      expect(screen.getByText('情境聚焦')).toBeTruthy();
-      expect(screen.getByText('咖啡馆')).toBeTruthy();
-
-      // Tap preset 咖啡馆
-      fireEvent.press(screen.getByRole('button', { name: '预设推荐：咖啡馆' }));
-      expect(screen.getByDisplayValue('咖啡馆 ☕️')).toBeTruthy();
-
-      // Tap close/cancel to close
-      fireEvent.press(screen.getByRole('button', { name: '取消' }));
-      await waitFor(() => expect(screen.queryByText('添加新场景')).toBeNull());
+      expect(screen.getAllByText('带场景的事').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('普通的事').length).toBeGreaterThan(0);
     });
   });
 
-  // ── Habit block (task 10-02) ──────────────────────────────────────────
-  // The block used to render NOTHING when there were no habit days, so
-  // the whole habits feature was undiscoverable. Both states now render,
-  // and each carries a way into the habits screen.
   describe('habit block', () => {
     it('zero habits → the block shows the guidance entry (not a silent 0/0 with no way out)', async () => {
       setPool([]);

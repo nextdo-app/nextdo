@@ -1,6 +1,6 @@
 /**
  * Edit Action Modal (Issue #19).
- * Bottom sheet modal for editing a NextAction (title, estMinutes, value, contextIds, deadline).
+ * Bottom sheet modal for editing a NextAction (title, estMinutes, value, deadline).
  * Can be triggered from the Now screen or any other list.
  */
 import { memo, useEffect, useState } from 'react';
@@ -22,7 +22,6 @@ import {
 } from '@nextdo/core';
 import { DateTimePicker } from '@/components/datetime-picker';
 import { PickerField } from '@/components/picker-field';
-import { useContexts } from '@/hooks/use-contexts';
 import { useAppClock } from '@/hooks/use-app-clock';
 import { useUpdateNextAction } from '@/hooks/use-update-next-action';
 import { useAppInsets } from '@/lib/use-app-insets';
@@ -84,13 +83,11 @@ export const EditActionModal = memo(function EditActionModal({
   onSaved,
 }: EditActionModalProps) {
   const now = useAppClock();
-  const { data: contexts } = useContexts();
   const { update, error } = useUpdateNextAction();
 
   const [title, setTitle] = useState('');
   const [estMinutes, setEstMinutes] = useState<number | null>(null);
   const [value, setValue] = useState<Value>(3);
-  const [selectedContextIds, setSelectedContextIds] = useState<string[]>([]);
   const [deadline, setDeadline] = useState('');
   const [showPicker, setShowPicker] = useState(false);
   const [showReminderPicker, setShowReminderPicker] = useState(false);
@@ -109,7 +106,6 @@ export const EditActionModal = memo(function EditActionModal({
       setTitle(action.title);
       setEstMinutes(action.estMinutes);
       setValue(action.value);
-      setSelectedContextIds(action.contextIds ?? []);
       setDeadline(
         action.deadline === undefined || action.deadline === null
           ? ''
@@ -120,11 +116,6 @@ export const EditActionModal = memo(function EditActionModal({
   }, [action]);
 
   if (!visible || action === null) return null;
-  const toggleContext = (ctxId: string) => {
-    setSelectedContextIds((prev) =>
-      prev.includes(ctxId) ? prev.filter((id) => id !== ctxId) : [...prev, ctxId],
-    );
-  };
 
   const applyCustomEst = () => {
     const parsed = Number(customEst);
@@ -145,7 +136,6 @@ export const EditActionModal = memo(function EditActionModal({
         estMinutes,
         value,
         deadline: deadlineIso,
-        contextIds: selectedContextIds,
         ...(reminder.write !== undefined ? { reminderAt: reminder.write } : {}),
       },
     });
@@ -257,46 +247,6 @@ export const EditActionModal = memo(function EditActionModal({
               </Text>
               <ValueChips value={value} onChange={setValue} />
             </View>
-
-            {/* Field 4: Contexts */}
-            {contexts && contexts.length > 0 ? (
-              <View className="gap-1.5">
-                <Text className="font-sans text-xs font-semibold text-muted dark:text-muted-dark">
-                  场景（可选，可多选）
-                </Text>
-                <View className="flex-row flex-wrap gap-1.5">
-                  {contexts.map((ctx) => {
-                    const active = selectedContextIds.includes(ctx.id);
-                    return (
-                      <Pressable
-                        key={ctx.id}
-                        accessibilityRole="button"
-                        accessibilityLabel={ctx.name}
-                        accessibilityState={{ selected: active }}
-                        onPress={() => toggleContext(ctx.id)}
-                        className={cn(
-                          'rounded-full border px-3 py-1',
-                          active
-                            ? 'border-accent bg-accent/15 dark:border-accent-dark dark:bg-accent-dark/25'
-                            : 'border-border bg-surface dark:border-border-dark dark:bg-surface-dark',
-                        )}
-                      >
-                        <Text
-                          className={cn(
-                            'text-xs font-medium',
-                            active
-                              ? 'font-semibold text-accent dark:text-accent-dark'
-                              : 'text-ink dark:text-ink-dark',
-                          )}
-                        >
-                          {ctx.name}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
-            ) : null}
 
             {/* Field 5: Deadline (task 10-17 — a date, plus a time) */}
             <View className="gap-1.5">

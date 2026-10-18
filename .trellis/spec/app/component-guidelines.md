@@ -80,6 +80,25 @@
   reminder. Reminders exist for ACTIONS only — `reminders.action_kind` has no
   `project`, so the project form shows the deadline alone.
 
+## Clarify wizard (question steps)
+
+- **Answers carry equal visual weight.** Every answer to one question renders through
+  the same component with the same variant (`Choices` → `Button size="lg"
+  variant="secondary"`, or the project row in the q2c picker). No accent fill, no
+  "recommended" badge, no different size — a heavier option reads as the app's choice
+  rather than the user's (issue #44).
+- **No preselected option on display.** The keyboard nav hook
+  (`apps/mobile/hooks/use-option-keyboard-nav.ts`) paints its accent ring only after
+  the FIRST arrow/Home/End press (`keyboardEngaged`); entering a question shows both
+  answers unlit. `Enter`/`Space` confirm nothing until the ring is visible — a stray
+  Enter must never answer an option the user never saw selected.
+- **The question chain follows the Clarify decision table** (domain-model.md):
+  q1 → q2 属于某个项目吗？ → (属于) q2b 新建/已有 → (已有) q2c 加到哪个项目？ →
+  (不属于) q3 2 分钟内？ → … The 「不属于项目」answer lives on q2 and jumps straight
+  to q3; q2c is a picker of ACTIVE projects only, with an empty-state explanation
+  (no auto-jump to the new-project form). The chain constant and the progress
+  denominator (`PROGRESS_MAX`) must be updated together with any new step.
+
 ## Forms (field labels)
 
 - A field's NAME is a visible label above the control — `FormField`
@@ -273,7 +292,7 @@
 
 - **Semantic Section Grouping**: Group related settings into semantic categories (e.g. 「通用与偏好」、「提醒与通知」、「数据与同步」、「关于与更新」) using uppercase `SectionHeader` with matching `Ionicons` icons (`text-xs font-bold uppercase tracking-wider text-muted`). Avoid flat uninterrupted card stacks.
 - **Desktop Width Constraint**: Single-column form screens and settings screens constrain content width to `max-w-2xl` (~672px) centered horizontally on wide viewports rather than stretching across `max-w-5xl`, preventing distorted full-width text inputs.
-- **Component Cell Integration**: Prefer integrating single-purpose entry rows (such as 场景管理) as list cells inside parent section cards (with icon badge and right `chevron-forward` / button) over creating isolated standalone single-row cards.
+- **Component Cell Integration**: Prefer integrating single-purpose entry rows (such as 习惯管理 or 云同步) as list cells inside parent section cards (with icon badge and right `chevron-forward` / button) over creating isolated standalone single-row cards.
 
 ## Forbidden
 

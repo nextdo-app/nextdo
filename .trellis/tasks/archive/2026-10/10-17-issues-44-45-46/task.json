@@ -1,0 +1,30 @@
+{
+  "id": "issues-44-45-46",
+  "name": "issues-44-45-46",
+  "title": "#44 #45 #46 三 issue 修复与 0.1.7 发布",
+  "description": "父任务：#44 澄清流程重排、#45 通知设置简化与权限统一、#46 场景能力下线（代码保留在 park/contexts-scenes 分支）；跨子任务验收 = 全量门禁绿 + 发布 0.1.7（六处 bump、PR、tag、10 个资产）",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "printsdfu",
+  "assignee": "printsdfu",
+  "createdAt": "2026-10-17",
+  "completedAt": "2026-10-18",
+  "branch": "feat/issues-44-45-46",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-17-clarify-project-first",
+    "10-17-notification-app-permission",
+    "10-17-remove-contexts-scenes"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

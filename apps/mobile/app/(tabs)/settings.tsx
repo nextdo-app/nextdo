@@ -44,7 +44,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAppInsets } from '@/lib/use-app-insets';
@@ -54,6 +54,7 @@ import { useCloudSync } from '@/hooks/use-cloud-sync';
 import { useSyncStatus } from '@/hooks/use-sync-status';
 import { useNotificationSettings } from '@/hooks/use-notification-settings';
 import { useReminderPermission } from '@/hooks/use-reminder-permission';
+import type { ReminderPermissionState } from '@/lib/reminders/adapters';
 import { useAppClock } from '@/hooks/use-app-clock';
 import { useHabitReminders } from '@/hooks/use-habit-reminders';
 import { useHabits } from '@/hooks/use-habits';
@@ -267,6 +268,77 @@ const TOKEN_ACCESSIBILITY_LABEL = '云同步连接串';
 
 type SyncMode = 'pair' | 'self_host';
 
+/**
+ * The Settings card's EFFECTIVE state (issue #45 R5): delivery needs the
+ * in-app switch AND the OS grant, so the headline must not claim 「已开启」
+ * while the system permission is missing. Pure — two independent layers in,
+ * one sentence out; the screen renders it and nothing else decides the
+ * wording.
+ */
+export interface NotificationEffectiveState {
+  title: string;
+  detail: string;
+}
+
+export function describeNotificationState(
+  masterEnabled: boolean | null,
+  permission: ReminderPermissionState | null,
+): NotificationEffectiveState {
+  // null = still loading — say so instead of guessing either way.
+  if (permission === null || masterEnabled === null) {
+    return { title: '通知状态', detail: '检查中…' };
+  }
+  if (!masterEnabled) {
+    return {
+      title: '已在应用内关闭',
+      detail:
+        permission.status === 'granted'
+          ? '已排入系统的提醒已撤销；重新打开后按提醒数据重新排程。'
+          : '应用内与系统权限均未开启，提醒不会送达。',
+    };
+  }
+  const platformNote =
+    permission.platform === 'web'
+      ? '将通过 Web 浏览器通知送达。'
+      : permission.platform === 'tauri'
+        ? '应用关闭期间不会提醒。'
+        : '';
+  switch (permission.status) {
+    case 'granted':
+      return {
+        title: '已开启',
+        detail: `稍后、日历与习惯提醒会按时送达。${platformNote}`,
+      };
+    case 'denied':
+      return {
+        title: '系统权限未开启',
+        detail: '提醒会照常记录，但不会按时送达 —— 需要到系统设置里允许。',
+      };
+    default:
+      return {
+        title: '等待系统授权',
+        detail: '首次真正需要提醒时，Nextdo 会请求通知权限。',
+      };
+  }
+}
+
+/** The single platform action row under the switch, if any (issue #45 R4/R6). */
+export type NotificationAction = 'web-request' | 'open-system-settings' | null;
+
+export function notificationActionFor(
+  permission: ReminderPermissionState | null,
+): NotificationAction {
+  if (permission === null) return null;
+  if (permission.status !== 'undetermined' && permission.status !== 'denied') return null;
+  // Browsers require a user gesture — that button is the ONLY viable entry
+  // there, not a redundant manual step. Native asks by itself at the first
+  // real need, so it gets no button (a denied app can only send the user to
+  // the system settings, which only iOS can deep-link).
+  if (permission.platform === 'web') return 'web-request';
+  if (permission.status === 'denied' && Platform.OS === 'ios') return 'open-system-settings';
+  return null;
+}
+
 export default function SettingsScreen() {
   const { preference, updatePreference, isDark } = useAppTheme();
   const switchTrackColor = {
@@ -285,6 +357,9 @@ export default function SettingsScreen() {
   const { state: notificationPermission, openSystemSettings, requestPermission } =
     useReminderPermission();
   const { masterEnabled, setMasterEnabled } = useNotificationSettings();
+  // 有效状态（issue #45 R5）：开关 ∧ 系统授权 —— 两个纯函数决定文案与平台动作。
+  const notificationState = describeNotificationState(masterEnabled, notificationPermission);
+  const notificationAction = notificationActionFor(notificationPermission);
   const now = useAppClock();
   const lastSyncedLabel = formatLastSyncedAt(now, lastSyncedAt);
   const syncHint = syncFailureHint(syncDisplay);
@@ -542,53 +617,35 @@ export default function SettingsScreen() {
             ))}
           </View>
 
-          {/* Contexts / Scene management inside General card */}
-          <View className="border-t border-border/40 pt-3 dark:border-border-dark/40">
-            <View className="flex-row items-center justify-between gap-2">
-              <View className="flex-row items-center gap-3 flex-1 min-w-0 pr-1">
-                <View className="h-8 w-8 rounded-lg bg-surface-container/60 dark:bg-surface-container-dark/60 items-center justify-center shrink-0">
-                  <Ionicons name="shapes-outline" size={16} color={isDark ? '#9b948a' : '#716b64'} />
-                </View>
-                <View className="flex-1 min-w-0">
-                  <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
-                    场景管理
-                  </Text>
-                  <Text className="mt-0.5 font-sans text-xs text-muted dark:text-muted-dark leading-tight">
-                    配置行动的执行场景（如 办公室、电脑、客厅），用于推荐筛选。
-                  </Text>
-                </View>
-              </View>
-              <View className="shrink-0">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  label="管理 →"
-                  onPress={() => router.push('/contexts')}
-                />
-              </View>
-            </View>
-          </View>
         </Card>
 
         {/* Section 2: 提醒与通知 */}
         <SectionHeader title="提醒与通知" icon="notifications-outline" />
         <Card className="gap-3.5 p-4">
-          <View className="flex-row items-center justify-between gap-2">
-            <View className="flex-row items-center gap-3 flex-1 min-w-0 pr-1">
-              <View className="h-8 w-8 rounded-lg bg-surface-container/60 dark:bg-surface-container-dark/60 items-center justify-center shrink-0">
-                <Ionicons name="notifications-outline" size={16} color={isDark ? '#9b948a' : '#716b64'} />
-              </View>
-              <View className="flex-1 min-w-0">
-                <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
-                  提醒通知
-                </Text>
-                <Text className="font-sans text-xs font-medium text-muted dark:text-muted-dark">
-                  应用内通知
-                </Text>
-                <Text className="mt-0.5 font-sans text-[11px] leading-tight text-muted dark:text-muted-dark">
-                  关掉后不再发送任何提醒，已排入系统的提醒会立即撤销。
-                </Text>
-              </View>
+          {/* 1) 有效状态先行（issue #45 R5）：应用内开关 ∧ 系统授权，未授权绝不显示为「已开启」。 */}
+          <View className="flex-row items-center gap-3">
+            <View className="h-8 w-8 rounded-lg bg-surface-container/60 dark:bg-surface-container-dark/60 items-center justify-center shrink-0">
+              <Ionicons name="notifications-outline" size={16} color={isDark ? '#9b948a' : '#716b64'} />
+            </View>
+            <View className="flex-1 min-w-0">
+              <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+                {notificationState.title}
+              </Text>
+              <Text className="mt-0.5 font-sans text-[11px] leading-tight text-muted dark:text-muted-dark">
+                {notificationState.detail}
+              </Text>
+            </View>
+          </View>
+
+          {/* 2) 应用内开关（与系统权限相互独立）。 */}
+          <View className="flex-row items-center justify-between gap-2 border-t border-border/40 pt-3 dark:border-border-dark/40">
+            <View className="flex-1 min-w-0 pr-2">
+              <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+                应用内提醒
+              </Text>
+              <Text className="mt-0.5 font-sans text-[11px] leading-tight text-muted dark:text-muted-dark">
+                应用内偏好，与系统权限相互独立；关掉后已排入系统的提醒会立即撤销。
+              </Text>
             </View>
             <View className="shrink-0">
               <Switch
@@ -603,79 +660,40 @@ export default function SettingsScreen() {
               />
             </View>
           </View>
-          {/* 系统权限层：与上面的开关分开陈述，两者都允许才投递。 */}
-          <View className="border-t border-border/40 pt-2.5 dark:border-border-dark/40">
-          {notificationPermission === null ? (
-            <Text className="font-sans text-sm text-muted dark:text-muted-dark">
-              检查中…
-            </Text>
-          ) : notificationPermission.platform === 'web' ? (
-            notificationPermission.status === 'granted' ? (
-              <Text className="font-sans text-sm text-muted dark:text-muted-dark">
-                已授权 — 稍后与日历提醒会通过 Web 浏览器通知按时提醒。
-              </Text>
-            ) : notificationPermission.status === 'denied' ? (
-              <Text className="font-sans text-sm text-muted dark:text-muted-dark">
-                通知已被拒绝 — 可在浏览器设置中允许此网站发送通知。
-              </Text>
-            ) : (
-              <View className="gap-2">
-                <Text className="font-sans text-sm text-muted dark:text-muted-dark">
-                  {isIosWebSafari()
-                    ? 'iOS Safari 需将 Nextdo「添加到主屏幕」后即可接收系统通知。'
-                    : '尚未授权 — 点击可开启浏览器提醒通知。'}
-                </Text>
-                <Button
-                  label="开启通知"
-                  variant="secondary"
-                  onPress={() => {
-                    void requestPermission();
-                  }}
-                />
-              </View>
-            )
-          ) : notificationPermission.platform === 'tauri' ? (
-            <Text className="font-sans text-sm text-muted dark:text-muted-dark">
-              桌面通知跟随系统设置（当前
-              {notificationPermission.status === 'granted' ? '可用' : '不可用'}
-              ）。应用关闭期间不会提醒。
-            </Text>
-          ) : notificationPermission.status === 'granted' ? (
-            <Text className="font-sans text-sm text-muted dark:text-muted-dark">
-              已授权 — 稍后与日历提醒会按时通知。
-            </Text>
-          ) : notificationPermission.status === 'denied' ? (
-            <View className="gap-3">
-              <Text className="font-sans text-sm text-muted dark:text-muted-dark">
-                通知已被拒绝 — 稍后与日历行动仍会记录，但不会在设定时刻提醒。
-              </Text>
-              {Platform.OS === 'ios' ? (
-                <Button
-                  label="去系统设置"
-                  variant="secondary"
-                  onPress={openSystemSettings}
-                />
+
+          {/* 3) 平台动作（issue #45 R4/R6）：native 不再提供手动申请按钮；
+           *    web 受浏览器机制所限，保留唯一的手势入口。 */}
+          {notificationAction === null ? null : (
+            <View className="border-t border-border/40 pt-2.5 dark:border-border-dark/40">
+              {notificationAction === 'web-request' ? (
+                <View className="gap-2">
+                  <Text className="font-sans text-sm text-muted dark:text-muted-dark">
+                    {isIosWebSafari()
+                      ? 'iOS Safari 需将 Nextdo「添加到主屏幕」后即可接收系统通知。'
+                      : '浏览器要求由你手动开启一次：点下方按钮允许此网站发送通知。'}
+                  </Text>
+                  <Button
+                    label="开启浏览器通知"
+                    variant="secondary"
+                    onPress={() => {
+                      void requestPermission();
+                    }}
+                  />
+                </View>
               ) : (
-                <Text className="font-sans text-xs text-muted dark:text-muted-dark">
-                  可在「系统设置 → 应用 → Nextdo → 通知」中重新允许。
-                </Text>
+                <View className="gap-3">
+                  <Text className="font-sans text-sm text-muted dark:text-muted-dark">
+                    {Platform.OS === 'ios'
+                      ? '已拒绝过系统权限 — 只能到系统设置里重新允许。'
+                      : '可在「系统设置 → 应用 → Nextdo → 通知」中重新允许。'}
+                  </Text>
+                  {Platform.OS === 'ios' ? (
+                    <Button label="去系统设置" variant="secondary" onPress={openSystemSettings} />
+                  ) : null}
+                </View>
               )}
             </View>
-          ) : (
-            <View className="gap-2">
-              <Text className="font-sans text-sm text-muted dark:text-muted-dark">
-                尚未授权 — 系统还未允许 Nextdo 发送通知。
-              </Text>
-              <Button
-                label="开启通知"
-                variant="secondary"
-                onPress={() => {
-                  void requestPermission();
-                }}
-              />
-            </View>
           )}
-          </View>
 
           {/* Habit Check-in Reminders inside Notification card */}
           <View className="border-t border-border/40 pt-3 dark:border-border-dark/40">
@@ -935,7 +953,7 @@ export default function SettingsScreen() {
               <Ionicons name="chevron-forward" size={14} color={isDark ? '#9b948a' : '#716b64'} />
             </Pressable>
 
-            {/* 场景分流选择器 */}
+            {/* 同步方式选择器 */}
             <View className="flex-row gap-2">
               <Pressable
                 accessibilityRole="button"

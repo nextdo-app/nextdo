@@ -272,7 +272,7 @@ jest.mock('expo-notifications', () => mockExpoNotifications);
 
 import { mockExpoNotifications } from './mocks/expo-notifications';
 
-import { render, waitFor } from '@testing-library/react-native';
+import { render } from '@testing-library/react-native';
 import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-library';
 import { useCloudSync } from '@/hooks/use-cloud-sync';
 import { Linking, Platform } from 'react-native';
@@ -510,23 +510,15 @@ describe('root (no gate)', () => {
 });
 
 /* ------------------------------------------------------------------ *
- * 设置 — 场景管理 block
+ * 设置 — the 场景管理 entry is gone with issue #46.
  * ------------------------------------------------------------------ */
-describe('settings scenes block', () => {
-  it('renders 场景管理 card and navigates to /contexts when clicking 管理 →', async () => {
+describe('settings scenes block is removed (#46)', () => {
+  it('renders no 场景管理 card and never routes to /contexts', async () => {
     renderRouter('app', { initialUrl: '/(tabs)/settings' });
     await flush();
 
-    expect(screen.getByText('场景管理')).toBeTruthy();
-    const manageButton = screen.getByRole('button', { name: '管理 →' });
-    expect(manageButton).toBeTruthy();
-    fireEvent.press(manageButton);
-
-    await waitFor(() =>
-      expect(
-        screen.getByText('场景是行动的运行环境 —— Now 屏按当前场景筛选待办。不选即随处可执行。'),
-      ).toBeTruthy(),
-    );
+    expect(screen.queryByText('场景管理')).toBeNull();
+    expect(screen.queryByRole('button', { name: '管理 →' })).toBeNull();
   });
 });
 
@@ -1521,21 +1513,29 @@ describe('settings cloud-sync block', () => {
 });
 
 /* ------------------------------------------------------------------ *
- * Settings — notifications block (task 09-30 R5): the OS permission
- * state through useReminderPermission (the idle mock = undetermined;
- * per-case overrides drive the other two states).
+ * Settings — notifications block (issue #45): the EFFECTIVE state
+ * (in-app switch ∧ OS permission) plus the platform action row.
+ *   - native: no manual "开启通知" button any more — the app asks at the
+ *     first real need (snooze / calendar / habit reminders);
+ *   - web: the only entry is the gesture button (browsers require it);
+ *   - denied: iOS deep-links to the system settings, Android gets the path.
+ * The pure helpers (`describeNotificationState` / `notificationActionFor`)
+ * own the wording — these cases drive the screen through them.
  * ------------------------------------------------------------------ */
-describe('settings notifications block (task 09-30 R5)', () => {
-  it('undetermined → the 尚未授权 copy, no 去系统设置 button', async () => {
+describe('settings notifications block (issue #45)', () => {
+  it('undetermined (native) → 等待系统授权, and NO manual request button', async () => {
     renderRouter('app', { initialUrl: '/(tabs)/settings' });
     await flush();
 
-    expect(screen.getByText('提醒通知')).toBeTruthy();
-    expect(screen.getByText(/尚未授权/)).toBeTruthy();
+    expect(screen.getByText('等待系统授权')).toBeTruthy();
+    expect(screen.getByText(/首次真正需要提醒时/)).toBeTruthy();
+    // The manual entry is gone on native — nothing to press.
+    expect(screen.queryByRole('button', { name: '开启通知' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '开启浏览器通知' })).toBeNull();
     expect(screen.queryByRole('button', { name: '去系统设置' })).toBeNull();
   });
 
-  it('granted → the 已授权 copy', async () => {
+  it('granted → 已开启 (the effective state, not just the OS one)', async () => {
     mockExpoNotifications.getPermissionsAsync.mockResolvedValue({
       status: 'granted',
       granted: true,
@@ -1545,11 +1545,12 @@ describe('settings notifications block (task 09-30 R5)', () => {
     renderRouter('app', { initialUrl: '/(tabs)/settings' });
     await flush();
 
-    expect(screen.getByText(/已授权/)).toBeTruthy();
-    expect(screen.queryByText(/尚未授权/)).toBeNull();
+    expect(screen.getByText('已开启')).toBeTruthy();
+    expect(screen.getByText(/稍后、日历与习惯提醒会按时送达/)).toBeTruthy();
+    expect(screen.queryByText('等待系统授权')).toBeNull();
   });
 
-  it('denied (iOS) → the 通知已被拒绝 copy + the 去系统设置 button', async () => {
+  it('denied (iOS) → 系统权限未开启 + the 去系统设置 button', async () => {
     mockExpoNotifications.getPermissionsAsync.mockResolvedValue({
       status: 'denied',
       granted: false,
@@ -1559,9 +1560,12 @@ describe('settings notifications block (task 09-30 R5)', () => {
     renderRouter('app', { initialUrl: '/(tabs)/settings' });
     await flush();
 
-    expect(screen.getByText(/通知已被拒绝/)).toBeTruthy();
+    expect(screen.getByText('系统权限未开启')).toBeTruthy();
+    expect(screen.getByText(/但不会按时送达/)).toBeTruthy();
     // iOS under jest: the button (not the Android text guidance) renders.
     expect(screen.getByRole('button', { name: '去系统设置' })).toBeTruthy();
+    // Not granted ⇒ the card must never claim 已开启 (issue #45 R5).
+    expect(screen.queryByText('已开启')).toBeNull();
   });
 });
 

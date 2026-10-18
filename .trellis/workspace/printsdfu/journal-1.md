@@ -1518,6 +1518,23 @@ NextAction / CalendarAction / HabitDay 并支持逐条恢复为未完成；顺�
 ### Summary
 
 截止字段改为日期+可选时刻（只选日期仍存当天 23:59:59，零迁移）；行动新增可选提醒时间，默认跟随截止（只选日期预填 10:00），随保存事务写 reminders，完成/删除沿用既有取消路径；项目提醒因 kind 前向兼容风险延后。门禁 1318 用例全绿，浏览器实测 5 张截图 + checks.json。
+## Session 49: issues #44/#45/#46：澄清项目优先、通知有效状态、场景能力下线
+<!-- trellis-session: v=2 fp=f2d526a8ad82b83e -->
+
+**Date**: 2026-10-18
+**Task**: issues #44/#45/#46：澄清项目优先、通知有效状态、场景能力下线
+**Branch**: `feat/issues-44-45-46`
+
+### Summary
+
+按 trellis 流程并行解决三个 issue：#44 澄清向导改为项目优先（q2/q2b/q2c + 选项等权 + 键盘高亮延后）、#45 通知设置按系统权限如实陈述（删启动弹窗、按需请求）、#46 场景能力下线（产品面移除、数据面与引擎契约保留、实现存档在 park/contexts-scenes）；三轮浏览器实测截图 + 全量门禁绿
+
+### Main Changes
+
+- #44 澄清向导新增 q2「属于某个项目吗」/ q2b 新建或已有 / q2c 项目选择，ClarifyAnswers 换 inProject + projectChoice 字段
+- #45 删除启动授权弹窗，改为首次真正需要提醒时请求；系统未授权时设置卡片显示「等待系统授权」
+- #46 Now 条件栏只保留可用时间，引擎输入 contextIds 恒空；向导/表单/设置入口/管理页/SceneOption 整体删除，数据面保留
+- README 与三份 spec 记录下线口径与重建注意事项
 
 ### Git Commits
 
@@ -1526,7 +1543,19 @@ NextAction / CalendarAction / HabitDay 并支持逐条恢复为未完成；顺�
 | `6aeb2c4` | feat(deadline): 截止时间支持时刻，行动新增提醒时间 |
 | `2987ca0` | docs(spec): 记录截止时刻与提醒时间的约定 |
 | `61ee992` | docs(spec): 交互态截图的做法写进 Web 验证门禁 |
+| `731563e` | feat(mobile): 澄清项目优先、通知有效状态、场景能力下线 (#44 #45 #46) |
+| `a28b32b` | chore(task): archive issues 44/45/46（澄清项目优先、通知有效状态、场景下线） |
+
+### Testing
+
+- [OK] pnpm lint 0 报错；pnpm -r typecheck 5 个子工程通过
+- [OK] pnpm test：server/app 104、packages/db 321、apps/mobile 610 全通过
+- [OK] .verify/clarify-project-first、notification-app-permission、remove-contexts-scenes 三套浏览器实测（390×844）全部通过
 
 ### Status
 
 [OK] **Completed**
+
+### Next Steps
+
+- 推送 feat 分支、开 PR，合入后 0.1.7 发版（六处 bump、tag、核验 10 个资产）

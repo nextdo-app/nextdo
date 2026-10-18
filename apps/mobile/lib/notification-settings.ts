@@ -1,6 +1,12 @@
 /**
- * App-level notification preferences (issue #24) — the in-app master switch
- * and the one-shot first-run opt-in flag.
+ * App-level notification preferences (issue #24, simplified by issue #45) —
+ * the in-app master switch only.
+ *
+ * The first-run opt-in dialog and its `optInPromptSeen` flag are GONE (#45):
+ * the app asks the OS at the moment it actually needs a notification
+ * (`lib/reminders/permission.ts`, called from snooze / calendar submit /
+ * habit reminders), never on launch. A stored blob that still carries the
+ * old key is read fine — unknown fields are ignored, no migration needed.
  *
  * TWO independent layers gate a reminder notification, and this module owns
  * only one of them:
@@ -30,17 +36,10 @@ export interface NotificationSettings {
    * the switch keeps the behavior it had before issue #24 shipped.
    */
   masterEnabled: boolean;
-  /**
-   * Whether the one-shot first-run opt-in dialog has been shown (R1). Set on
-   * BOTH outcomes — accepted and declined — so a declined user is never asked
-   * again automatically (issue #24 AC3).
-   */
-  optInPromptSeen: boolean;
 }
 
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   masterEnabled: true,
-  optInPromptSeen: false,
 };
 
 interface KeyValue {
@@ -135,10 +134,6 @@ export function parseNotificationSettings(raw: string | null): NotificationSetti
         typeof parsed.masterEnabled === 'boolean'
           ? parsed.masterEnabled
           : DEFAULT_NOTIFICATION_SETTINGS.masterEnabled,
-      optInPromptSeen:
-        typeof parsed.optInPromptSeen === 'boolean'
-          ? parsed.optInPromptSeen
-          : DEFAULT_NOTIFICATION_SETTINGS.optInPromptSeen,
     };
   } catch {
     return DEFAULT_NOTIFICATION_SETTINGS;
@@ -186,7 +181,6 @@ export async function saveNotificationSettings(
   const current = cachedSettings ?? (await loadNotificationSettings());
   const next: NotificationSettings = {
     masterEnabled: patch.masterEnabled ?? current.masterEnabled,
-    optInPromptSeen: patch.optInPromptSeen ?? current.optInPromptSeen,
   };
   // Write FIRST, then adopt: a failed write must not leave the cache claiming
   // a preference the device never stored — the switch would read OFF while

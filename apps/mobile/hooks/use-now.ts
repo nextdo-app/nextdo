@@ -79,7 +79,14 @@ export function useNow(context?: EngineContextSettings | null): UseNowResult {
   const data = useMemo<NowData | null>(() => {
     const pool = poolQuery.data;
     if (pool === null) return null;
-    const output = recommend({ ...pool, context: effectiveContext, now });
+    // Issue #46: the 场景 (contexts) feature is offline — an EMPTY context
+    // list means "anywhere" in the engine contract, so nothing is filtered
+    // out by location and legacy actions with `contextIds` still surface.
+    const output = recommend({
+      ...pool,
+      context: { contextIds: [], availableMinutes: effectiveContext.availableMinutes },
+      now,
+    });
 
     const byId = new Map(pool.actions.map((candidate) => [candidate.id, candidate]));
     const pick = (id: string): CandidateAction | undefined => byId.get(id);
