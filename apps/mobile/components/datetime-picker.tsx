@@ -20,7 +20,8 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Button, cn } from '@nextdo/ui';
+import { Button, cn, colors } from '@nextdo/ui';
+import { useAppTheme } from '@/lib/theme';
 
 const pad = (n: number): string => String(n).padStart(2, '0');
 
@@ -133,6 +134,7 @@ export function DateTimePicker({
   onConfirm,
   onClose,
 }: DateTimePickerProps) {
+  const { isDark } = useAppTheme();
   const { width: screenWidth } = useWindowDimensions();
   const isCompact = screenWidth < 380;
 
@@ -363,7 +365,7 @@ export function DateTimePicker({
                 <Ionicons
                   name={mode === 'time' ? 'time-outline' : 'calendar-outline'}
                   size={18}
-                  color="#c85a17"
+                  color={isDark ? colors.accentDark : colors.accent}
                 />
               </View>
               <View className="flex-1">
@@ -392,7 +394,7 @@ export function DateTimePicker({
               onPress={onClose}
               className="h-8 w-8 items-center justify-center rounded-full bg-surface-container/70 active:bg-surface-container dark:bg-surface-container-dark/70"
             >
-              <Ionicons name="close" size={16} color="#716b64" />
+              <Ionicons name="close" size={16} color={isDark ? colors.mutedDark : colors.muted} />
             </Pressable>
           </View>
 
@@ -456,7 +458,15 @@ export function DateTimePicker({
                         <Ionicons
                           name={preset.iconName}
                           size={15}
-                          color={isSelected ? '#c85a17' : '#716b64'}
+                          color={
+                            isSelected
+                              ? isDark
+                                ? colors.accentDark
+                                : colors.accent
+                              : isDark
+                                ? colors.mutedDark
+                                : colors.muted
+                          }
                         />
                         <Text
                           className={cn(
@@ -650,7 +660,7 @@ export function DateTimePicker({
                     ) : null}
                   </View>
                   <View className="flex-row items-baseline gap-1">
-                    <Ionicons name="time-outline" size={13} color="#c85a17" />
+                    <Ionicons name="time-outline" size={13} color={isDark ? colors.accentDark : colors.accent} />
                     <Text className="font-sans text-xl font-black text-accent dark:text-accent-dark">
                       {is12Hour
                         ? `${pad(display12Hour)}:${pad(minute)} ${isPM ? 'PM' : 'AM'}`
@@ -672,7 +682,7 @@ export function DateTimePicker({
                     onPress={prevMonth}
                     className="h-7 w-7 items-center justify-center rounded-xl bg-surface-container/60 active:bg-surface-container dark:bg-surface-container-dark/60"
                   >
-                    <Ionicons name="chevron-back" size={15} color="#716b64" />
+                    <Ionicons name="chevron-back" size={15} color={isDark ? colors.mutedDark : colors.muted} />
                   </Pressable>
 
                   <View className="flex-row items-center justify-center">
@@ -687,7 +697,7 @@ export function DateTimePicker({
                     onPress={nextMonth}
                     className="h-7 w-7 items-center justify-center rounded-xl bg-surface-container/60 active:bg-surface-container dark:bg-surface-container-dark/60"
                   >
-                    <Ionicons name="chevron-forward" size={15} color="#716b64" />
+                    <Ionicons name="chevron-forward" size={15} color={isDark ? colors.mutedDark : colors.muted} />
                   </Pressable>
                 </View>
 

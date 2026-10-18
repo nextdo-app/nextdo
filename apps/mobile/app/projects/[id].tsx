@@ -20,11 +20,12 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput,
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Button, Card, EmptyState, Tag, ValueChips, cn, type TagTone } from '@nextdo/ui';
+import { Button, Card, EmptyState, Tag, ValueChips, cn, colors, type TagTone } from '@nextdo/ui';
 import { DateTimePicker } from '@/components/datetime-picker';
 import { FormField } from '@/components/form-field';
 import { PickerField } from '@/components/picker-field';
 import { DeadlineChip } from '@/components/deadline-chip';
+import { useAppTheme } from '@/lib/theme';
 import type { Habit, NextAction, Project, ProjectStatus, Value } from '@nextdo/core';
 import { useProjects } from '@/hooks/use-projects';
 import { useProjectActions } from '@/hooks/use-project-actions';
@@ -59,7 +60,7 @@ const STATUS_TONES: Record<ProjectStatus, TagTone> = {
 const EST_CHIPS = [5, 10, 20, 30, 60, 120];
 
 const INPUT_CLASS =
-  'rounded-md border border-border bg-surface p-3 text-base text-ink placeholder:text-muted dark:border-border-dark dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark';
+  'rounded-xl border border-border/80 bg-surface px-3.5 py-3 text-base text-ink placeholder:text-muted shadow-2xs focus:border-accent dark:border-border-dark dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark';
 
 function Chip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
   return (
@@ -70,11 +71,11 @@ function Chip({ label, active, onPress }: { label: string; active: boolean; onPr
       onPress={onPress}
       className={
         active
-          ? 'h-8 w-8 items-center justify-center rounded-full bg-accent dark:bg-accent-dark'
-          : 'h-8 w-8 items-center justify-center rounded-full border border-border dark:border-border-dark'
+          ? 'h-8 min-w-[36px] px-2.5 items-center justify-center rounded-full bg-accent dark:bg-accent-dark'
+          : 'h-8 min-w-[36px] px-2.5 items-center justify-center rounded-full border border-border dark:border-border-dark'
       }
     >
-      <Text className={active ? 'text-sm text-on-accent' : 'text-sm text-ink dark:text-ink-dark'}>{label}</Text>
+      <Text className={active ? 'text-xs font-semibold text-on-accent' : 'text-xs font-medium text-ink dark:text-ink-dark'}>{label}</Text>
     </Pressable>
   );
 }
@@ -693,6 +694,7 @@ function ProjectHabitRow({
 
 export default function ProjectDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { isDark } = useAppTheme();
   const projectId = typeof id === 'string' ? id : null;
 
   const { data: projects, error: projectsError } = useProjects();
@@ -763,7 +765,7 @@ export default function ProjectDetailScreen() {
         contentContainerStyle={{ paddingTop: topPadding, paddingHorizontal: 16, paddingBottom: 80 }}
         keyboardShouldPersistTaps="handled"
       >
-        <View className="w-full">
+        <View className="w-full max-w-4xl mx-auto">
         <View className="mb-4 flex-row items-center justify-between">
           <Button label="← 项目" variant="ghost" onPress={() => goBack('/(tabs)/projects')} />
         </View>
@@ -1000,7 +1002,7 @@ export default function ProjectDetailScreen() {
           shadowRadius: 6,
         }}
       >
-        <Ionicons name="add" size={28} color="#ffffff" />
+        <Ionicons name="add" size={28} color={isDark ? colors.onAccentDark : colors.onAccent} />
       </Pressable>
 
       <HabitWindowConfirmModal

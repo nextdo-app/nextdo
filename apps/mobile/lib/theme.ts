@@ -74,7 +74,7 @@ function createMemoryStore(): KeyValue {
 }
 
 function createStorage(): KeyValue {
-  if (isReactNativeRuntime()) {
+  if (typeof isReactNativeRuntime === 'function' && isReactNativeRuntime()) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const store = require('expo-secure-store') as {
@@ -244,7 +244,7 @@ export function useAppTheme() {
   const isDark = colorScheme === 'dark';
 
   useEffect(() => {
-    if (isReactNativeRuntime()) {
+    if (typeof isReactNativeRuntime === 'function' && isReactNativeRuntime()) {
       try {
         if (preference === 'system') {
           // Force concrete scheme first so AppCompatDelegate switches the Activity out of dark
@@ -281,7 +281,7 @@ export function useAppTheme() {
   const updatePreference = useCallback(async (next: ThemePreference) => {
     cachedPreference = next;
     emitPreferenceChange();
-    if (isReactNativeRuntime()) {
+    if (typeof isReactNativeRuntime === 'function' && isReactNativeRuntime()) {
       try {
         if (next === 'system') {
           // Immediately set the concrete authentic scheme so Android's

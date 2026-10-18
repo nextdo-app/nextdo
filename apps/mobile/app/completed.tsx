@@ -41,7 +41,7 @@ function CompletedRow({
   return (
     <Card variant="outlined" className="gap-2 p-3.5">
       <View className="flex-row items-start gap-2">
-        <View className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500/70" />
+        <View className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-accent/70 dark:bg-accent-dark/70" />
         <Text className="flex-1 font-sans text-base font-medium text-ink dark:text-ink-dark">
           {entry.title}
         </Text>
@@ -86,7 +86,7 @@ export default function CompletedScreen() {
       style={{ paddingTop: topPadding }}
       className="flex-1 bg-canvas px-4 pb-4 dark:bg-canvas-dark"
     >
-      <View className="w-full max-w-2xl mx-auto flex-1">
+      <View className="w-full max-w-4xl mx-auto flex-1">
         <View className="mb-4 flex-row items-center justify-between">
           <Button label="← 现在" variant="ghost" onPress={() => goBack('/(tabs)/now')} />
           <Text className="text-lg font-semibold text-ink dark:text-ink-dark">已完成行动</Text>

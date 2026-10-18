@@ -138,9 +138,10 @@ function SectionHeader({
   title: string;
   icon: keyof typeof Ionicons.glyphMap;
 }) {
+  const { isDark } = useAppTheme();
   return (
     <View className="flex-row items-center gap-1.5 mt-7 mb-2 px-1">
-      <Ionicons name={icon} size={14} color="#8a847c" />
+      <Ionicons name={icon} size={14} color={isDark ? colors.mutedDark : colors.muted} />
       <Text className="font-sans text-xs font-semibold text-muted dark:text-muted-dark">
         {title}
       </Text>
@@ -342,7 +343,7 @@ export function notificationActionFor(
 export default function SettingsScreen() {
   const { preference, updatePreference, isDark } = useAppTheme();
   const switchTrackColor = {
-    false: isDark ? '#38322a' : '#e5e2db',
+    false: isDark ? colors.borderDark : colors.border,
     true: isDark ? colors.accentDark : colors.accent,
   };
   const switchThumbColor = '#ffffff';
@@ -561,7 +562,7 @@ export default function SettingsScreen() {
         contentContainerStyle={{ paddingTop: topPadding, paddingHorizontal: 16, paddingBottom: 40 }}
         keyboardShouldPersistTaps="handled"
       >
-        <View className="w-full pb-12">
+        <View className="w-full max-w-4xl mx-auto pb-12">
         {/* Header block (matches the other tabs) */}
         <View className="mb-1">
           <Text className="font-display text-3xl font-bold tracking-tight text-ink dark:text-ink-dark">
@@ -601,7 +602,15 @@ export default function SettingsScreen() {
                 <Ionicons
                   name={option.icon}
                   size={18}
-                  color={preference === option.value ? '#c85a17' : '#716b64'}
+                  color={
+                    preference === option.value
+                      ? isDark
+                        ? colors.accentDark
+                        : colors.accent
+                      : isDark
+                        ? colors.mutedDark
+                        : colors.muted
+                  }
                 />
                 <Text
                   className={cn(
@@ -625,7 +634,7 @@ export default function SettingsScreen() {
           {/* 1) 有效状态先行（issue #45 R5）：应用内开关 ∧ 系统授权，未授权绝不显示为「已开启」。 */}
           <View className="flex-row items-center gap-3">
             <View className="h-8 w-8 rounded-lg bg-surface-container/60 dark:bg-surface-container-dark/60 items-center justify-center shrink-0">
-              <Ionicons name="notifications-outline" size={16} color={isDark ? '#9b948a' : '#716b64'} />
+              <Ionicons name="notifications-outline" size={16} color={isDark ? colors.mutedDark : colors.muted} />
             </View>
             <View className="flex-1 min-w-0">
               <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
@@ -700,7 +709,7 @@ export default function SettingsScreen() {
             <View className="flex-row items-center justify-between gap-2">
               <View className="flex-row items-center gap-3 flex-1 min-w-0 pr-1">
                 <View className="h-8 w-8 rounded-lg bg-surface-container/60 dark:bg-surface-container-dark/60 items-center justify-center shrink-0">
-                  <Ionicons name="calendar-outline" size={16} color={isDark ? '#9b948a' : '#716b64'} />
+                  <Ionicons name="calendar-outline" size={16} color={isDark ? colors.mutedDark : colors.muted} />
                 </View>
                 <View className="flex-1 min-w-0">
                   <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
@@ -839,13 +848,13 @@ export default function SettingsScreen() {
             {storedConfig !== null ? (
               <View className="gap-1.5 rounded-xl border border-border/60 bg-surface-container/30 p-3 dark:border-border-dark/60 dark:bg-surface-container-dark/30">
                 <View className="flex-row items-center gap-1.5">
-                  <Ionicons name="server-outline" size={13} color="#716b64" />
+                  <Ionicons name="server-outline" size={13} color={isDark ? colors.mutedDark : colors.muted} />
                   <Text className="font-sans text-xs text-muted dark:text-muted-dark">
                     后端地址：{storedConfig.backendUrl}
                   </Text>
                 </View>
                 <View className="flex-row items-center gap-1.5">
-                  <Ionicons name="git-network-outline" size={13} color="#716b64" />
+                  <Ionicons name="git-network-outline" size={13} color={isDark ? colors.mutedDark : colors.muted} />
                   <Text className="font-sans text-xs text-muted dark:text-muted-dark">
                     同步流地址：{storedConfig.endpoint}
                   </Text>
@@ -853,9 +862,9 @@ export default function SettingsScreen() {
               </View>
             ) : null}
             {rejections.length > 0 && rejections[rejections.length - 1] ? (
-              <View className="gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 p-3">
+              <View className="gap-1.5 rounded-lg border border-danger/30 bg-danger/10 p-3 dark:border-danger-dark/30 dark:bg-danger-dark/15">
                 <View className="flex-row items-center justify-between">
-                  <Text className="font-sans text-xs font-semibold text-red-500 dark:text-red-400">
+                  <Text className="font-sans text-xs font-semibold text-danger dark:text-danger-dark">
                     ⚠️ 发现 {rejections.length} 条操作被服务端拒绝同步
                   </Text>
                   <Pressable
@@ -939,7 +948,7 @@ export default function SettingsScreen() {
             >
               <View className="flex-row items-center gap-3 flex-1 min-w-0 pr-2">
                 <View className="h-8 w-8 rounded-lg bg-accent/10 dark:bg-accent-dark/15 items-center justify-center shrink-0">
-                  <Ionicons name="book-outline" size={16} color={isDark ? '#e0703a' : '#c85a17'} />
+                  <Ionicons name="book-outline" size={16} color={isDark ? colors.accentDark : colors.accent} />
                 </View>
                 <View className="flex-1 min-w-0">
                   <Text className="font-sans text-xs font-semibold text-ink dark:text-ink-dark">
@@ -950,7 +959,7 @@ export default function SettingsScreen() {
                   </Text>
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={14} color={isDark ? '#9b948a' : '#716b64'} />
+              <Ionicons name="chevron-forward" size={14} color={isDark ? colors.mutedDark : colors.muted} />
             </Pressable>
 
             {/* 同步方式选择器 */}
@@ -973,7 +982,15 @@ export default function SettingsScreen() {
                 <Ionicons
                   name="key-outline"
                   size={14}
-                  color={syncMode === 'pair' ? '#c85a17' : '#716b64'}
+                  color={
+                    syncMode === 'pair'
+                      ? isDark
+                        ? colors.accentDark
+                        : colors.accent
+                      : isDark
+                        ? colors.mutedDark
+                        : colors.muted
+                  }
                 />
                 <Text
                   className={cn(
@@ -1278,7 +1295,15 @@ export default function SettingsScreen() {
                 <Ionicons
                   name="shield-checkmark-outline"
                   size={14}
-                  color={update.preferredChannel === 'stable' ? '#c85a17' : '#716b64'}
+                  color={
+                    update.preferredChannel === 'stable'
+                      ? isDark
+                        ? colors.accentDark
+                        : colors.accent
+                      : isDark
+                        ? colors.mutedDark
+                        : colors.muted
+                  }
                 />
                 <Text
                   className={cn(
@@ -1308,7 +1333,15 @@ export default function SettingsScreen() {
                 <Ionicons
                   name="flask-outline"
                   size={14}
-                  color={update.preferredChannel === 'beta' ? '#c85a17' : '#716b64'}
+                  color={
+                    update.preferredChannel === 'beta'
+                      ? isDark
+                        ? colors.accentDark
+                        : colors.accent
+                      : isDark
+                        ? colors.mutedDark
+                        : colors.muted
+                  }
                 />
                 <Text
                   className={cn(
@@ -1345,7 +1378,7 @@ export default function SettingsScreen() {
                 'h-6 w-11 rounded-full p-0.5 justify-center shrink-0',
                 update.autoCheckEnabled
                   ? 'bg-accent dark:bg-accent-dark'
-                  : 'bg-[#e5e2db] dark:bg-[#38322a]',
+                  : 'bg-surface-container dark:bg-surface-container-dark',
               )}
             >
               <View

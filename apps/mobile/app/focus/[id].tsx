@@ -192,34 +192,45 @@ export default function FocusScreen() {
       ) : null}
 
       {!titleLoaded || (title === null && focus.loaded === false) ? (
-        <Card className="items-center py-8">
-          <Text className="text-base text-ink dark:text-ink-dark">加载中…</Text>
+        <Card className="items-center gap-3 p-8 rounded-3xl border-border/60 bg-surface shadow-sm dark:border-border-dark/60 dark:bg-surface-dark">
+          <View className="h-6 w-20 rounded-full bg-surface-container dark:bg-surface-container-dark" />
+          <View className="h-7 w-48 rounded-xl bg-surface-container dark:bg-surface-container-dark" />
+          <Text className="mt-2 text-sm font-medium text-muted dark:text-muted-dark">加载中…</Text>
         </Card>
       ) : (
         <>
-          <Card>
-            <View className="mb-2 flex-row items-center gap-2">
+          <Card className="gap-6 p-6 rounded-3xl border border-border/70 bg-surface shadow-sm dark:border-border-dark/70 dark:bg-surface-dark items-center">
+            <View className="w-full flex-row items-center justify-between">
               <Tag label={KIND_LABELS[actionKind]} tone="accent" />
-              {title !== null ? <Text className="flex-1 text-sm text-muted dark:text-muted-dark">{title}</Text> : null}
+              {session !== null && session.plannedMinutes !== null ? (
+                <Tag label={`目标 ${session.plannedMinutes} 分钟`} tone="neutral" />
+              ) : null}
             </View>
+
+            <View className="items-center px-2">
+              <Text className="font-display text-xl font-bold tracking-tight text-center leading-snug text-ink dark:text-ink-dark sm:text-2xl">
+                {title}
+              </Text>
+            </View>
+
             {sessionEnded ? (
               /* The follow-up step (issue 27): the session is banked, and
                  whether the ACTION is done is a separate, explicit answer. */
-              <View className="items-center gap-4 py-4">
+              <View className="items-center gap-4 py-4 w-full">
                 <Text className="font-display text-lg font-semibold text-ink dark:text-ink-dark">
                   专注已完成
                 </Text>
                 <Text className="text-center text-sm leading-relaxed text-muted dark:text-muted-dark">
                   这次专注已记录。行动是否完成由你决定 —— 还没做完就选「先不完成」，它会回到「现在」的执行池。
                 </Text>
-                <View className="flex-row gap-2">
+                <View className="flex-row gap-3 pt-2">
                   <Button label="完成行动" onPress={() => void handleCompleteAction()} disabled={busy} />
                   <Button label="先不完成" variant="secondary" onPress={handleKeepAction} />
                 </View>
               </View>
             ) : session === null ? (
-              <View className="items-center gap-4 py-4">
-                <Text className="text-sm text-muted dark:text-muted-dark">选择本次专注时长</Text>
+              <View className="items-center gap-4 py-4 w-full">
+                <Text className="font-sans text-sm font-medium text-muted dark:text-muted-dark">选择本次专注时长</Text>
                 <View className="flex-row flex-wrap justify-center gap-2">
                   {(preset === '2' ? [2, ...STANDARD_PRESETS] : STANDARD_PRESETS).map((minutes) => (
                     <Button
@@ -247,49 +258,82 @@ export default function FocusScreen() {
                 </View>
               </View>
             ) : (
-              <View className="items-center gap-4 py-4">
-                <Text className="text-5xl font-semibold text-ink dark:text-ink-dark">{clockText}</Text>
-                {pauseStart !== null ? (
-                  <Text className="text-xs text-muted dark:text-muted-dark">已暂停</Text>
-                ) : null}
+              <View className="items-center gap-5 py-4 w-full">
+                <View className="items-center gap-2">
+                  <Text className="font-mono text-6xl sm:text-7xl font-bold tracking-tight text-ink dark:text-ink-dark">
+                    {clockText}
+                  </Text>
+                  {pauseStart !== null ? (
+                    <View className="flex-row items-center gap-1.5 rounded-full bg-warning/15 px-3 py-1 dark:bg-warning-dark/20">
+                      <View className="h-2 w-2 rounded-full bg-warning dark:bg-warning-dark" />
+                      <Text className="font-sans text-xs font-semibold text-warning dark:text-warning-dark">
+                        已暂停
+                      </Text>
+                    </View>
+                  ) : (
+                    <View className="flex-row items-center gap-1.5 rounded-full bg-accent/10 px-3 py-1 dark:bg-accent-dark/20">
+                      <View className="h-2 w-2 rounded-full bg-accent dark:bg-accent-dark" />
+                      <Text className="font-sans text-xs font-medium text-accent dark:text-accent-dark">
+                        专注进行中
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
                 {timeUp ? (
-                  <Card className="w-full border-warning bg-warning/10 p-3">
-                    <Text className="text-sm font-medium text-ink dark:text-ink-dark">时间到</Text>
-                    <View className="mt-2 flex-row gap-2">
+                  <Card className="w-full border-warning bg-warning/10 p-3.5 rounded-2xl">
+                    <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">时间到</Text>
+                    <View className="mt-2.5 flex-row gap-2.5">
                       <Button label="结束专注" onPress={() => void handleComplete()} disabled={busy} />
                       <Button label="继续" variant="secondary" onPress={() => setTimeUpDismissed(true)} />
                     </View>
                   </Card>
                 ) : (
-                  <View className="flex-row gap-2">
-                    {pauseStart !== null ? (
+                  <View className="w-full items-center gap-3">
+                    <View className="flex-row gap-3 w-full justify-center max-w-xs">
+                      {pauseStart !== null ? (
+                        <Button
+                          label="继续"
+                          className="flex-1"
+                          onPress={() => {
+                            const total = session.pausedSec + Math.floor((displayNow.getTime() - pauseStart) / 1000);
+                            setPauseStart(null);
+                            setFrozen(null);
+                            void focus.recordPause(session.id, total);
+                          }}
+                          disabled={busy}
+                        />
+                      ) : (
+                        <Button
+                          label="暂停"
+                          variant="secondary"
+                          className="flex-1"
+                          onPress={() => {
+                            const startedAt = new Date(session.startedAt);
+                            setFrozen({
+                              remaining: remainingSeconds(startedAt, session.plannedMinutes, session.pausedSec, displayNow),
+                              elapsed: elapsedSeconds(startedAt, session.pausedSec, displayNow),
+                            });
+                            setPauseStart(displayNow.getTime());
+                          }}
+                          disabled={busy}
+                        />
+                      )}
                       <Button
-                        label="继续"
-                        onPress={() => {
-                          const total = session.pausedSec + Math.floor((displayNow.getTime() - pauseStart) / 1000);
-                          setPauseStart(null);
-                          setFrozen(null);
-                          void focus.recordPause(session.id, total);
-                        }}
-                        disabled={busy}
-                      />
-                    ) : (
-                      <Button
-                        label="暂停"
+                        label="结束专注"
                         variant="secondary"
-                        onPress={() => {
-                          const startedAt = new Date(session.startedAt);
-                          setFrozen({
-                            remaining: remainingSeconds(startedAt, session.plannedMinutes, session.pausedSec, displayNow),
-                            elapsed: elapsedSeconds(startedAt, session.pausedSec, displayNow),
-                          });
-                          setPauseStart(displayNow.getTime());
-                        }}
+                        className="flex-1"
+                        onPress={() => void handleComplete()}
                         disabled={busy}
                       />
-                    )}
-                    <Button label="结束专注" onPress={() => void handleComplete()} disabled={busy} />
-                    <Button label="放弃" variant="ghost" onPress={() => void handleAbandon()} disabled={busy} />
+                    </View>
+                    <Button
+                      label="放弃"
+                      variant="ghost"
+                      size="sm"
+                      onPress={() => void handleAbandon()}
+                      disabled={busy}
+                    />
                   </View>
                 )}
               </View>
@@ -307,9 +351,11 @@ function Shell({ children }: { children: ReactNode }) {
   return (
     <View
       style={{ paddingTop: topPadding }}
-      className="flex-1 bg-canvas px-4 pb-4 dark:bg-canvas-dark"
+      className="flex-1 bg-canvas px-4 pb-4 dark:bg-canvas-dark items-center justify-start"
     >
-      {children}
+      <View className="w-full max-w-md flex-1">
+        {children}
+      </View>
     </View>
   );
 }
