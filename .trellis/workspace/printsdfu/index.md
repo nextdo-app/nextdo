@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 49
+- **Total Sessions**: 50
 - **Last Active**: 2026-10-18
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1548 | Active |
+| `journal-1.md` | ~1603 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 50 | 2026-10-18 | 修复 issues #50 #51：习惯时间选择器坍缩与两分钟行动即时专注流转 | `81ac1b1`, `5133c7b` | `feat/issues-50-51` |
 | 49 | 2026-10-18 | issues #44/#45/#46：澄清项目优先、通知有效状态、场景能力下线 | `731563e`, `a28b32b` | `feat/issues-44-45-46` |
 | 48 | 2026-10-17 | 截止时间与提醒时间（行动级提醒） | `6aeb2c4`, `2987ca0`, `61ee992` | `main` |
 | 47 | 2026-10-16 | 全端页面 UI 细节质感优化、全宽无留白排版与表单常显标签 | `01edfd8`, `10284a9` | `main` |
