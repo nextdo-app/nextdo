@@ -43,7 +43,7 @@ describe('describeNotificationState — the effective state (issue #45 R5)', () 
   it('undetermined → 等待系统授权 and explains the app asks by itself', () => {
     const state = describeNotificationState(true, native('undetermined'));
     expect(state.title).toBe('等待系统授权');
-    expect(state.detail).toContain('首次真正需要提醒时');
+    expect(state.detail).toContain('开启通知');
   });
 
   it('denied → 系统权限未开启 and says reminders are recorded but not delivered', () => {
@@ -71,16 +71,15 @@ describe('describeNotificationState — the effective state (issue #45 R5)', () 
 });
 
 describe('notificationActionFor — who gets a button (issue #45 R4/R6)', () => {
-  it('native undetermined → NO button (the app asks at the first real need)', () => {
-    expect(notificationActionFor(native('undetermined'))).toBeNull();
+  it('native undetermined → native-request button (allows requesting permission directly)', () => {
+    expect(notificationActionFor(native('undetermined'))).toBe('native-request');
   });
 
   it('native granted → NO button', () => {
     expect(notificationActionFor(native('granted'))).toBeNull();
   });
 
-  it('native denied → NO request button (only iOS deep-links to system settings)', () => {
-    // jest runs as iOS; Android yields null (text guidance instead).
+  it('native denied → open-system-settings (iOS and Android both deep-link)', () => {
     expect(notificationActionFor(native('denied'))).toBe('open-system-settings');
   });
 

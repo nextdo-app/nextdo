@@ -36,6 +36,9 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        sceneStyle: {
+          backgroundColor: isDark ? colors.canvasDark : colors.canvas,
+        },
         tabBarActiveTintColor: isDark ? colors.accentDark : colors.accent,
         tabBarInactiveTintColor: isDark ? colors.mutedDark : colors.muted,
         tabBarStyle,

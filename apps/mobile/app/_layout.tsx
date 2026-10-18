@@ -55,6 +55,8 @@ import { PowerSyncContext } from '@powersync/react';
 import { useReminderDelivery } from '@/hooks/use-reminder-delivery';
 import { IosInstallPrompt } from '@/components/ios-install-prompt';
 import { AutoUpdateNotifier } from '@/components/auto-update-dialog';
+import { maybeRequestNotificationPermission } from '@/lib/reminders/permission';
+import { colors } from '@nextdo/ui';
 import {
   clearOwnerToken,
   createPowerSyncConnector,
@@ -417,6 +419,15 @@ export default function RootLayout() {
     ? webFontsReady
     : (epilogueLoaded || epilogueError !== null) &&
       (jakartaLoaded || jakartaError !== null);
+  // On native mobile devices, request notification permission on app launch
+  // so the system permission dialog is presented promptly rather than requiring
+  // manual navigation to phone settings.
+  useEffect(() => {
+    if (isReactNativeRuntime()) {
+      void maybeRequestNotificationPermission();
+    }
+  }, []);
+
   // `isDark` drives the StatusBar only. The `<html class="dark">` write that
   // Tailwind's `darkMode: 'class'` selectors key off is owned by `useAppTheme`
   // itself (lib/theme.ts) — duplicating it here raced with NativeWind's own
@@ -426,7 +437,10 @@ export default function RootLayout() {
   if (!fontsReady) {
     return (
       <SafeAreaProvider>
-        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+        <StatusBar
+          barStyle={isDark ? 'light-content' : 'dark-content'}
+          backgroundColor={isDark ? colors.canvasDark : colors.canvas}
+        />
         <View className="flex-1 items-center justify-center bg-canvas dark:bg-canvas-dark">
           <Text className="text-base text-muted dark:text-muted-dark">加载中…</Text>
         </View>
@@ -435,9 +449,19 @@ export default function RootLayout() {
   }
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={isDark ? colors.canvasDark : colors.canvas}
+      />
       <PowerSyncProvider>
-        <Stack screenOptions={{ headerShown: false }} />
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: {
+              backgroundColor: isDark ? colors.canvasDark : colors.canvas,
+            },
+          }}
+        />
         <IosInstallPrompt />
         <AutoUpdateNotifier />
       </PowerSyncProvider>

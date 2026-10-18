@@ -800,6 +800,50 @@ pub fn run() {
                     .build()?;
             }
 
+            // System tray icon & menu: allows running in background when closed.
+            let show_i = tauri::menu::MenuItem::with_id(app, "show", "显示 Nextdo", true, None::<&str>)?;
+            let quit_i = tauri::menu::MenuItem::with_id(app, "quit", "退出 Nextdo", true, None::<&str>)?;
+            let menu = tauri::menu::Menu::with_items(app, &[&show_i, &quit_i])?;
+
+            let mut tray_builder = tauri::tray::TrayIconBuilder::new()
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .tooltip("Nextdo")
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "quit" => {
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::Click {
+                        button: tauri::tray::MouseButton::Left,
+                        button_state: tauri::tray::MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
+                        }
+                    }
+                });
+
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+
+            let _ = tray_builder.build(app);
+
             // Notification self-check (field diagnostics, task 09-30): with
             // NEXTDO_NOTIFY_PROBE=1, send exactly ONE notification ~2 s
             // after the window opens. A visible banner proves the Rust
@@ -827,6 +871,13 @@ pub fn run() {
 
             Ok(())
         })
+        .on_window_event(|window, event| {
+            // Close button hides window to tray/dock instead of quitting immediately.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let _ = window.hide();
+                api.prevent_close();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             save_owner_token,
             load_owner_token,
@@ -838,6 +889,18 @@ pub fn run() {
             open_downloaded_file,
             install_update_and_restart
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Nextdo desktop");
+        .build(tauri::generate_context!())
+        .expect("error while building Nextdo desktop")
+        .run(|app_handle, event| {
+            // Reopen main window when macOS Dock icon or app activator is clicked
+            if let tauri::RunEvent::Reopen { has_visible_windows, .. } = event {
+                if !has_visible_windows {
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.unminimize();
+                        let _ = window.set_focus();
+                    }
+                }
+            }
+        });
 }

@@ -246,22 +246,9 @@ export function useAppTheme() {
   useEffect(() => {
     if (typeof isReactNativeRuntime === 'function' && isReactNativeRuntime()) {
       try {
-        if (preference === 'system') {
-          // Force concrete scheme first so AppCompatDelegate switches the Activity out of dark
-          Appearance.setColorScheme(colorScheme);
-          setColorScheme(colorScheme);
-          setTimeout(() => {
-            try {
-              Appearance.setColorScheme('unspecified');
-            } catch {
-              // Ignore failure in unsupported environments
-            }
-          }, 50);
-        } else {
-          const target = preference ?? colorScheme;
-          Appearance.setColorScheme(target);
-          setColorScheme(target);
-        }
+        const target = preference === 'system' ? colorScheme : (preference ?? colorScheme);
+        Appearance.setColorScheme(target);
+        setColorScheme(target);
       } catch {
         // Appearance.setColorScheme may throw in test or unsupported environments
       }
@@ -283,26 +270,15 @@ export function useAppTheme() {
     emitPreferenceChange();
     if (typeof isReactNativeRuntime === 'function' && isReactNativeRuntime()) {
       try {
-        if (next === 'system') {
-          // Immediately set the concrete authentic scheme so Android's
-          // AppCompatDelegate switches out of the forced mode immediately!
-          Appearance.setColorScheme(authenticSystemScheme);
-          setTimeout(() => {
-            try {
-              Appearance.setColorScheme('unspecified');
-            } catch {
-              // Ignore failure in unsupported environments
-            }
-          }, 50);
-        } else {
-          Appearance.setColorScheme(next);
-        }
+        const target = next === 'system' ? authenticSystemScheme : next;
+        Appearance.setColorScheme(target);
+        setColorScheme(target);
       } catch {
         // Appearance.setColorScheme may throw in test or unsupported environments
       }
     }
     await storage.setItem(THEME_PREFERENCE_KEY, next);
-  }, []);
+  }, [setColorScheme]);
 
   return {
     /** The stored PREFERENCE (what the Settings row highlights). `null`

@@ -318,25 +318,33 @@ export function describeNotificationState(
     default:
       return {
         title: '等待系统授权',
-        detail: '首次真正需要提醒时，Nextdo 会请求通知权限。',
+        detail:
+          permission.platform === 'native'
+            ? '点下方按钮开启通知，准时接收稍后与习惯提醒。'
+            : '首次真正需要提醒时，Nextdo 会请求通知权限。',
       };
   }
 }
 
 /** The single platform action row under the switch, if any (issue #45 R4/R6). */
-export type NotificationAction = 'web-request' | 'open-system-settings' | null;
+export type NotificationAction = 'native-request' | 'web-request' | 'open-system-settings' | null;
 
 export function notificationActionFor(
   permission: ReminderPermissionState | null,
 ): NotificationAction {
   if (permission === null) return null;
   if (permission.status !== 'undetermined' && permission.status !== 'denied') return null;
+  if (permission.platform === 'native' && permission.status === 'undetermined') {
+    return 'native-request';
+  }
   // Browsers require a user gesture — that button is the ONLY viable entry
-  // there, not a redundant manual step. Native asks by itself at the first
-  // real need, so it gets no button (a denied app can only send the user to
-  // the system settings, which only iOS can deep-link).
+  // there, not a redundant manual step.
   if (permission.platform === 'web') return 'web-request';
-  if (permission.status === 'denied' && Platform.OS === 'ios') return 'open-system-settings';
+  // Once denied the OS no longer prompts; both iOS and Android deep-link
+  // their notification settings, so every native denial gets that escape hatch.
+  if (permission.platform === 'native' && permission.status === 'denied') {
+    return 'open-system-settings';
+  }
   return null;
 }
 
@@ -662,6 +670,9 @@ export default function SettingsScreen() {
                 value={masterEnabled ?? true}
                 onValueChange={(val) => {
                   void setMasterEnabled(val);
+                  if (val && notificationPermission?.status === 'undetermined') {
+                    void requestPermission();
+                  }
                 }}
                 trackColor={switchTrackColor}
                 thumbColor={switchThumbColor}
@@ -670,11 +681,24 @@ export default function SettingsScreen() {
             </View>
           </View>
 
-          {/* 3) 平台动作（issue #45 R4/R6）：native 不再提供手动申请按钮；
-           *    web 受浏览器机制所限，保留唯一的手势入口。 */}
+          {/* 3) 平台动作：native 提供开启通知按钮，被拒后引导至设置；
+           *    web 受浏览器机制所限，保留手势入口。 */}
           {notificationAction === null ? null : (
             <View className="border-t border-border/40 pt-2.5 dark:border-border-dark/40">
-              {notificationAction === 'web-request' ? (
+              {notificationAction === 'native-request' ? (
+                <View className="gap-2">
+                  <Text className="font-sans text-sm text-muted dark:text-muted-dark">
+                    开启系统通知权限后，任务到期与习惯打卡将准时提醒。
+                  </Text>
+                  <Button
+                    label="开启通知"
+                    variant="secondary"
+                    onPress={() => {
+                      void requestPermission();
+                    }}
+                  />
+                </View>
+              ) : notificationAction === 'web-request' ? (
                 <View className="gap-2">
                   <Text className="font-sans text-sm text-muted dark:text-muted-dark">
                     {isIosWebSafari()
@@ -694,11 +718,9 @@ export default function SettingsScreen() {
                   <Text className="font-sans text-sm text-muted dark:text-muted-dark">
                     {Platform.OS === 'ios'
                       ? '已拒绝过系统权限 — 只能到系统设置里重新允许。'
-                      : '可在「系统设置 → 应用 → Nextdo → 通知」中重新允许。'}
+                      : '系统通知权限已被拒绝 — 到系统设置里为 Nextdo 重新开启即可。'}
                   </Text>
-                  {Platform.OS === 'ios' ? (
-                    <Button label="去系统设置" variant="secondary" onPress={openSystemSettings} />
-                  ) : null}
+                  <Button label="去系统设置" variant="secondary" onPress={openSystemSettings} />
                 </View>
               )}
             </View>

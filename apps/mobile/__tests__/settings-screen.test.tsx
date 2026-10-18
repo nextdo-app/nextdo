@@ -1515,22 +1515,19 @@ describe('settings cloud-sync block', () => {
 /* ------------------------------------------------------------------ *
  * Settings — notifications block (issue #45): the EFFECTIVE state
  * (in-app switch ∧ OS permission) plus the platform action row.
- *   - native: no manual "开启通知" button any more — the app asks at the
- *     first real need (snooze / calendar / habit reminders);
+ *   - native: undetermined gets the manual request button (「开启通知」);
  *   - web: the only entry is the gesture button (browsers require it);
- *   - denied: iOS deep-links to the system settings, Android gets the path.
+ *   - denied: both iOS and Android deep-link to the system notification settings.
  * The pure helpers (`describeNotificationState` / `notificationActionFor`)
  * own the wording — these cases drive the screen through them.
  * ------------------------------------------------------------------ */
 describe('settings notifications block (issue #45)', () => {
-  it('undetermined (native) → 等待系统授权, and NO manual request button', async () => {
+  it('undetermined (native) → 等待系统授权, and offers manual request button', async () => {
     renderRouter('app', { initialUrl: '/(tabs)/settings' });
     await flush();
 
     expect(screen.getByText('等待系统授权')).toBeTruthy();
-    expect(screen.getByText(/首次真正需要提醒时/)).toBeTruthy();
-    // The manual entry is gone on native — nothing to press.
-    expect(screen.queryByRole('button', { name: '开启通知' })).toBeNull();
+    expect(screen.getByRole('button', { name: '开启通知' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: '开启浏览器通知' })).toBeNull();
     expect(screen.queryByRole('button', { name: '去系统设置' })).toBeNull();
   });
@@ -1562,7 +1559,7 @@ describe('settings notifications block (issue #45)', () => {
 
     expect(screen.getByText('系统权限未开启')).toBeTruthy();
     expect(screen.getByText(/但不会按时送达/)).toBeTruthy();
-    // iOS under jest: the button (not the Android text guidance) renders.
+    // Native under jest (iOS): the deep-link button renders on denial too.
     expect(screen.getByRole('button', { name: '去系统设置' })).toBeTruthy();
     // Not granted ⇒ the card must never claim 已开启 (issue #45 R5).
     expect(screen.queryByText('已开启')).toBeNull();
