@@ -56,9 +56,10 @@ export interface DeliveryAdapter {
   /** Ask the OS (native: the system prompt, only while undetermined;
    *  tauri: always granted, no prompt exists; web: no-op). */
   requestPermission(): Promise<ReminderPermissionState>;
-  /** iOS: jump to this app's system notification settings (denied state,
-   *  R5). No-op on other platforms (Android gets text guidance instead —
-   *  expo-notifications 57 exposes no Android equivalent). */
+  /** Native: jump to this app's system notification settings (the denied
+   *  state, R5) — iOS `app-settings:`; Android
+   *  `ACTION_APP_NOTIFICATION_SETTINGS` with the package, falling back to
+   *  the app details page. No-op on tauri/web. */
   openSystemSettings(): Promise<void>;
   /** Tauri-only reconcile context (the in-session fired set + session
    *  start) — native/web adapters omit it (their modes don't consume it). */

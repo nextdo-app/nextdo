@@ -33,6 +33,7 @@ import {
   installAndroidUpdate,
   installDesktopUpdateAndRestart,
   isTauriDesktop,
+  openAndroidInstallPermissionSettings,
   openDownloadedInstaller,
   openExternalUrl,
   pickDownloads,
@@ -415,10 +416,25 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
           ) : null}
 
           {downloadState.kind === 'done' && canInstallInApp ? (
-            <Text className="pb-3 font-sans text-xs text-muted dark:text-muted-dark">
-              安装包已下载完成。点「立即安装」会打开系统安装程序；首次安装需允许 Nextdo
-              「安装未知应用」。安装成功后应用会自动重启。
-            </Text>
+            <View className="gap-1 pb-3">
+              <Text className="font-sans text-xs text-muted dark:text-muted-dark">
+                安装包已下载完成。点「立即安装」会打开系统安装程序；首次安装需允许 Nextdo
+                「安装未知应用」。安装成功后应用会自动重启。
+              </Text>
+              {/* 无响应时的自救入口：缺安装权限/未打开开关时系统会静默拦下安装器。 */}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="去允许安装未知应用"
+                onPress={() => {
+                  void openAndroidInstallPermissionSettings();
+                }}
+                className="self-start"
+              >
+                <Text className="font-sans text-xs font-semibold text-accent dark:text-accent-dark">
+                  没有弹出安装界面？去允许「安装未知应用」→
+                </Text>
+              </Pressable>
+            </View>
           ) : null}
 
           {installError ? (
@@ -429,20 +445,34 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
               {/* 静默替换 / 调起安装器都可能失败（无写权限、ROM 限制、未授权安装
                   未知应用）；失败时留一条兜底通道，而不是把用户卡在弹窗里。 */}
               {canInstallInApp ? (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="改用浏览器下载安装包"
-                  onPress={() => {
-                    void openExternalUrl(
-                      activeDownloadUrl ?? releasePageUrl(activeRelease?.tag),
-                    );
-                  }}
-                  className="self-start"
-                >
-                  <Text className="font-sans text-xs font-semibold text-accent dark:text-accent-dark">
-                    改用浏览器下载安装包 →
-                  </Text>
-                </Pressable>
+                <View className="gap-1">
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="去允许安装未知应用"
+                    onPress={() => {
+                      void openAndroidInstallPermissionSettings();
+                    }}
+                    className="self-start"
+                  >
+                    <Text className="font-sans text-xs font-semibold text-accent dark:text-accent-dark">
+                      去系统设置允许 Nextdo「安装未知应用」→
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="改用浏览器下载安装包"
+                    onPress={() => {
+                      void openExternalUrl(
+                        activeDownloadUrl ?? releasePageUrl(activeRelease?.tag),
+                      );
+                    }}
+                    className="self-start"
+                  >
+                    <Text className="font-sans text-xs font-semibold text-accent dark:text-accent-dark">
+                      改用浏览器下载安装包 →
+                    </Text>
+                  </Pressable>
+                </View>
               ) : (
                 <Pressable
                   accessibilityRole="button"

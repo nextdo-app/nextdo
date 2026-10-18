@@ -14,6 +14,11 @@
     },
     "android": {
       "package": "com.nextdo.mobile",
+      "permissions": [
+        "android.permission.REQUEST_INSTALL_PACKAGES",
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.USE_EXACT_ALARM"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0f202b"
@@ -43,11 +48,6 @@
         "expo-build-properties",
         {
           "android": {
-            "manifestPermissions": [
-              "SCHEDULE_EXACT_ALARM",
-              "USE_EXACT_ALARM",
-              "REQUEST_INSTALL_PACKAGES"
-            ],
             "enableMinifyInReleaseBuilds": true,
             "enableBundleCompression": true,
             "usesCleartextTraffic": true

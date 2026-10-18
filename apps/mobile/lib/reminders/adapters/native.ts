@@ -15,12 +15,13 @@
  *   `getLastNotificationResponseAsync` (terminated cold start) → the
  *   callback routes to the Now tab (R4);
  * - Android 12+ exact alarm: granted via the `SCHEDULE_EXACT_ALARM` /
- *   `USE_EXACT_ALARM` manifest permissions (expo-build-properties in
+ *   `USE_EXACT_ALARM` manifest permissions (expo.android.permissions in
  *   app.json — without them the OS silently degrades to inexact alarms).
  *
  * No React imports — this is a plain module the hook binds to.
  */
 import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { Linking, Platform } from 'react-native';
 import { logger } from '@nextdo/core';
 import { resolvePermissionStatus } from '../permission-status';
@@ -217,7 +218,39 @@ export function createNativeAdapter(): DeliveryAdapter {
     },
 
     async openSystemSettings(): Promise<void> {
-      if (Platform.OS !== 'ios') return; // Android: text guidance (design §6).
+      if (Platform.OS === 'android') {
+        // 直达本应用的通知设置页（Obtainium / Telegram 同款做法）。带 package:
+        // data 的 ACTION_APP_NOTIFICATION_SETTINGS 在 API 26+ 被设置页接受；
+        // 老 ROM 上用 extra 传包名，仍不认时改开应用详情页。
+        const pkg = Constants.expoConfig?.android?.package;
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const launcher = require('expo-intent-launcher') as {
+            startActivityAsync(
+              action: string,
+              options?: Record<string, unknown>,
+            ): Promise<unknown>;
+          };
+          const hasPkg = typeof pkg === 'string' && pkg !== '';
+          await launcher.startActivityAsync('android.settings.APP_NOTIFICATION_SETTINGS', {
+            ...(hasPkg
+              ? {
+                  data: `package:${pkg}`,
+                  extra: { 'android.provider.extra.APP_PACKAGE': pkg },
+                }
+              : {}),
+          });
+          return;
+        } catch (error) {
+          logger.warn('open android notification settings failed', toError(error));
+        }
+        try {
+          await Linking.openSettings();
+        } catch (error) {
+          logger.warn('open system settings failed', toError(error));
+        }
+        return;
+      }
       try {
         // expo-notifications 57 exposes no openSettings() — the
         // `app-settings:` URL scheme opens THIS app's page in the system

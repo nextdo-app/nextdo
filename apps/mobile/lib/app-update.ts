@@ -1157,6 +1157,10 @@ export async function downloadAndroidUpdate(
  *
  * 注意这个 Promise 要等系统安装界面关闭才 resolve：它只代表「安装器已在台上」，
  * 不代表装成了 —— 装成功时本应用进程会被替换掉。
+ *
+ * 前置条件：清单里必须有 `REQUEST_INSTALL_PACKAGES`（见 app.json 的
+ * `expo.android.permissions`），否则系统会直接忽略这个 Intent，用户看到的就是
+ * 「点了立即安装没反应」。
  */
 export async function installAndroidUpdate(fileUri: string): Promise<void> {
   const fs = loadFileSystemModule();
@@ -1170,4 +1174,37 @@ export async function installAndroidUpdate(fileUri: string): Promise<void> {
     type: 'application/vnd.android.package-archive',
     flags: 1,
   });
+}
+
+/** 本应用在 Android 上的包名（`package:` 形式的系统设置 URI 需要它）。 */
+function currentAndroidPackageName(): string {
+  const configured = Constants.expoConfig?.android?.package;
+  return typeof configured === 'string' && configured !== '' ? configured : 'com.nextdo.mobile';
+}
+
+/**
+ * 打开「允许安装未知应用」的系统设置页（Android 8+ 的应用内安装开关）。
+ *
+ * 清单里的 `REQUEST_INSTALL_PACKAGES` 只是声明能力：这个开关不开，系统会拦下
+ * 安装器而不报错 —— 表现与缺权限时一样，都是「点了没反应」。Obtainium 等自更新
+ * 应用同样要先引导用户过这一步，然后才能把 APK 交给安装器。
+ */
+export async function openAndroidInstallPermissionSettings(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  const launcher = loadIntentLauncherModule();
+  if (launcher !== null) {
+    try {
+      await launcher.startActivityAsync('android.settings.MANAGE_UNKNOWN_APP_SOURCES', {
+        data: `package:${currentAndroidPackageName()}`,
+      });
+      return;
+    } catch {
+      // 个别 ROM 没有这个设置页 —— 退回应用详情页，权限入口在里面。
+    }
+  }
+  try {
+    await Linking.openSettings();
+  } catch {
+    // 系统设置也打不开时，界面上的文字引导仍然在，静默返回。
+  }
 }

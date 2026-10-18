@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/app/testing-guidelines.md", "reason": "验证覆盖：配置回归测试 + 相关套件"}
+{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "验收门禁：typecheck、jest、版本一致性"}

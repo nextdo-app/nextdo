@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/app/testing-guidelines.md", "reason": "回归测试与既有 jest 套件的写法约定"}
+{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "发版前验证门禁与质量要求"}
