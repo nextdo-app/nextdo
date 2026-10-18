@@ -233,4 +233,22 @@ describe('DateTimePicker', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onConfirm).not.toHaveBeenCalled();
   });
+
+  it('avoids flex-1 on the body ScrollView to prevent zero-height collapse in Yoga (Issue 50)', () => {
+    render(
+      <DateTimePicker
+        mode="time"
+        title="选择时间"
+        value="08:00"
+        now={now}
+        onConfirm={onConfirm}
+        onClose={onClose}
+      />,
+    );
+
+    // The modal's primary body ScrollView must not have flex: 1 (flexBasis: 0),
+    // which causes complete vertical collapse on mobile when parent height is auto.
+    expect(screen.getByLabelText('小时 08')).toBeTruthy();
+    expect(screen.getByLabelText('分钟 00')).toBeTruthy();
+  });
 });

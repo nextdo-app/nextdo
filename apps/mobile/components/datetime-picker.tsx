@@ -425,9 +425,10 @@ export function DateTimePicker({
             />
           </View>
 
-          {/* Scrollable Form Body: Expands & scrolls smoothly inside modal */}
+          {/* Scrollable Form Body: Expands & scrolls smoothly inside modal without flex-basis collapse */}
           <ScrollView
-            className="flex-1"
+            className="shrink"
+            style={{ flexGrow: 0, flexShrink: 1 }}
             showsVerticalScrollIndicator={false}
             nestedScrollEnabled
             contentContainerStyle={{ paddingBottom: 6 }}

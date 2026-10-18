@@ -210,11 +210,11 @@ describe('assertValidFocusSession', () => {
   it('accepts a valid preset session', () => {
     assertValidFocusSession(session);
   });
-  it('preset minutes must be 25/45/60', () => {
+  it('preset minutes must be 2/25/45/60', () => {
     expect(thrown(() => assertValidFocusSession({ ...session, plannedMinutes: 30 })).code).toBe(
       'validation.focusSession.plannedMinutes',
     );
-    expect(FOCUS_PRESET_MINUTES).toEqual([25, 45, 60]);
+    expect(FOCUS_PRESET_MINUTES).toEqual([2, 25, 45, 60]);
   });
   it('free sessions require plannedMinutes = null', () => {
     expect(() => assertValidFocusSession({ ...session, mode: 'free', plannedMinutes: 25 })).toThrow(

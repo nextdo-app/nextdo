@@ -182,6 +182,9 @@ post-MVP; desktop: `computer` + user selection) and are passed to the engine as
 `EngineContext.contextIds` — not stored per action beyond the action's own
 `contextIds`.
 
+- **两分钟行动与即时专注（Issue #51）**：
+  在澄清（或重新明晰）向导中，当行动符合 2 分钟定律且用户在 Q3b 选择「现在就做完」时，系统物化生成一条合法的 `NextAction`（`estMinutes: 2`, `value: 3`, `status: 'open'`），并立即跳转唤起 2 分钟倒计时专注流程（`preset=2&autoStart=1`）。专注结束后走解耦追问确认：确认完成则写入 `status = 'done'` 与 `CompletionRecord`，自然进入「已完成行动」窗口（支持查看与恢复）；选择先不完成或退出则保持 `status = 'open'`，安全留存在「现在」执行池（待完成列表）中，杜绝任何状态丢失。
+
 ### Habit (+ HabitDay)
 A rule generating a recurring action (Proposal §7).
 - `Habit`: `title`, `actionTitle` (e.g. "阅读 30 min"), `estMinutes`, `value: 1..5`,

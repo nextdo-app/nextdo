@@ -262,6 +262,9 @@
   `accessibilityRole="progressbar"` + `accessibilityValue` (width is never
   the only signal).
 
+- **DateTimePicker 模态弹窗与滚动体布局（Issue #50）**：
+  在未设显式固定 `height` 的弹窗容器中（仅有 `max-height`），内部主体 `ScrollView` 严禁使用 `flex-1`（即 `flexGrow: 1, flexShrink: 1, flexBasis: 0`）。在 React Native Yoga 布局引擎下，未确定主轴高度的容器无法向 `flexBasis: 0` 的子项分配剩余空间，会导致滚动区域固有尺寸测量为 0、整个中间时间转盘坍塌消失。应使用 `className="shrink"` / `style={{ flexGrow: 0, flexShrink: 1 }}`，让 `ScrollView` 自适应由内容撑开，并在内容总高超过容器 `max-height` 约束时触发弹性收缩和内部滚动。
+
 ## App update (Settings 「应用更新」 card + startup 「发现新版本」 dialog)
 
 - ONE flow behind two entry points: `apps/mobile/lib/app-update.ts` (feed fetch,

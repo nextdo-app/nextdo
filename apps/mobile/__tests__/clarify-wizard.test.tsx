@@ -326,7 +326,7 @@ describe('WizardBody — step walking (clarify)', () => {
     await waitFor(() => expect(screen.getByText('已整理为「项目行动（挂接已有项目）」')).toBeTruthy());
   });
 
-  it('the do-now path (q3 yes → q3b yes) submits immediately, no form', async () => {
+  it('the do-now path (q3 yes → q3b yes) creates an action and routes to 2-minute focus immediately', async () => {
     mockedApplyClarify.mockResolvedValue({ inboxId: 'inbox-1', outcome: { kind: 'do-now-completed' }, createdIds: ['r1'] });
     renderWizard();
     fireEvent.press(screen.getByText('可以，是行动'));
@@ -347,7 +347,9 @@ describe('WizardBody — step walking (clarify)', () => {
       myResponsibility: true,
       fixedTime: false,
     });
-    await waitFor(() => expect(screen.getByText('已整理为「当场完成」')).toBeTruthy());
+    await waitFor(() =>
+      expect(router.replace).toHaveBeenCalledWith('/focus/r1?kind=next&preset=2&autoStart=1'),
+    );
   });
 
   it('a failing transaction surfaces the Chinese mapped error, no done step', async () => {
@@ -683,15 +685,12 @@ describe('WizardBody — project ownership (q2 → q2b → q2c)', () => {
 
 describe('WizardBody — done step (explicit exits, no auto-back)', () => {
   async function walkToDone() {
-    mockedApplyClarify.mockResolvedValue({ inboxId: 'inbox-1', outcome: { kind: 'do-now-completed' }, createdIds: ['r1'] });
+    mockedApplyClarify.mockResolvedValue({ inboxId: 'inbox-1', outcome: { kind: 'someday' }, createdIds: ['someday-1'] });
     renderWizard();
-    fireEvent.press(screen.getByText('可以，是行动'));
-    fireEvent.press(screen.getByText('不属于项目'));
-    expect(screen.getAllByText('大约 2 分钟内能完成吗？').length).toBeGreaterThan(0);
-    fireEvent.press(screen.getByText('是，2 分钟内'));
-    expect(screen.getAllByText('现在就做掉吗？').length).toBeGreaterThan(0);
-    fireEvent.press(screen.getByText('是，现在就做完'));
-    await waitFor(() => expect(screen.getByText('已整理为「当场完成」')).toBeTruthy());
+    fireEvent.press(screen.getByText('不行'));
+    fireEvent.press(screen.getByText('有空再说'));
+    fireEvent.press(screen.getByText('保存'));
+    await waitFor(() => expect(screen.getByText('已整理为「有空再说」')).toBeTruthy());
   }
 
   it('shows 再记一条 / 完成 and does NOT auto-return', async () => {
@@ -707,18 +706,17 @@ describe('WizardBody — done step (explicit exits, no auto-back)', () => {
     expect(router.navigate).toHaveBeenCalledWith({ pathname: '/(tabs)/inbox', params: { recapture: '1' } });
   });
 
-  it('完成 → router.back (same shape in reclarify mode)', async () => {
-    mockedReclarifyAction.mockResolvedValue({ outcome: { kind: 'do-now-completed' }, createdIds: [] });
+  it('reclarify do-now routes to focus timer directly', async () => {
+    mockedReclarifyAction.mockResolvedValue({ outcome: { kind: 'do-now-completed' }, createdIds: ['act-1'] });
     renderWizard({ mode: 'reclarify', id: 'act-1', actionKind: 'next', currentProjectId: 'proj-1' });
     fireEvent.press(screen.getByText('不属于项目'));
     expect(screen.getAllByText('大约 2 分钟内能完成吗？').length).toBeGreaterThan(0);
     fireEvent.press(screen.getByText('是，2 分钟内'));
     expect(screen.getAllByText('现在就做掉吗？').length).toBeGreaterThan(0);
     fireEvent.press(screen.getByText('是，现在就做完'));
-    await waitFor(() => expect(screen.getByText('已整理为「当场完成」')).toBeTruthy());
-    fireEvent.press(screen.getByText('完成'));
-    expect(router.back).toHaveBeenCalledTimes(1);
-    expect(router.navigate).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(router.replace).toHaveBeenCalledWith('/focus/act-1?kind=next&preset=2&autoStart=1'),
+    );
   });
 
   it('deep-load without a parent: 完成 replaces to the origin tab instead of back', async () => {

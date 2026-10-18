@@ -190,7 +190,7 @@ describe('applyClarify', () => {
     }
   });
 
-  it('do-now completed: CompletionRecord(actionKind do_now) — no action entity', async () => {
+  it('do-now completed: creates a 2-minute NextAction ready for Focus', async () => {
     const { db, close } = await open(true);
     try {
       const result = await applyClarify(db, {
@@ -200,13 +200,13 @@ describe('applyClarify', () => {
         now: FIXTURE_NOW,
       });
       expect(result.outcome).toEqual({ kind: 'do-now-completed' });
-      const record = await db
-        .selectFrom('completion_records')
-        .selectAll()
-        .where('action_id', '=', I.plain)
-        .executeTakeFirst();
-      expect(record).toMatchObject({ action_kind: 'do_now', est_minutes: null });
-      expect(await listNextActions(db)).toHaveLength(9);
+      expect(result.createdIds).toHaveLength(1);
+      const action = (await listNextActions(db)).find((item) => item.id === result.createdIds[0]);
+      expect(action).toBeDefined();
+      expect(action?.estMinutes).toBe(2);
+      expect(action?.value).toBe(3);
+      expect(action?.status).toBe('open');
+      expect(await listNextActions(db)).toHaveLength(10);
     } finally {
       await close();
     }
@@ -561,7 +561,7 @@ describe('reclarifyAction', () => {
     }
   });
 
-  it('do-now re-clarify completes the action in place (canonical transaction)', async () => {
+  it('do-now re-clarify updates the action to 2 minutes and returns its id', async () => {
     const { db, close } = await open(true);
     try {
       const result = await reclarifyAction(db, {
@@ -572,15 +572,10 @@ describe('reclarifyAction', () => {
         now: FIXTURE_NOW,
       });
       expect(result.outcome).toEqual({ kind: 'do-now-completed' });
-      expect(result.createdIds).toEqual([]);
+      expect(result.createdIds).toEqual([A.a]);
       const action = (await listNextActions(db)).find((item) => item.id === A.a);
-      expect(action?.status).toBe('done');
-      const record = await db
-        .selectFrom('completion_records')
-        .selectAll()
-        .where('action_id', '=', A.a)
-        .executeTakeFirst();
-      expect(record).toMatchObject({ action_kind: 'next', est_minutes: 10 });
+      expect(action?.estMinutes).toBe(2);
+      expect(action?.status).toBe('open');
     } finally {
       await close();
     }
