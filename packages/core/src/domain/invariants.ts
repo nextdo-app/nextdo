@@ -229,7 +229,7 @@ export function assertValidReminder(reminder: Reminder): void {
   }
 }
 
-export const FOCUS_PRESET_MINUTES = [25, 45, 60] as const;
+export const FOCUS_PRESET_MINUTES = [2, 25, 45, 60] as const;
 
 export function assertValidFocusSession(session: FocusSession): void {
   if (session.mode === 'preset') {

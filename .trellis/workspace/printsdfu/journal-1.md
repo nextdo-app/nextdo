@@ -1559,3 +1559,45 @@ NextAction / CalendarAction / HabitDay 并支持逐条恢复为未完成；顺�
 ### Next Steps
 
 - 推送 feat 分支、开 PR，合入后 0.1.7 发版（六处 bump、tag、核验 10 个资产）
+
+
+## Session 50: 修复 issues #50 #51：习惯时间选择器坍缩与两分钟行动即时专注流转
+<!-- trellis-session: v=2 fp=a48c60e124a84b2e -->
+
+**Date**: 2026-10-18
+**Task**: 修复 issues #50 #51：习惯时间选择器坍缩与两分钟行动即时专注流转
+**Branch**: `feat/issues-50-51`
+
+### Summary
+
+按 trellis 流程（父任务 10-18-issues-50-51 + 每 issue 子任务）修复两个 bug。改动落点：apps/mobile/components/datetime-picker.tsx 等 12 个文件；浏览器实测 7 张截图（.verify/issues-50-51/）全绿；门禁 lint/typecheck/test（core 244 / db 328 / mobile 631 / server 104）全量通过。
+
+### Main Changes
+
+- core: FOCUS_PRESET_MINUTES 增加 2 分钟预设（2/25/45/60），invariants 校验与测试同步
+- db: applyClarify / reclarifyAction 的 do-now 分支不再静默写入孤立 do_now 记录，而是物化合法的 2 分钟 NextAction（estMinutes=2, value=3, status=open）；buildNextAction 标题改为 target.actionTitle ?? target.title 优先，修掉「动作表单里改的标题被丢弃」的隐患
+- mobile: DateTimePicker 主体 ScrollView 移除 flex-1（Yoga 在 height:auto 弹窗里会把 flexBasis:0 的子项算成 0 高度），改用 shrink + flexGrow:0/flexShrink:1，移动端时间转盘与常用时段恢复展开展示
+- mobile: 澄清向导 Q3b「是，现在就做完」改为路由直达 /focus/<id>?preset=2&autoStart=1；Focus 屏支持 preset/autoStart 参数自动开启 2 分钟倒计时；Q3b 文案改为「立即进入 2 分钟专注倒计时，做完直接记为完成。」
+- spec: component-guidelines 记录 Modal 内 ScrollView 的 flexBasis 坍缩陷阱；domain-model 记录两分钟行动物化与即时专注的约定
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `81ac1b1` | fix(mobile,db): 修复习惯时间选择器高度坍缩与两分钟行动即时专注流转 (#50 #51) |
+| `5133c7b` | chore(task): archive 10-18 issues 50/51（习惯时间选择器与两分钟行动流转） |
+
+### Testing
+
+- [OK] pnpm lint / pnpm -r typecheck —— 5 个子工程全绿
+- [OK] pnpm -r test —— server 104 / core 244 / db 328 / mobile 631（42 套件）全通过
+- [OK] 浏览器实测（headless Chrome + CDP，390×844 与 360×800 视口）7/7 通过：时间选择器展开（滚动区 844px/800px，非 0）、Q3b 引导、2 分钟倒计时、专注追问、已完成行动列表与恢复回流
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 推送 feat/issues-50-51 并开 PR，CI 通过后合并
+- 建发布分支 bump 六处版本号到测试版 0.1.8-beta.1，合并后打 tag 触发 release 流水线并核验资产

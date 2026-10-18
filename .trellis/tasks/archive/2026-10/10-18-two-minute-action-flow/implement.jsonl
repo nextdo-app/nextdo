@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/10-18-two-minute-action-flow/research/two-minute-flow-analysis.md", "reason": "Issue 51 根因分析：do_now 未建实体与已完成列表漏查，及 2 分钟专注交互方案"}
+{"file": ".trellis/spec/domain/domain-model.md", "reason": "GTD Clarify 规则、2 分钟行动与 The Complete Transaction"}
+{"file": ".trellis/spec/app/component-guidelines.md", "reason": "向导交互与 Focus 专注页面规范"}
+{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "Web 验证门禁要求"}

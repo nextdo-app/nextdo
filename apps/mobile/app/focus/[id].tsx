@@ -23,7 +23,6 @@ import { Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { Button, Card, Tag } from '@nextdo/ui';
-import { FOCUS_PRESET_MINUTES } from '@nextdo/core';
 import type { ActionKind } from '@nextdo/db';
 import { useActionTitle } from '@/hooks/use-action-title';
 import { useFocusSession } from '@/hooks/use-focus-session';
@@ -33,10 +32,15 @@ import { KIND_LABELS } from '@/lib/kind-labels';
 import { elapsedSeconds, formatClock, isTimeUp, remainingSeconds } from '@/lib/focus-timer';
 import { goBack } from '@/lib/go-back';
 
-const PRESETS = [...FOCUS_PRESET_MINUTES];
+const STANDARD_PRESETS = [25, 45, 60];
 
 export default function FocusScreen() {
-  const { id, kind } = useLocalSearchParams<{ id: string; kind?: string }>();
+  const { id, kind, preset, autoStart } = useLocalSearchParams<{
+    id: string;
+    kind?: string;
+    preset?: string;
+    autoStart?: string;
+  }>();
   const actionKind: ActionKind | null =
     kind === 'next' || kind === 'habit' || kind === 'calendar' ? kind : null;
   const actionId = typeof id === 'string' ? id : null;
@@ -65,6 +69,28 @@ export default function FocusScreen() {
   const [sessionEnded, setSessionEnded] = useState(false);
 
   const session = focus.activeSession;
+
+  // Auto-start focus session (e.g. 2-minute focus triggered by Clarify Q3b)
+  const [autoStarted, setAutoStarted] = useState(false);
+  useEffect(() => {
+    if (
+      !autoStarted &&
+      autoStart === '1' &&
+      preset !== undefined &&
+      focus.loaded &&
+      session === null &&
+      actionId !== null &&
+      actionKind !== null
+    ) {
+      const minutes = Number(preset);
+      if (Number.isInteger(minutes) && minutes > 0) {
+        setAutoStarted(true);
+        void focus.start({ actionId, actionKind, minutes }).then((s) => {
+          if (s !== null) setTimeUpDismissed(false);
+        });
+      }
+    }
+  }, [autoStarted, autoStart, preset, focus, session, actionId, actionKind]);
 
   if (actionId === null || actionKind === null) {
     return (
@@ -195,7 +221,7 @@ export default function FocusScreen() {
               <View className="items-center gap-4 py-4">
                 <Text className="text-sm text-muted dark:text-muted-dark">选择本次专注时长</Text>
                 <View className="flex-row flex-wrap justify-center gap-2">
-                  {PRESETS.map((minutes) => (
+                  {(preset === '2' ? [2, ...STANDARD_PRESETS] : STANDARD_PRESETS).map((minutes) => (
                     <Button
                       key={minutes}
                       label={`${minutes} 分钟`}

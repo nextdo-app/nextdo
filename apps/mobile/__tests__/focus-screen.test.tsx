@@ -310,4 +310,31 @@ describe('Focus screen', () => {
     // The action title (from the db) renders in the card header.
     expect(screen.getByText('写季度总结')).toBeTruthy();
   });
+
+  it('auto-starts a 2-minute focus session when preset=2 and autoStart=1 are provided (Issue 51)', async () => {
+    mockState.sessions = [];
+    mockDb.startFocusSession.mockImplementationOnce(async (_db, args) => {
+      const s = {
+        id: 's-auto',
+        actionId: args.actionId,
+        actionKind: args.actionKind,
+        mode: args.mode,
+        plannedMinutes: args.plannedMinutes,
+        startedAt: new Date().toISOString(),
+        pausedSec: 0,
+        status: 'active' as const,
+      };
+      mockState.sessions.push(s);
+      return s;
+    });
+
+    renderRouter('app', { initialUrl: '/focus/f-1?kind=next&preset=2&autoStart=1' });
+    await waitFor(() =>
+      expect(mockDb.startFocusSession).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ actionId: 'f-1', actionKind: 'next', mode: 'preset', plannedMinutes: 2 }),
+      ),
+    );
+    await waitFor(() => expect(screen.getByText('结束专注')).toBeTruthy());
+  });
 });

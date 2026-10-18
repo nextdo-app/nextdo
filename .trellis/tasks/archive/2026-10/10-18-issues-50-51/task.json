@@ -1,0 +1,29 @@
+{
+  "id": "issues-50-51",
+  "name": "issues-50-51",
+  "title": "修复 issues #50 #51（习惯时间选择器与两分钟行动流转）",
+  "description": "修复手机端习惯时间选择器高度坍缩（#50）与2分钟行动完成流转及已完成列表展示（#51），验证门禁与发版 0.1.8-beta.1",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "printsdfu",
+  "assignee": "printsdfu",
+  "createdAt": "2026-10-18",
+  "completedAt": "2026-10-18",
+  "branch": "feat/issues-50-51",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-18-habit-time-picker-mobile",
+    "10-18-two-minute-action-flow"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

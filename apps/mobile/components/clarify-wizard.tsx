@@ -300,6 +300,7 @@ export function WizardBody({
   async function submit(submission: Submission) {
     setSubmitting(true);
     try {
+      let createdId: string | null = null;
       if (submission.mode === 'clarify') {
         const result = await applyClarify(db, {
           inboxId: id,
@@ -307,6 +308,11 @@ export function WizardBody({
           target: submission.target,
           now,
         });
+        createdId = result.createdIds[0] ?? null;
+        if (result.outcome.kind === 'do-now-completed' && createdId !== null) {
+          router.replace(`/focus/${createdId}?kind=next&preset=2&autoStart=1`);
+          return;
+        }
         dispatch({ type: 'done', result: { outcome: result.outcome, createdIds: result.createdIds } });
       } else {
         if (actionKind === null) throw new Error('re-clarify requires an action kind');
@@ -317,6 +323,11 @@ export function WizardBody({
           target: submission.target,
           now,
         });
+        createdId = result.createdIds[0] ?? id;
+        if (result.outcome.kind === 'do-now-completed') {
+          router.replace(`/focus/${createdId}?kind=${actionKind}&preset=2&autoStart=1`);
+          return;
+        }
         dispatch({ type: 'done', result: { outcome: result.outcome, createdIds: result.createdIds } });
       }
       // Calendar targets may create a reminder row (startsAt within the
@@ -854,7 +865,7 @@ function QuestionCard({ state, dispatch, onDoNow, disabled, canGoBack, onBack, p
     case 'q3b':
       return (
         <View className="gap-4">
-          <Question title="现在就做掉吗？" sub="做完直接记为完成，不再排队。" />
+          <Question title="现在就做掉吗？" sub="立即进入 2 分钟专注倒计时，做完直接记为完成。" />
           <Choices
             step="q3b"
             disabled={disabled}

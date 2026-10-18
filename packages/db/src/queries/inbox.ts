@@ -22,7 +22,6 @@ import {
   StorageNextdoError,
   ValidationNextdoError,
   assertValidCalendarAction,
-  assertValidCompletionRecord,
   assertValidInboxItem,
   assertValidNextAction,
   assertValidProject,
@@ -38,7 +37,6 @@ import {
   type CalendarAction,
   type ClarifyAnswers,
   type ClarifyOutcome,
-  type CompletionRecord,
   type InboxItem,
   type NextAction,
   type Project,
@@ -49,7 +47,6 @@ import {
 } from '@nextdo/core';
 import {
   calendarActionToRow,
-  completionRecordToRow,
   inboxItemFromRow,
   inboxItemToRow,
   nextActionToRow,
@@ -61,7 +58,7 @@ import {
   type Database,
 } from '../schema';
 import type { Transaction } from 'kysely';
-import { completeAction, loadActionRow } from './actions';
+import { loadActionRow } from './actions';
 import type { ActionKind, NextdoDb } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -262,7 +259,7 @@ function buildNextAction(
     createdAt: base.nowIso,
     updatedAt: base.nowIso,
     deletedAt: null,
-    title: target.title ?? base.title,
+    title: target.actionTitle ?? target.title ?? base.title,
     projectId: base.projectId,
     contextIds: target.contextIds ?? [],
     estMinutes: requireEstMinutes(target, 'a next action'),
@@ -406,22 +403,20 @@ export async function applyClarify(
         break;
       }
       case 'do-now-completed': {
-        // DO NOW, completed on the spot: CompletionRecord(actionKind
-        // "do_now", actionId = sourceInboxId, estMinutes = null — no
-        // estimate ever existed). No action entity is ever created.
-        const record: CompletionRecord = {
-          id: ulid(now),
-          createdAt: nowIso,
-          updatedAt: nowIso,
-          deletedAt: null,
-          actionKind: 'do_now',
-          actionId: inbox.id,
-          completedAt: nowIso,
-          estMinutes: null,
+        // DO NOW: create the 2-minute NextAction in 'open' status so the
+        // user enters the 2-minute Focus session immediately. Once completed
+        // in Focus, the canonical complete transaction writes the CompletionRecord
+        // and keeps the action visible & restorable in completed actions.
+        const actionBase = {
+          nowIso,
+          title: inbox.title,
+          sourceInboxId: inbox.id,
+          contextIds: [],
         };
-        assertValidCompletionRecord(record);
-        createdIds.push(record.id);
-        await tx.insertInto('completion_records').values({ id: record.id, ...completionRecordToRow(record) }).execute();
+        const action = buildNextAction(now, actionBase, { title: inbox.title, estMinutes: 2, value: 3 });
+        assertValidNextAction(action);
+        createdIds.push(action.id);
+        await tx.insertInto('next_actions').values({ id: action.id, ...nextActionToRow(action) }).execute();
         break;
       }
       case 'project': {
@@ -558,10 +553,14 @@ export async function reclarifyAction(
       : null;
 
   if (outcome.kind === 'do-now-completed') {
-    // Completed on the spot → the canonical complete transaction
-    // (status done + CompletionRecord + Reminder cancel, one transaction).
-    await completeAction(db, { actionKind, actionId, now });
-    return { outcome, createdIds: [] };
+    if (actionKind === 'next') {
+      await db
+        .updateTable('next_actions')
+        .set({ est_minutes: 2, updated_at: nowIso })
+        .where('id', '=', actionId)
+        .execute();
+    }
+    return { outcome, createdIds: [actionId] };
   }
 
   const table = actionKind === 'next' ? 'next_actions' : 'calendar_actions';
