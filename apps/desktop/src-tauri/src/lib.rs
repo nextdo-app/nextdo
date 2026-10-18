@@ -891,9 +891,12 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building Nextdo desktop")
-        .run(|app_handle, event| {
-            // Reopen main window when macOS Dock icon or app activator is clicked
-            if let tauri::RunEvent::Reopen { has_visible_windows, .. } = event {
+        .run(|app_handle, _event| {
+            // Reopen main window when macOS Dock icon or app activator is clicked.
+            // `RunEvent::Reopen` only exists on macOS, so the whole arm is cfg-gated —
+            // otherwise Windows/Linux fail with E0599 (variant not found).
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { has_visible_windows, .. } = _event {
                 if !has_visible_windows {
                     if let Some(window) = app_handle.get_webview_window("main") {
                         let _ = window.show();
