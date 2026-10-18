@@ -1645,3 +1645,24 @@ NextAction / CalendarAction / HabitDay 并支持逐条恢复为未完成；顺�
 ### Status
 
 [OK] **Completed**
+
+## Session 53: Android 应用内安装无响应（缺失 REQUEST_INSTALL_PACKAGES）
+
+**Date**: 2026-10-18
+**Task**: Android 应用内安装无响应（缺失 REQUEST_INSTALL_PACKAGES）
+**Branch**: `release/0.1.8-beta.1`
+
+### Summary
+
+发布 APK 缺失 REQUEST_INSTALL_PACKAGES / SCHEDULE_EXACT_ALARM / USE_EXACT_ALARM，点「立即安装」被系统静默忽略；权限从无效的 expo-build-properties.android.manifestPermissions 迁到 expo.android.permissions，补「安装未知应用」授权入口与 Android 通知设置深链，新增配置回归测试，发布 0.1.9-beta.1。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `055b006` | fix(mobile): 修复 Android 应用内安装无响应（补齐 REQUEST_INSTALL_PACKAGES） |
+| `acc7f43` | chore(task): archive 10-18-android-install-permission |
+
+### Status
+
+[OK] **Completed**
