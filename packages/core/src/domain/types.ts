@@ -81,7 +81,11 @@ export type WaitingForItem = EntityBase & {
   waitingOn: string;
   expectedBy?: string;
   followUpAt?: string;
+  /** Issue #62: `waiting` = 等外部结果（默认）; `delegated` = 已委派给别人。 */
+  kind?: WaitingKind;
 };
+
+export type WaitingKind = 'waiting' | 'delegated';
 
 /** Time-bound action — a hard schedule entry. Never also a NextAction. */
 export type CalendarAction = EntityBase & {

@@ -1751,3 +1751,37 @@ v0.1.9-beta.1 发布构建中 Windows / Linux 因 RunEvent::Reopen 仅存在于 
 
 - 换图标时同步 bump sw.js 的 ICON_VERSION、post-export-web.mjs 的 ICON_VERSION 与 manifest.json 的 ?v=。
 - 本地装原生依赖前先跑 npx expo prebuild（expo-audio / expo-calendar 是新增原生模块）。
+
+
+## Session 57: 解决 issues #58–#62（记录与澄清解耦、专注时长与系统通知、习惯打卡高可见入口、项目可选首行动）
+<!-- trellis-session: v=2 fp=ce1fce9209e01026 -->
+
+**Date**: 2026-10-19
+**Task**: 解决 issues #58–#62（记录与澄清解耦、专注时长与系统通知、习惯打卡高可见入口、项目可选首行动）
+**Branch**: `feat/issues-58-62`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+- 记录与澄清解耦：收件箱默认只落库、待澄清列表与逐条/批量澄清、专注页底部速记坞
+- 专注时长自定义：15/25/45/60与1-180自定义分钟持久化
+- 专注与休息结束系统级通知：本地通知预排与权限引导
+- 今日习惯待打卡卡片：Now顶部高可见单步打卡
+- 项目澄清可选首行动：允许先挂着创建；行动区分下一步/等待/委派，等待清单独立于执行池
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f80bf8cfd87f0aa871a5875fe99eb0ac0f9e69d8` | feat(gtd): 解决 issues #58–#62（记录/澄清解耦、专注时长与通知、习惯打卡、项目可选首行动） |
+
+### Testing
+
+- [OK] pnpm lint=0, typecheck=0, test=1353全绿, build:web=0, 实测断言全绿
+
+### Status
+
+[OK] **Completed**

@@ -18,12 +18,20 @@ jest.mock('@nextdo/db', () => {
     applyClarify: jest.fn(),
     reclarifyAction: jest.fn(),
     listInboxItems: jest.fn(),
+    // The batch done step's remaining-items query (#58).
+    inboxItemsWatchQuery: () => ({
+      compile: () => ({ sql: 'SELECT 1', parameters: [] }),
+      execute: async () => [],
+    }),
     listNextActions: jest.fn(),
     listCalendarActions: jest.fn(async () => []),
     getStoredBackendConfig: async () => null,
     wrapDb: () => ({}),
   };
 });
+
+// The inbox list a batch pass walks (#58) — mutable so a test can seed it.
+const mockInboxList: { id: string }[] = [];
 
 jest.mock('@powersync/react', () => {
   const React = jest.requireActual('react');
@@ -35,7 +43,7 @@ jest.mock('@powersync/react', () => {
   return {
     PowerSyncContext: React.createContext(powersync),
     usePowerSync: () => powersync,
-    useQuery: () => ({ data: [], error: undefined }),
+    useQuery: () => ({ data: mockInboxList, error: undefined }),
     useStatus: () => ({ status: 'synced', isSynced: true }),
   };
 });
@@ -140,6 +148,7 @@ const ON_HOLD_PROJECT = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockInboxList.length = 0;
   mockedUseProjects.mockReturnValue({ data: [ACTIVE_PROJECT, ON_HOLD_PROJECT], error: null });
   mockedListInboxItems.mockResolvedValue([INBOX_ITEM]);
   mockedListNextActions.mockResolvedValue([NEXT_ACTION]);
@@ -155,6 +164,7 @@ function renderWizard(
     defaultTitle?: string;
     currentProjectId?: string | null;
     capturedAt?: string | null;
+    batch?: boolean;
   } = {},
 ) {
   return render(
@@ -165,6 +175,7 @@ function renderWizard(
       defaultTitle={props.defaultTitle ?? '订下周去杭州的高铁票'}
       currentProjectId={props.currentProjectId ?? null}
       capturedAt={props.capturedAt ?? null}
+      batch={props.batch}
     />,
   );
 }
@@ -684,9 +695,9 @@ describe('WizardBody — project ownership (q2 → q2b → q2c)', () => {
 });
 
 describe('WizardBody — done step (explicit exits, no auto-back)', () => {
-  async function walkToDone() {
+  async function walkToDone(batch = false) {
     mockedApplyClarify.mockResolvedValue({ inboxId: 'inbox-1', outcome: { kind: 'someday' }, createdIds: ['someday-1'] });
-    renderWizard();
+    renderWizard({ batch });
     fireEvent.press(screen.getByText('不行'));
     fireEvent.press(screen.getByText('有空再说'));
     fireEvent.press(screen.getByText('保存'));
@@ -704,6 +715,25 @@ describe('WizardBody — done step (explicit exits, no auto-back)', () => {
     await walkToDone();
     fireEvent.press(screen.getByText('再记一条'));
     expect(router.navigate).toHaveBeenCalledWith({ pathname: '/(tabs)/inbox', params: { recapture: '1' } });
+  });
+
+  it('batch mode (#58): 澄清下一条 replaces to the next pending item', async () => {
+    mockInboxList.push({ id: 'inbox-1' }, { id: 'inbox-2' });
+    await walkToDone(true);
+
+    expect(screen.queryByText('再记一条')).toBeNull();
+    expect(screen.getByText('还有 1 条待澄清')).toBeTruthy();
+    fireEvent.press(screen.getByText('澄清下一条'));
+    expect(router.replace).toHaveBeenCalledWith('/clarify/inbox-2?batch=1');
+  });
+
+  it('batch mode: the last item reports the cleared list and returns to the inbox', async () => {
+    mockInboxList.push({ id: 'inbox-1' });
+    await walkToDone(true);
+
+    expect(screen.getByText('待澄清列表已清空')).toBeTruthy();
+    fireEvent.press(screen.getByText('返回收集箱'));
+    expect(router.back).toHaveBeenCalled();
   });
 
   it('reclarify do-now routes to focus timer directly', async () => {

@@ -55,6 +55,7 @@ import type { Project, Value } from '@nextdo/core';
 import { useAppClock } from '@/hooks/use-app-clock';
 import { useOptionKeyboardNav } from '@/hooks/use-option-keyboard-nav';
 import { useInboxItem } from '@/hooks/use-inbox-item';
+import { useInboxItems } from '@/hooks/use-inbox-items';
 import { useActionTitle } from '@/hooks/use-action-title';
 import { useProjects } from '@/hooks/use-projects';
 import { errorMessage } from '@/lib/error-messages';
@@ -113,6 +114,23 @@ function EstPicker({ value, onSelect }: { value: number | null; onSelect: (minut
           if (Number.isFinite(parsed) && parsed >= 1) onSelect(Math.round(parsed));
         }}
       />
+    </View>
+  );
+}
+
+/** Issue #62: the action-kind chip row (next / waiting / delegated). */
+function ActionTypePicker({
+  value,
+  onSelect,
+}: {
+  value: FormFields['actionType'];
+  onSelect: (value: FormFields['actionType']) => void;
+}) {
+  return (
+    <View className="flex-row flex-wrap gap-2">
+      <Chip label="下一步行动" active={value === 'next'} onPress={() => onSelect('next')} />
+      <Chip label="等待外部" active={value === 'waiting'} onPress={() => onSelect('waiting')} />
+      <Chip label="已委派" active={value === 'delegated'} onPress={() => onSelect('delegated')} />
     </View>
   );
 }
@@ -259,6 +277,42 @@ function DateTimeField({
 // WizardBody — owns the reducer + the submission transaction
 // ---------------------------------------------------------------------------
 
+/**
+ * Batch clarify (#58): on the done step, walk the remaining pending inbox
+ * items in capture order — [开始澄清] in the inbox can clear the backlog
+ * without returning to the list between entries. Renders only in batch mode
+ * so a single clarify never opens an extra inbox-list subscription.
+ */
+function BatchNextActions({ currentId, onDone }: { currentId: string; onDone: () => void }) {
+  const { data } = useInboxItems();
+  const nextId = data.find((item) => item.id !== currentId)?.id ?? null;
+  const remainingCount = data.filter((item) => item.id !== currentId).length;
+
+  if (nextId === null) {
+    return (
+      <>
+        <Text className="text-center font-sans text-sm text-muted dark:text-muted-dark">
+          待澄清列表已清空
+        </Text>
+        <Button label="返回收集箱" onPress={onDone} />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <Text className="text-center font-sans text-sm text-muted dark:text-muted-dark">
+        还有 {remainingCount} 条待澄清
+      </Text>
+      <Button
+        label="澄清下一条"
+        onPress={() => router.replace(`/clarify/${nextId}?batch=1`)}
+      />
+      <Button label="完成" variant="secondary" onPress={onDone} />
+    </>
+  );
+}
+
 export interface WizardBodyProps {
   mode: WizardMode;
   /** InboxItem id (clarify) or the existing action id (reclarify). */
@@ -273,6 +327,9 @@ export interface WizardBodyProps {
   /** Clarify only: the inbox item's capturedAt (the title card's meta
    *  line) — null renders "收集箱" without a date. */
   capturedAt: string | null;
+  /** Clarify batch mode (#58): the done step offers [澄清下一条] over the
+   *  remaining pending items instead of [再记一条]. */
+  batch?: boolean;
 }
 
 export function WizardBody({
@@ -282,6 +339,7 @@ export function WizardBody({
   defaultTitle,
   currentProjectId,
   capturedAt,
+  batch = false,
 }: WizardBodyProps) {
   const powersync = usePowerSync();
   const db = useMemo(() => wrapDb(powersync), [powersync]);
@@ -429,16 +487,22 @@ export function WizardBody({
           <Text className="font-sans text-base font-medium text-ink dark:text-ink-dark">
             已整理为「{outcomeLabel(state.result.outcome)}」
           </Text>
-          {/* Explicit exits (R1): loop back to capture, or return to the
-           *  screen the wizard was pushed from. No auto-back timer. The
-           *  recapture param is a one-shot (the inbox screen consumes it). */}
-          <Button
-            label="再记一条"
-            onPress={() =>
-              router.navigate({ pathname: '/(tabs)/inbox', params: { recapture: '1' } })
-            }
-          />
-          <Button label="完成" variant="secondary" onPress={() => goBack(backFallback)} />
+          {batch ? (
+            <BatchNextActions currentId={id} onDone={() => goBack(backFallback)} />
+          ) : (
+            <>
+              {/* Explicit exits (R1): loop back to capture, or return to the
+               *  screen the wizard was pushed from. No auto-back timer. The
+               *  recapture param is a one-shot (the inbox screen consumes it). */}
+              <Button
+                label="再记一条"
+                onPress={() =>
+                  router.navigate({ pathname: '/(tabs)/inbox', params: { recapture: '1' } })
+                }
+              />
+              <Button label="完成" variant="secondary" onPress={() => goBack(backFallback)} />
+            </>
+          )}
         </Card>
       ) : (
         <View className="gap-3.5">
@@ -981,13 +1045,19 @@ function FormCard({
       case 'project':
         return (
           <View className="gap-4">
-            <Question title="新建项目" sub="项目会带上它的第一个行动（原子创建）。" />
+            <Question title="新建项目" sub="项目可以带着第一个行动创建，也可以先挂着，之后在项目页补。" />
             <Field label="项目名">
-              <TextInput className={INPUT_CLASS} value={fields.projectTitle} onChangeText={(v) => onField('projectTitle', v)} />
+              <TextInput
+                className={INPUT_CLASS}
+                accessibilityLabel="项目名"
+                value={fields.projectTitle}
+                onChangeText={(v) => onField('projectTitle', v)}
+              />
             </Field>
             <Field label='项目结果（"完成"是什么样）'>
               <TextInput
                 className={INPUT_CLASS}
+                accessibilityLabel="项目结果"
                 value={fields.projectOutcome}
                 onChangeText={(v) => onField('projectOutcome', v)}
                 placeholder="用一句话描述完成的样貌"
@@ -996,12 +1066,58 @@ function FormCard({
             <Field label="项目价值（1–5）">
               <ValuePicker value={fields.projectValue} onSelect={(v) => onField('projectValue', v)} />
             </Field>
-            <Field label="第一个行动的标题">
-              <TextInput className={INPUT_CLASS} value={fields.actionTitle} onChangeText={(v) => onField('actionTitle', v)} />
+            {/* Issue #62: the first action is optional — park the project alone. */}
+            <Field label="现在就定首个行动吗">
+              <View className="flex-row gap-2">
+                <Chip
+                  label="现在就定"
+                  active={fields.projectFirstAction === 'yes'}
+                  onPress={() => onField('projectFirstAction', 'yes')}
+                />
+                <Chip
+                  label="先挂着"
+                  active={fields.projectFirstAction === 'no'}
+                  onPress={() => onField('projectFirstAction', 'no')}
+                />
+              </View>
             </Field>
-            <Field label="行动预估时长（分钟）">
-              <EstPicker value={fields.estMinutes} onSelect={(v) => onField('estMinutes', v)} />
-            </Field>
+            {fields.projectFirstAction === 'yes' ? (
+              <>
+                <Field label="首个行动类型">
+                  <ActionTypePicker value={fields.actionType} onSelect={(v) => onField('actionType', v)} />
+                </Field>
+                <Field label="第一个行动的标题">
+                  <TextInput className={INPUT_CLASS} value={fields.actionTitle} onChangeText={(v) => onField('actionTitle', v)} />
+                </Field>
+                {fields.actionType === 'next' ? (
+                  <Field label="行动预估时长（分钟）">
+                    <EstPicker value={fields.estMinutes} onSelect={(v) => onField('estMinutes', v)} />
+                  </Field>
+                ) : (
+                  <>
+                    <Field label="在等谁 / 什么">
+                      <TextInput
+                        className={INPUT_CLASS}
+                        value={fields.waitingOn}
+                        onChangeText={(v) => onField('waitingOn', v)}
+                        placeholder="例：等设计同学反馈"
+                      />
+                    </Field>
+                    <Field label="期望日期" optional>
+                      <DateTimeField
+                        value={fields.expectedBy}
+                        mode="date"
+                        label="期望日期"
+                        placeholder="YYYY-MM-DD"
+                        now={now}
+                        onClear={() => onField('expectedBy', '')}
+                        onChange={(v) => onField('expectedBy', v)}
+                      />
+                    </Field>
+                  </>
+                )}
+              </>
+            ) : null}
           </View>
         );
       case 'waiting':
@@ -1014,6 +1130,7 @@ function FormCard({
             <Field label="在等谁 / 什么">
               <TextInput
                 className={INPUT_CLASS}
+                accessibilityLabel="在等谁 / 什么"
                 value={fields.waitingOn}
                 onChangeText={(v) => onField('waitingOn', v)}
                 placeholder="例：等设计同学反馈"
@@ -1089,31 +1206,73 @@ function FormCard({
               </Text>
             ) : null}
             <Question
-              title={state.twoMinute ? '记成一个行动（约 2 分钟）' : '记成一个行动'}
-              sub="进入 Now 执行池，可以被推荐。"
+              title={
+                fields.actionType === 'next'
+                  ? state.twoMinute
+                    ? '记成一个行动（约 2 分钟）'
+                    : '记成一个行动'
+                  : fields.actionType === 'delegated'
+                    ? '委派给别人'
+                    : '等待外部结果'
+              }
+              sub={
+                fields.actionType === 'next'
+                  ? '进入 Now 执行池，可以被推荐。'
+                  : '记为等待事项，不进执行池。'
+              }
             />
+            <Field label="行动类型">
+              <ActionTypePicker value={fields.actionType} onSelect={(v) => onField('actionType', v)} />
+            </Field>
             <Field label="行动标题">
               <TextInput className={INPUT_CLASS} value={fields.actionTitle} onChangeText={(v) => onField('actionTitle', v)} />
             </Field>
-            <Field label="预估时长（分钟）">
-              <EstPicker value={fields.estMinutes} onSelect={(v) => onField('estMinutes', v)} />
-            </Field>
-            {!state.twoMinute ? (
-              <Field label="价值（1–5）">
-                <ValuePicker value={fields.value} onSelect={(v) => onField('value', v)} />
-              </Field>
-            ) : null}
-            <Field label="截止时间" optional>
-              <DateTimeField
-                value={fields.deadline}
-                mode="datetime"
-                label="截止时间"
-                placeholder="选择日期与时刻"
-                now={now}
-                onClear={() => onField('deadline', '')}
-                onChange={(v) => onField('deadline', v)}
-              />
-            </Field>
+            {fields.actionType === 'next' ? (
+              <>
+                <Field label="预估时长（分钟）">
+                  <EstPicker value={fields.estMinutes} onSelect={(v) => onField('estMinutes', v)} />
+                </Field>
+                {!state.twoMinute ? (
+                  <Field label="价值（1–5）">
+                    <ValuePicker value={fields.value} onSelect={(v) => onField('value', v)} />
+                  </Field>
+                ) : null}
+                <Field label="截止时间" optional>
+                  <DateTimeField
+                    value={fields.deadline}
+                    mode="datetime"
+                    label="截止时间"
+                    placeholder="选择日期与时刻"
+                    now={now}
+                    onClear={() => onField('deadline', '')}
+                    onChange={(v) => onField('deadline', v)}
+                  />
+                </Field>
+              </>
+            ) : (
+              <>
+                <Field label="在等谁 / 什么">
+                  <TextInput
+                    className={INPUT_CLASS}
+                    accessibilityLabel="在等谁 / 什么"
+                    value={fields.waitingOn}
+                    onChangeText={(v) => onField('waitingOn', v)}
+                    placeholder="例：等设计同学反馈"
+                  />
+                </Field>
+                <Field label="期望日期" optional>
+                  <DateTimeField
+                    value={fields.expectedBy}
+                    mode="date"
+                    label="期望日期"
+                    placeholder="YYYY-MM-DD"
+                    now={now}
+                    onClear={() => onField('expectedBy', '')}
+                    onChange={(v) => onField('expectedBy', v)}
+                  />
+                </Field>
+              </>
+            )}
           </View>
         );
     }
@@ -1177,25 +1336,42 @@ function PreviewCard({ state, now, disabled, onConfirm, onBack }: PreviewCardPro
     form === 'calendar' ? composeLocalDateTimeIso(fields.startsAtDate, fields.startsAtTime) : null;
   const projectTitle = state.projectTitle ?? (form === 'project' ? fields.projectTitle : null);
   const value = form === 'project' ? fields.projectValue : fields.value;
+  // Issue #62: a project may be saved without a first action, and a
+  // waiting/delegated action has no estimate/value/deadline.
+  const showAction = form !== 'project' || fields.projectFirstAction === 'yes';
+  const actionType = form === 'project' || form === 'action' ? fields.actionType : 'next';
+  const isWaitingAction = actionType !== 'next';
+  const showEstimate = showAction && !isWaitingAction && fields.estMinutes !== null;
+  const showValue =
+    form === 'calendar' ||
+    (form === 'project' && showAction && !isWaitingAction) ||
+    (form === 'action' && !twoMinute && !isWaitingAction);
 
   return (
     <View className="gap-4">
       <Question title="决策摘要预览 · 归位就绪" />
       <View className="gap-2.5 rounded-xl bg-canvas p-3 dark:bg-canvas-dark">
         {projectTitle !== null ? <PreviewRow label="所属项目" value={projectTitle} /> : null}
-        <PreviewRow label="标题" value={form === 'action' || form === 'project' ? fields.actionTitle : fields.title} />
-        {fields.estMinutes !== null ? (
+        {form === 'project' && fields.projectFirstAction === 'no' ? (
+          <PreviewRow label="首个行动" value="暂不设定" />
+        ) : null}
+        {showAction ? (
+          <PreviewRow label="标题" value={form === 'action' || form === 'project' ? fields.actionTitle : fields.title} />
+        ) : null}
+        {showAction && isWaitingAction ? (
+          <PreviewRow label="等待" value={fields.waitingOn} />
+        ) : null}
+        {showAction && isWaitingAction && fields.expectedBy !== '' ? (
+          <PreviewRow label="期望" value={fields.expectedBy} />
+        ) : null}
+        {showEstimate ? (
           <PreviewRow label="预计耗时" value={`${fields.estMinutes} 分钟`} />
         ) : null}
-        {form === 'calendar' ||
-        form === 'project' ||
-        (form === 'action' && !twoMinute) ? (
-          <PreviewRow label="价值" value={String(value)} />
-        ) : null}
+        {showValue ? <PreviewRow label="价值" value={String(value)} /> : null}
         {startsAtIso !== null ? (
           <PreviewRow label="开始" value={formatLocalDateTime(startsAtIso)} />
         ) : null}
-        {deadlineIso !== null ? (
+        {deadlineIso !== null && !isWaitingAction ? (
           <PreviewRow label="截止" value={formatDueLabel(deadlineIso, now)} />
         ) : null}
       </View>
@@ -1217,9 +1393,11 @@ export interface ClarifyWizardProps {
   id: string | null;
   /** Reclarify only: the action kind (next | calendar). */
   actionKind?: Extract<ActionKind, 'next' | 'calendar'> | null;
+  /** Clarify only (#58): batch mode — [开始澄清] passes batch=1. */
+  batch?: boolean;
 }
 
-export function ClarifyWizard({ mode, id, actionKind = null }: ClarifyWizardProps) {
+export function ClarifyWizard({ mode, id, actionKind = null, batch = false }: ClarifyWizardProps) {
   const isReclarify = mode === 'reclarify';
   const inbox = useInboxItem(isReclarify ? null : id);
   const action = useActionTitle(isReclarify ? actionKind : null, isReclarify ? id : null);
@@ -1301,6 +1479,7 @@ export function ClarifyWizard({ mode, id, actionKind = null }: ClarifyWizardProp
       defaultTitle={title}
       currentProjectId={isReclarify ? action.projectId : null}
       capturedAt={isReclarify ? null : (inbox.item?.capturedAt ?? null)}
+      batch={batch}
     />
   );
 }

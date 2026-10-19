@@ -13,8 +13,8 @@ import type {
   WeeklyReviewRecord,
 } from './types';
 import {
-  FOCUS_PRESET_MINUTES,
-  assertReviewRecord,
+  MIN_FOCUS_MINUTES,
+  MAX_FOCUS_MINUTES,  assertReviewRecord,
   assertValidCalendarAction,
   assertValidCompletionRecord,
   assertValidFocusSession,
@@ -210,11 +210,18 @@ describe('assertValidFocusSession', () => {
   it('accepts a valid preset session', () => {
     assertValidFocusSession(session);
   });
-  it('preset minutes must be 2/25/45/60', () => {
-    expect(thrown(() => assertValidFocusSession({ ...session, plannedMinutes: 30 })).code).toBe(
-      'validation.focusSession.plannedMinutes',
-    );
-    expect(FOCUS_PRESET_MINUTES).toEqual([2, 25, 45, 60]);
+  it('accepts any whole minute inside 1–180 (issue #59)', () => {
+    assertValidFocusSession({ ...session, plannedMinutes: 30 });
+    assertValidFocusSession({ ...session, plannedMinutes: 15 });
+    assertValidFocusSession({ ...session, plannedMinutes: MIN_FOCUS_MINUTES });
+    assertValidFocusSession({ ...session, plannedMinutes: MAX_FOCUS_MINUTES });
+  });
+  it('rejects out-of-range, fractional and missing preset minutes', () => {
+    for (const plannedMinutes of [null, 0, -5, 181, 30.5]) {
+      expect(thrown(() => assertValidFocusSession({ ...session, plannedMinutes })).code).toBe(
+        'validation.focusSession.plannedMinutes',
+      );
+    }
   });
   it('free sessions require plannedMinutes = null', () => {
     expect(() => assertValidFocusSession({ ...session, mode: 'free', plannedMinutes: 25 })).toThrow(

@@ -3,10 +3,11 @@
  *
  * Lightweight iOS-style quick capture modal triggered on app launch
  * or via quick capture actions. Auto-focuses text input and saves on
- * Enter or [记录]. Each successful save hands the new InboxItem to
- * `onCaptured` (the parent closes the modal and opens the Clarify wizard
- * for it — PRD R1: 记一条问一条, which replaces the old multi-capture
- * session). Dismisses on mask tap / ESC / 稍后再说.
+ * Enter or [记录]. A save is JUST a capture since issue #58: the parent
+ * decides what happens next through `onCaptured` (close the modal, keep
+ * the item in the inbox). The optional `onCapturedAndClarify` renders a
+ * second [记录并澄清] action for the R1 shortcut. Dismisses on mask tap /
+ * ESC / 稍后再说.
  */
 import { useState } from 'react';
 import {
@@ -29,9 +30,11 @@ export interface QuickCaptureModalProps {
   visible: boolean;
   onClose: () => void;
   onAdd: (title: string) => Promise<InboxItem | null>;
-  /** Capture-and-continue (PRD R1): called with the saved item — the
-   *  parent closes the modal and opens the Clarify wizard for it. */
+  /** After-save callback — the parent decides what a saved capture means
+   *  (issue #58: usually close the modal and leave the item pending). */
   onCaptured?: (item: InboxItem) => void;
+  /** Capture-and-continue (R1 shortcut): save, then open the Clarify wizard. */
+  onCapturedAndClarify?: (item: InboxItem) => void;
   error?: unknown;
 }
 
@@ -40,6 +43,7 @@ export function QuickCaptureModal({
   onClose,
   onAdd,
   onCaptured,
+  onCapturedAndClarify,
   error,
 }: QuickCaptureModalProps) {
   const [draft, setDraft] = useState('');
@@ -48,17 +52,17 @@ export function QuickCaptureModal({
   const insets = useAppInsets();
   const bottomPadding = Math.max(insets.bottom, 16);
 
-  const handleCapture = async () => {
+  const handleCapture = async (next: 'save' | 'clarify') => {
     const title = draft.trim();
     if (title === '' || saving) return;
     setSaving(true);
     try {
       const item = await onAdd(title);
       if (item !== null) {
-        // R1 handoff: reset the draft and let the parent take the item to
-        // the Clarify wizard (记一条问一条).
+        // Reset the draft first: the parent may close the modal right here.
         setDraft('');
-        onCaptured?.(item);
+        if (next === 'clarify') onCapturedAndClarify?.(item);
+        else onCaptured?.(item);
       }
     } finally {
       setSaving(false);
@@ -124,7 +128,7 @@ export function QuickCaptureModal({
             placeholder="记下任何事…（Enter 快速保存）"
             value={draft}
             onChangeText={setDraft}
-            onSubmitEditing={() => void handleCapture()}
+            onSubmitEditing={() => void handleCapture('save')}
             onKeyPress={(e) => {
               if (e.nativeEvent.key === 'Escape') {
                 handleClose();
@@ -132,7 +136,7 @@ export function QuickCaptureModal({
               }
               const isShift = 'shiftKey' in e.nativeEvent && Boolean(e.nativeEvent.shiftKey);
               if (e.nativeEvent.key === 'Enter' && !isShift) {
-                void handleCapture();
+                void handleCapture('save');
               }
             }}
             blurOnSubmit={false}
@@ -151,12 +155,21 @@ export function QuickCaptureModal({
               size="sm"
               onPress={handleClose}
             />
+            {onCapturedAndClarify !== undefined ? (
+              <Button
+                label="记录并澄清"
+                variant="secondary"
+                size="sm"
+                disabled={draft.trim() === '' || saving}
+                onPress={() => void handleCapture('clarify')}
+              />
+            ) : null}
             <Button
               label={saving ? '记录中…' : '记录'}
               variant="primary"
               size="sm"
               disabled={draft.trim() === '' || saving}
-              onPress={() => void handleCapture()}
+              onPress={() => void handleCapture('save')}
             />
           </View>
         </View>

@@ -49,9 +49,11 @@ export interface DeliveryAdapter {
    * notification-click listener). Idempotent across init/dispose cycles
    * (React StrictMode double-mount in dev must not double-register).
    * @param onNotificationOpened the user tapped a notification (hot or
-   *   cold start) — the hook routes to the Now tab (R4).
+   *   cold start). `route` is the deep link carried in the notification
+   *   data (issue #60 — the focus screen); absent → the hook routes to the
+   *   Now tab (R4).
    */
-  init(onNotificationOpened: () => void): Promise<void>;
+  init(onNotificationOpened: (route?: string) => void): Promise<void>;
   /**
    * Reminder row ids currently armed in the OS (the reconcile join key —
    * the schedule identifier). tauri/web: always empty (no OS-side pending

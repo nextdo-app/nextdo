@@ -32,7 +32,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 import { usePowerSync } from '@powersync/react';
 import { listScheduledReminders, wrapDb } from '@nextdo/db';
 import { logger } from '@nextdo/core';
@@ -141,8 +141,10 @@ export function useReminderDelivery(): UseReminderDeliveryResult {
     let disposed = false;
     void (async () => {
       try {
-        await adapter.init(() => {
-          routerRef.current.replace(NOW_TAB_ROUTE);
+        await adapter.init((route) => {
+          // Issue #60: a focus notification carries its own deep link; a
+          // reminder has none and lands on the Now tab (R4).
+          routerRef.current.replace((route ?? NOW_TAB_ROUTE) as Href);
         });
       } catch (error) {
         // init failure (e.g. a channel error on a weird ROM) must not
