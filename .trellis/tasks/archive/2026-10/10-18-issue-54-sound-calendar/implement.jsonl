@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/app/index.md", "reason": "app 包索引与分层边界"}
+{"file": ".trellis/spec/app/hook-guidelines.md", "reason": "新增 use-calendar-sync / use-calendar-permission / 扩展 use-notification-settings"}
+{"file": ".trellis/spec/app/component-guidelines.md", "reason": "设置页开关、音色选择与试听控件写法"}
+{"file": ".trellis/spec/app/state-management.md", "reason": "偏好存储与 lazy 原生模块"}
+{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "原生模块 Web 降级与门禁要求"}
