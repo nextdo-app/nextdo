@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/app/index.md", "reason": "app 层开发清单与目录约定"}
+{"file": ".trellis/spec/app/hook-guidelines.md", "reason": "数据/UI hook 拆分与 app clock 规则"}
+{"file": ".trellis/spec/app/component-guidelines.md", "reason": "组件、焦点页与澄清向导 UI 约定"}
+{"file": ".trellis/spec/domain/domain-model.md", "reason": "行动类型/等待清单/项目可选首行动的领域契约"}
+{"file": ".trellis/spec/app/testing-guidelines.md", "reason": "jest 用例与浏览器实测证据要求"}
