@@ -1680,3 +1680,46 @@ v0.1.9-beta.1 发布构建中 Windows / Linux 因 RunEvent::Reopen 仅存在于 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 55: issues #56 / #54：提示音与系统日历同步、「时间到」卡片改版，发布 0.1.9-beta.3
+<!-- trellis-session: v=2 fp=ae07ad0c62a2a992 -->
+
+**Date**: 2026-10-19
+**Task**: issues #56 / #54：提示音与系统日历同步、「时间到」卡片改版，发布 0.1.9-beta.3
+**Branch**: `release/0.1.8-beta.1`
+
+### Summary
+
+完成 #56 时间到提示卡改版与 #54 提示音（点击试听、音量跟随系统）+ 系统日历同步，门禁与浏览器实测通过，版本 bump 至 0.1.9-beta.3 并归档任务。
+
+### Main Changes
+
+- #54 提示音：专注结束 / 提醒触发播放提示音，设置页可独立开关；音色三选（轻柔 / 提醒 / 闹铃），点击即试听并保存；播放保持 unity gain，音量完全跟随系统音量，移除应用内音量档位。
+- #54 系统日历：带起止时间的行动写入系统日历并由系统提醒，行动变更时幂等对账更新 / 删除事件；未授权给出去系统设置引导；Web / 桌面降级为应用内提醒并给出说明。
+- #56 专注页「时间到」改为单层提示区块（左侧 4px warning 色条、纵向全宽按钮、清晰标题层级），消除 Card 嵌套 Card。
+- 版本号 6 处同步 bump 到 0.1.9-beta.3；任务目录归档到 .trellis/tasks/archive/2026-10/。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `af16ee4` | feat(mobile): 提示音（点击试听、音量跟随系统）、系统日历同步与「时间到」卡片改版 (#54, #56) |
+| `154dbd7` | chore(release): 0.1.9-beta.3 |
+| `7875c70` | chore(task): archive 10-18-issues-54-56 |
+
+### Testing
+
+- [OK] pnpm verify:web 全绿（lint → typecheck → test → build:web，静态服务 :4180 起服务）。
+- [OK] 浏览器实测 .verify/issues-54-56/capture.mjs：6 步 / 8 条断言全通过（含点击音色触发 WAV 加载、localStorage 无 soundVolume 字段、「时间到」单层区块几何值）。
+- [OK] pnpm typecheck 全包通过；settings-screen jest 70/70。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 推送 release/0.1.8-beta.1 并用 gh 创建 PR（正文 Closes #56 #54）。
+- 打 tag v0.1.9-beta.3 并推送以触发 release 工作流。
+- 用 .verify/issues-50-51/evidence.md 的复核说明关闭 #50 / #51。
