@@ -160,6 +160,12 @@ export function useReminderDelivery(): UseReminderDeliveryResult {
         const settings = await loadNotificationSettings();
         if (disposed) return;
         masterEnabledRef.current = settings.masterEnabled;
+        // Issue #54: the adapter needs the sound preferences before it arms
+        // anything (the silent channel / `sound: false` live there).
+        await adapter.setSoundPreferences?.({
+          enabled: settings.reminderSoundEnabled,
+          tone: settings.soundTone,
+        });
       } catch (error) {
         // Keep the default (ON) — a preference-read failure must never stop
         // delivery.
@@ -229,15 +235,21 @@ export function useReminderDelivery(): UseReminderDeliveryResult {
     };
   }, [adapter, runReconcile]);
 
-  // The in-app master switch (issue #24 R2): follow the stored preference and
-  // re-reconcile on every change — that pass is what withdraws an armed OS
-  // schedule the moment the switch goes off.
+  // The in-app master switch (issue #24 R2) and the sound preferences
+  // (issue #54): follow the stored preference and re-reconcile on every
+  // change — that pass is what withdraws an armed OS schedule the moment the
+  // switch goes off, and re-arms on the right channel after a sound change.
   useEffect(() => {
     return subscribeToNotificationSettings((settings) => {
       masterEnabledRef.current = settings.masterEnabled;
-      void runReconcile();
+      void Promise.resolve(
+        adapter.setSoundPreferences?.({
+          enabled: settings.reminderSoundEnabled,
+          tone: settings.soundTone,
+        }),
+      ).then(() => runReconcile());
     });
-  }, [runReconcile]);
+  }, [adapter, runReconcile]);
 
   // The desktop tick (tauri only — in-session delivery, design §4.2).
   useEffect(() => {

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Nextdo",
     "slug": "nextdo",
-    "version": "0.1.9-beta.2",
+    "version": "0.1.9-beta.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "nextdo",
@@ -41,7 +41,19 @@
         {
           "icon": "./assets/notification-icon.png",
           "color": "#ffffff",
-          "sounds": ["./assets/sounds/important.wav", "./assets/sounds/alarm.wav"]
+          "sounds": [
+            "./assets/sounds/gentle.wav",
+            "./assets/sounds/important.wav",
+            "./assets/sounds/alarm.wav"
+          ]
+        }
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Nextdo 需要访问日历，以便把带时间的行动同步为系统日历提醒。",
+          "writeOnlyCalendarPermission": "Nextdo 需要向日历添加事件，以便把带时间的行动同步为系统日历提醒。",
+          "remindersPermission": false
         }
       ],
       [

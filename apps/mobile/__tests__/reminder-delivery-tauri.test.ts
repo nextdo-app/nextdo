@@ -66,11 +66,11 @@ const flush = async (): Promise<void> => {
 };
 
 /** The preference-store backend the delivery hook reads (issue #24 R2). */
-function memoryStoreWith(settings: NotificationSettings): {
+function memoryStoreWith(patch: Partial<NotificationSettings>): {
   getItem(key: string): Promise<string | null>;
   setItem(key: string, value: string): Promise<void>;
 } {
-  let raw: string | null = JSON.stringify(settings);
+  let raw: string | null = JSON.stringify({ ...DEFAULT_NOTIFICATION_SETTINGS, ...patch });
   return {
     async getItem() {
       return raw;

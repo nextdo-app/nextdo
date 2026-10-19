@@ -18,11 +18,13 @@
  * (inside the hooks). Re-entry: an existing `active` session row resumes
  * the timer (startedAt/pausedSec live in the row).
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAppInsets } from '@/lib/use-app-insets';
-import { Button, Card, Tag } from '@nextdo/ui';
+import { useAppTheme } from '@/lib/theme';
+import { Button, Card, Tag, colors, cn } from '@nextdo/ui';
 import type { ActionKind } from '@nextdo/db';
 import { useActionTitle } from '@/hooks/use-action-title';
 import { useFocusSession } from '@/hooks/use-focus-session';
@@ -30,6 +32,7 @@ import { useCompleteAction } from '@/hooks/use-complete-action';
 import { errorMessage } from '@/lib/error-messages';
 import { KIND_LABELS } from '@/lib/kind-labels';
 import { elapsedSeconds, formatClock, isTimeUp, remainingSeconds } from '@/lib/focus-timer';
+import { playFocusCompletionSound } from '@/lib/notification-sound';
 import { goBack } from '@/lib/go-back';
 
 const STANDARD_PRESETS = [25, 45, 60];
@@ -45,6 +48,7 @@ export default function FocusScreen() {
     kind === 'next' || kind === 'habit' || kind === 'calendar' ? kind : null;
   const actionId = typeof id === 'string' ? id : null;
 
+  const { isDark } = useAppTheme();
   const { title, loaded: titleLoaded, error: titleError } = useActionTitle(actionKind, actionId);
   const focus = useFocusSession(actionId);
   const { complete: completeAction, error: completeActionError } = useCompleteAction();
@@ -69,6 +73,25 @@ export default function FocusScreen() {
   const [sessionEnded, setSessionEnded] = useState(false);
 
   const session = focus.activeSession;
+
+  // Issue #54: reaching zero plays the chosen completion tone. This is an
+  // in-app chime — there is no OS notification for a foreground timer — so
+  // it is independent of the reminder permission. Rising edge PER SESSION: a
+  // pause at zero and a later resume must not chime a second time.
+  const timeUp =
+    session !== null &&
+    session.plannedMinutes !== null &&
+    pauseStart === null &&
+    !timeUpDismissed &&
+    isTimeUp(new Date(session.startedAt), session.plannedMinutes, session.pausedSec, displayNow);
+  const timeUpSoundSessionRef = useRef<string | null>(null);
+  const sessionId = session === null ? null : session.id;
+  useEffect(() => {
+    if (!timeUp || sessionId === null) return;
+    if (timeUpSoundSessionRef.current === sessionId) return;
+    timeUpSoundSessionRef.current = sessionId;
+    void playFocusCompletionSound();
+  }, [timeUp, sessionId]);
 
   // Auto-start focus session (e.g. 2-minute focus triggered by Clarify Q3b)
   const [autoStarted, setAutoStarted] = useState(false);
@@ -122,13 +145,6 @@ export default function FocusScreen() {
   }
   const clockText =
     session !== null && session.plannedMinutes !== null ? formatClock(remaining ?? 0) : formatClock(elapsed);
-
-  const timeUp =
-    session !== null &&
-    session.plannedMinutes !== null &&
-    pauseStart === null &&
-    !timeUpDismissed &&
-    isTimeUp(new Date(session.startedAt), session.plannedMinutes, session.pausedSec, displayNow);
 
   const handleComplete = async () => {
     if (session === null || busy) return;
@@ -192,14 +208,14 @@ export default function FocusScreen() {
       ) : null}
 
       {!titleLoaded || (title === null && focus.loaded === false) ? (
-        <Card className="items-center gap-3 p-8 rounded-3xl border-border/60 bg-surface shadow-sm dark:border-border-dark/60 dark:bg-surface-dark">
+        <Card className="items-center gap-3 p-8 rounded-2xl border-border/60 bg-surface shadow-sm dark:border-border-dark/60 dark:bg-surface-dark">
           <View className="h-6 w-20 rounded-full bg-surface-container dark:bg-surface-container-dark" />
           <View className="h-7 w-48 rounded-xl bg-surface-container dark:bg-surface-container-dark" />
           <Text className="mt-2 text-sm font-medium text-muted dark:text-muted-dark">加载中…</Text>
         </Card>
       ) : (
         <>
-          <Card className="gap-6 p-6 rounded-3xl border border-border/70 bg-surface shadow-sm dark:border-border-dark/70 dark:bg-surface-dark items-center">
+          <Card className="gap-5 p-6 rounded-2xl border border-border/70 bg-surface shadow-sm dark:border-border-dark/70 dark:bg-surface-dark items-center">
             <View className="w-full flex-row items-center justify-between">
               <Tag label={KIND_LABELS[actionKind]} tone="accent" />
               {session !== null && session.plannedMinutes !== null ? (
@@ -258,11 +274,25 @@ export default function FocusScreen() {
                 </View>
               </View>
             ) : (
-              <View className="items-center gap-5 py-4 w-full">
+              <View className="items-center gap-4 py-2 w-full">
                 <View className="items-center gap-2">
-                  <Text className="font-mono text-6xl sm:text-7xl font-bold tracking-tight text-ink dark:text-ink-dark">
+                  {/* Issue 56: at 00:00 the clock steps back so the notice
+                      below — not the number — carries the state. */}
+                  <Text
+                    className={cn(
+                      'font-mono font-bold tracking-tight',
+                      timeUp
+                        ? 'text-5xl sm:text-6xl text-muted dark:text-muted-dark'
+                        : 'text-6xl sm:text-7xl text-ink dark:text-ink-dark',
+                    )}
+                  >
                     {clockText}
                   </Text>
+                  {timeUp ? (
+                    <Text className="font-sans text-xs font-medium text-muted dark:text-muted-dark">
+                      本次专注 {Math.floor(elapsed / 60)} 分钟
+                    </Text>
+                  ) : null}
                   {pauseStart !== null ? (
                     <View className="flex-row items-center gap-1.5 rounded-full bg-warning/15 px-3 py-1 dark:bg-warning-dark/20">
                       <View className="h-2 w-2 rounded-full bg-warning dark:bg-warning-dark" />
@@ -281,16 +311,39 @@ export default function FocusScreen() {
                 </View>
 
                 {timeUp ? (
-                  <Card className="w-full border-warning bg-warning/10 p-3.5 rounded-2xl">
-                    <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">时间到</Text>
-                    <View className="mt-2.5 flex-row gap-2.5">
-                      <Button label="结束专注" onPress={() => void handleComplete()} disabled={busy} />
-                      <Button label="继续" variant="secondary" onPress={() => setTimeUpDismissed(true)} />
+                  /* Issue 56: a NOTICE inside the focus card, not a second
+                     card — one warning rule carries the state, so there is
+                     no border + fill + shadow box nested in another. */
+                  <View
+                    accessibilityRole="alert"
+                    accessibilityLabel="专注时间到"
+                    className="mt-1 w-full rounded-2xl border-l-4 border-warning bg-warning/5 px-4 py-4 dark:border-warning-dark dark:bg-warning-dark/10"
+                  >
+                    <View className="flex-row items-center gap-2">
+                      <Ionicons
+                        name="alarm-outline"
+                        size={18}
+                        color={isDark ? colors.warningDark : colors.warning}
+                      />
+                      <Text className="font-display text-base font-bold text-ink dark:text-ink-dark">
+                        时间到
+                      </Text>
                     </View>
-                  </Card>
+                    <Text className="mt-1.5 font-sans text-xs leading-relaxed text-muted dark:text-muted-dark">
+                      本次专注满 {session.plannedMinutes} 分钟。结束专注，或继续再专注一会儿。
+                    </Text>
+                    <View className="mt-4 gap-2.5">
+                      <Button label="结束专注" onPress={() => void handleComplete()} disabled={busy} />
+                      <Button
+                        label="继续专注"
+                        variant="secondary"
+                        onPress={() => setTimeUpDismissed(true)}
+                      />
+                    </View>
+                  </View>
                 ) : (
                   <View className="w-full items-center gap-3">
-                    <View className="flex-row gap-3 w-full justify-center max-w-xs">
+                    <View className="flex-row gap-3 w-full justify-center">
                       {pauseStart !== null ? (
                         <Button
                           label="继续"

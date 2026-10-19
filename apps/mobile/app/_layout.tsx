@@ -53,6 +53,7 @@ import { PlusJakartaSans_600SemiBold } from '@expo-google-fonts/plus-jakarta-san
 import { PlusJakartaSans_700Bold } from '@expo-google-fonts/plus-jakarta-sans/700Bold';
 import { PowerSyncContext } from '@powersync/react';
 import { useReminderDelivery } from '@/hooks/use-reminder-delivery';
+import { useCalendarSync } from '@/hooks/use-calendar-sync';
 import { IosInstallPrompt } from '@/components/ios-install-prompt';
 import { AutoUpdateNotifier } from '@/components/auto-update-dialog';
 import { maybeRequestNotificationPermission } from '@/lib/reminders/permission';
@@ -240,6 +241,7 @@ function PowerSyncProvider({ children }: { children: ReactNode }) {
   return (
     <PowerSyncContext.Provider value={powersync}>
       <ReminderDelivery />
+      <CalendarSync />
       {children}
     </PowerSyncContext.Provider>
   );
@@ -255,6 +257,16 @@ function PowerSyncProvider({ children }: { children: ReactNode }) {
  */
 function ReminderDelivery() {
   useReminderDelivery();
+  return null;
+}
+
+/**
+ * The calendar sync engine (issue #54): mounted beside the reminder engine
+ * for the same reason — the reconcile reads the local DB through the
+ * provider's instance. Only runs on iOS/Android (the hook gates it).
+ */
+function CalendarSync() {
+  useCalendarSync();
   return null;
 }
 

@@ -26,7 +26,7 @@ import { Linking, Platform } from 'react-native';
 import { logger } from '@nextdo/core';
 import { resolvePermissionStatus } from '../permission-status';
 import type { ReconcileItem, ReconcileOutput } from '../reminder-scheduler';
-import type { DeliveryAdapter, ReminderPermissionState } from './types';
+import type { DeliveryAdapter, ReminderPermissionState, ReminderSoundPreferences } from './types';
 import { KIND_TITLES } from './types';
 
 /**
@@ -40,9 +40,17 @@ const CHANNEL_IDS = {
   normal: 'nextdo-normal',
   important: 'nextdo-important',
   alarm: 'nextdo-alarm',
+  /** Issue #54: used when the user turns the reminder sound OFF. Separate
+   *  from the three intensity channels because an Android channel's sound
+   *  is immutable once created — silencing must pick a different channel
+   *  (and one without vibration, so "silent" really is silent). */
+  silent: 'nextdo-silent',
 } as const;
 
-const INTENSITY_CHANNEL: Record<string, (typeof CHANNEL_IDS)[keyof typeof CHANNEL_IDS]> = {
+const INTENSITY_CHANNEL: Record<
+  string,
+  (typeof CHANNEL_IDS)[keyof typeof CHANNEL_IDS]
+> = {
   normal: CHANNEL_IDS.normal,
   important: CHANNEL_IDS.important,
   alarm: CHANNEL_IDS.alarm,
@@ -63,11 +71,17 @@ let channelsReady = false;
 let responseListener: { remove(): void } | null = null;
 let onOpened: (() => void) | null = null;
 
+/** Issue #54: whether reminder notifications may make a sound. Read at
+ *  schedule time (the channel + `content.sound`) AND by the foreground
+ *  presentation handler, so turning the switch off silences both paths
+ *  for the very next reconcile without an app restart. */
+let reminderSoundEnabled = true;
+
 function toError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
 
-/** Create the three channels once (Android only; a no-op elsewhere). */
+/** Create the channels once (Android only; a no-op elsewhere). */
 async function ensureChannels(): Promise<void> {
   if (channelsReady || Platform.OS !== 'android') return;
   const results = await Promise.allSettled([
@@ -89,6 +103,13 @@ async function ensureChannels(): Promise<void> {
       enableVibrate: true,
       vibrationPattern: [0, 200, 100, 200, 100, 500],
     }),
+    // Issue #54: silent channel (sound switch OFF) — no sound, no vibration.
+    Notifications.setNotificationChannelAsync(CHANNEL_IDS.silent, {
+      name: '静音提醒',
+      importance: Notifications.AndroidImportance.DEFAULT,
+      sound: null,
+      enableVibrate: false,
+    }),
   ]);
   // A failed channel creation is not fatal (the fallback channel still
   // delivers) — but keep the channels retryable (channelsReady stays
@@ -107,6 +128,13 @@ async function ensureChannels(): Promise<void> {
 async function scheduleOne(item: ReconcileItem): Promise<void> {
   const { row, title } = item;
   const sound = INTENSITY_SOUND[row.intensity];
+  // Issue #54: the switch overrides the intensity sound — iOS honors
+  // `sound: false`, Android picks the silent channel (its sound is fixed).
+  const soundContent = !reminderSoundEnabled
+    ? { sound: false }
+    : sound !== undefined
+      ? { sound }
+      : {};
   await Notifications.scheduleNotificationAsync({
     identifier: row.id,
     content: {
@@ -114,7 +142,7 @@ async function scheduleOne(item: ReconcileItem): Promise<void> {
       body: title,
       // R4 payload (log + future deep-link; v1 routes to Now regardless):
       data: { reminderId: row.id, actionKind: row.kind, actionId: row.actionId },
-      ...(sound !== undefined ? { sound } : {}),
+      ...soundContent,
       // alarm tier: break through Focus/Do-Not-Disturb (iOS, design §2.3).
       ...(row.intensity === 'alarm' ? { interruptionLevel: 'timeSensitive' } : {}),
     },
@@ -122,7 +150,9 @@ async function scheduleOne(item: ReconcileItem): Promise<void> {
       type: Notifications.SchedulableTriggerInputTypes.DATE,
       date: new Date(row.firesAt),
       // Android 8+ picks the channel (and its sound/vibration) here.
-      channelId: INTENSITY_CHANNEL[row.intensity] ?? CHANNEL_IDS.normal,
+      channelId: reminderSoundEnabled
+        ? (INTENSITY_CHANNEL[row.intensity] ?? CHANNEL_IDS.normal)
+        : CHANNEL_IDS.silent,
     },
   });
 }
@@ -140,7 +170,7 @@ export function createNativeAdapter(): DeliveryAdapter {
         handleNotification: async () => ({
           shouldShowBanner: true,
           shouldShowList: true,
-          shouldPlaySound: true,
+          shouldPlaySound: reminderSoundEnabled,
           shouldSetBadge: false,
         }),
       });
@@ -258,6 +288,28 @@ export function createNativeAdapter(): DeliveryAdapter {
         await Linking.openURL('app-settings:');
       } catch (error) {
         logger.warn('open system settings failed', toError(error));
+      }
+    },
+
+    async setSoundPreferences(preferences: ReminderSoundPreferences): Promise<void> {
+      const changed = preferences.enabled !== reminderSoundEnabled;
+      reminderSoundEnabled = preferences.enabled;
+      // The tone is in-app only on native (OS notification sounds follow the
+      // intensity tier). But an armed notification keeps the channel it
+      // was scheduled with, so a sound-state change must withdraw the current
+      // schedules — the reconcile that follows re-arms them on the right
+      // channel. Best-effort: a failed read just means the old sound survives
+      // until the next natural re-arm.
+      if (!changed) return;
+      try {
+        const requests = await Notifications.getAllScheduledNotificationsAsync();
+        await Promise.all(
+          requests.map((request) =>
+            Notifications.cancelScheduledNotificationAsync(request.identifier),
+          ),
+        );
+      } catch (error) {
+        logger.warn('rescheduling for the sound switch failed', toError(error));
       }
     },
 

@@ -42,7 +42,7 @@
  * All auth work goes through the `useCloudSync` UI hook (the packages/db
  * boundary); this screen owns only the form's transient state.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ComponentProps } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
@@ -53,6 +53,9 @@ import { Button, Card, cn, colors } from '@nextdo/ui';
 import { useCloudSync } from '@/hooks/use-cloud-sync';
 import { useSyncStatus } from '@/hooks/use-sync-status';
 import { useNotificationSettings } from '@/hooks/use-notification-settings';
+import { useCalendarPermission } from '@/hooks/use-calendar-permission';
+import type { NotificationSoundTone } from '@/lib/notification-settings';
+import { playNotificationTone } from '@/lib/notification-sound';
 import { useReminderPermission } from '@/hooks/use-reminder-permission';
 import type { ReminderPermissionState } from '@/lib/reminders/adapters';
 import { useAppClock } from '@/hooks/use-app-clock';
@@ -119,6 +122,22 @@ function isIosWebSafari(): boolean {
   const ua = host.window?.navigator?.userAgent ?? '';
   return /iPad|iPhone|iPod/.test(ua) && host.window?.navigator?.standalone !== true;
 }
+
+type IoniconsName = ComponentProps<typeof Ionicons>['name'];
+
+const SOUND_TONE_LABELS: Record<NotificationSoundTone, string> = {
+  gentle: '轻柔',
+  important: '提醒',
+  alarm: '闹铃',
+};
+
+const SOUND_TONE_ICONS: Record<NotificationSoundTone, IoniconsName> = {
+  gentle: 'leaf-outline',
+  important: 'notifications-outline',
+  alarm: 'alarm-outline',
+};
+
+const SOUND_TONES = Object.keys(SOUND_TONE_LABELS) as NotificationSoundTone[];
 
 const THEME_OPTIONS: Array<{
   value: ThemePreference;
@@ -365,7 +384,13 @@ export default function SettingsScreen() {
   } = useSyncStatus(state === 'connected');
   const { state: notificationPermission, openSystemSettings, requestPermission } =
     useReminderPermission();
-  const { masterEnabled, setMasterEnabled } = useNotificationSettings();
+  const {
+    settings: notificationSettings,
+    masterEnabled,
+    updateSettings,
+    setMasterEnabled,
+  } = useNotificationSettings();
+  const calendarPermission = useCalendarPermission();
   // 有效状态（issue #45 R5）：开关 ∧ 系统授权 —— 两个纯函数决定文案与平台动作。
   const notificationState = describeNotificationState(masterEnabled, notificationPermission);
   const notificationAction = notificationActionFor(notificationPermission);
@@ -790,7 +815,173 @@ export default function SettingsScreen() {
           </View>
         </Card>
 
-        {/* Section 3: 数据与同步 */}
+        {/* Section 3: 声音与日历（issue #54） */}
+        <SectionHeader title="声音与日历" icon="volume-high-outline" />
+        <Card className="gap-3.5 p-4">
+          {/* 1) 提醒提示音开关。 */}
+          <View className="flex-row items-center justify-between gap-2">
+            <View className="flex-1 min-w-0 pr-2">
+              <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+                提醒音效
+              </Text>
+              <Text className="mt-0.5 font-sans text-[11px] leading-tight text-muted dark:text-muted-dark">
+                提醒触发时播放提示音（音量跟随系统音量）。
+              </Text>
+            </View>
+            <View className="shrink-0">
+              <Switch
+                accessibilityLabel="提醒音效"
+                value={notificationSettings?.reminderSoundEnabled ?? true}
+                onValueChange={(val) => void updateSettings({ reminderSoundEnabled: val })}
+                trackColor={switchTrackColor}
+                thumbColor={switchThumbColor}
+                {...({ activeThumbColor: switchThumbColor } as object)}
+              />
+            </View>
+          </View>
+
+          {/* 2) 专注结束音效开关。 */}
+          <View className="flex-row items-center justify-between gap-2 border-t border-border/40 pt-3 dark:border-border-dark/40">
+            <View className="flex-1 min-w-0 pr-2">
+              <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+                专注结束音效
+              </Text>
+              <Text className="mt-0.5 font-sans text-[11px] leading-tight text-muted dark:text-muted-dark">
+                计时结束时播放提示音，避免错过收尾。
+              </Text>
+            </View>
+            <View className="shrink-0">
+              <Switch
+                accessibilityLabel="专注结束音效"
+                value={notificationSettings?.focusSoundEnabled ?? true}
+                onValueChange={(val) => void updateSettings({ focusSoundEnabled: val })}
+                trackColor={switchTrackColor}
+                thumbColor={switchThumbColor}
+                {...({ activeThumbColor: switchThumbColor } as object)}
+              />
+            </View>
+          </View>
+
+          {/* 3) 音色选择：点击即试听并保存。 */}
+          <View className="rounded-xl bg-surface-container/30 p-2.5 dark:bg-surface-container-dark/30">
+            <View className="flex-row items-center justify-between">
+              <Text className="font-sans text-xs font-medium text-ink dark:text-ink-dark">音色</Text>
+              <Text className="font-sans text-[11px] text-muted dark:text-muted-dark">点击可试听</Text>
+            </View>
+            <View className="mt-2 flex-row gap-2">
+              {SOUND_TONES.map((tone) => (
+                <Pressable
+                  key={tone}
+                  accessibilityLabel={`音色：${SOUND_TONE_LABELS[tone]}`}
+                  accessibilityHint="双击试听并设为当前音色"
+                  accessibilityRole="button"
+                  onPress={() => {
+                    void updateSettings({ soundTone: tone });
+                    void playNotificationTone(tone);
+                  }}
+                  className={cn(
+                    'flex-1 items-center gap-1.5 rounded-xl border px-2 py-2.5',
+                    notificationSettings?.soundTone === tone
+                      ? 'border-accent bg-accent/10'
+                      : 'border-border/60 dark:border-border-dark/60',
+                  )}
+                >
+                  <Ionicons
+                    name={SOUND_TONE_ICONS[tone]}
+                    size={18}
+                    color={
+                      notificationSettings?.soundTone === tone
+                        ? isDark
+                          ? colors.accentDark
+                          : colors.accent
+                        : isDark
+                          ? colors.mutedDark
+                          : colors.muted
+                    }
+                  />
+                  <Text
+                    className={cn(
+                      'font-sans text-xs font-semibold',
+                      notificationSettings?.soundTone === tone
+                        ? 'text-accent dark:text-accent-dark'
+                        : 'text-ink dark:text-ink-dark',
+                    )}
+                  >
+                    {SOUND_TONE_LABELS[tone]}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+
+          {/* 4) 系统日历同步（issue #54）：仅原生平台提供；web 明确说明。 */}
+          <View className="border-t border-border/40 pt-3 dark:border-border-dark/40">
+            {calendarPermission.supported ? (
+              <>
+                <View className="flex-row items-center justify-between gap-2">
+                  <View className="flex-1 min-w-0 pr-2">
+                    <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+                      写入系统日历
+                    </Text>
+                    <Text className="mt-0.5 font-sans text-[11px] leading-tight text-muted dark:text-muted-dark">
+                      把有明确起止时间的行动同步为系统日历事件，由系统原生提醒；关闭后会清理已经写入的事件。
+                    </Text>
+                  </View>
+                  <View className="shrink-0">
+                    <Switch
+                      accessibilityLabel="写入系统日历"
+                      value={notificationSettings?.calendarEnabled ?? false}
+                      onValueChange={(val) => {
+                        if (!val) {
+                          void updateSettings({ calendarEnabled: false });
+                          return;
+                        }
+                        void calendarPermission.requestAccess().then((next) => {
+                          if (next === 'granted') {
+                            void updateSettings({ calendarEnabled: true });
+                          }
+                        });
+                      }}
+                      trackColor={switchTrackColor}
+                      thumbColor={switchThumbColor}
+                      {...({ activeThumbColor: switchThumbColor } as object)}
+                    />
+                  </View>
+                </View>
+
+                {!notificationSettings?.calendarEnabled &&
+                calendarPermission.permission === 'denied' ? (
+                  <View className="mt-2.5 gap-2">
+                    <Text className="font-sans text-[11px] leading-relaxed text-muted dark:text-muted-dark">
+                      未获得日历权限。请在系统设置中允许 Nextdo 访问日历，然后重新开启。
+                    </Text>
+                    <Button
+                      label="去系统设置开启日历"
+                      variant="secondary"
+                      onPress={() => void calendarPermission.openSystemSettings()}
+                    />
+                  </View>
+                ) : null}
+              </>
+            ) : (
+              <View className="flex-row items-start gap-3">
+                <View className="h-8 w-8 rounded-lg bg-surface-container/60 dark:bg-surface-container-dark/60 items-center justify-center shrink-0">
+                  <Ionicons name="calendar-outline" size={16} color={isDark ? colors.mutedDark : colors.muted} />
+                </View>
+                <View className="flex-1 min-w-0">
+                  <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+                    系统日历同步
+                  </Text>
+                  <Text className="mt-0.5 font-sans text-[11px] leading-tight text-muted dark:text-muted-dark">
+                    当前平台不支持系统日历，仍可使用应用内提醒。
+                  </Text>
+                </View>
+              </View>
+            )}
+          </View>
+        </Card>
+
+        {/* Section 4: 数据与同步 */}
         <SectionHeader title="数据与同步" icon="cloud-outline" />
         <Card className="gap-3.5 p-4">
         <View className="flex-row items-center justify-between">
