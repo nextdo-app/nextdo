@@ -1723,3 +1723,31 @@ v0.1.9-beta.1 发布构建中 Windows / Linux 因 RunEvent::Reopen 仅存在于 
 - 推送 release/0.1.8-beta.1 并用 gh 创建 PR（正文 Closes #56 #54）。
 - 打 tag v0.1.9-beta.3 并推送以触发 release 工作流。
 - 用 .verify/issues-50-51/evidence.md 的复核说明关闭 #50 / #51。
+
+
+## Session 56: 发布 0.1.9-beta.3 / beta.4，修复 PWA 图标缓存
+<!-- trellis-session: v=2 fp=11cf60748bfa6d43 -->
+
+**Date**: 2026-10-19
+**Task**: 发布 0.1.9-beta.3 / beta.4，修复 PWA 图标缓存
+**Branch**: `main`
+
+### Summary
+
+定位网页版图标不更新的根因：线上产物与本地 dist 逐字节一致，问题在浏览器 favicon 长期缓存、Service Worker 固定 CACHE_NAME 预缓存、已安装 PWA 图标快照三处叠加。修复：图标 URL 统一加 ?v=2（index.html、+html.tsx、manifest.json、sw.js 预缓存），CACHE_NAME 提到 nextdo-pwa-v2，新增 public/_headers 给图标设 max-age=600 must-revalidate、sw.js 设 no-store。门禁 pnpm verify:web --skip-build --no-serve 通过（44 套件 / 640 测试），线上响应头已确认生效。发布 0.1.9-beta.3（#54 提示音与系统日历、#56 时间到卡片，PR #57）与 0.1.9-beta.4，两个 release 工作流全绿，产物含 macOS/Windows/Linux/Android。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2cd91ff` | fix(pwa): 图标换新后自动失效浏览器缓存 |
+| `3cfd2d1` | chore(release): 0.1.9-beta.4 |
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 换图标时同步 bump sw.js 的 ICON_VERSION、post-export-web.mjs 的 ICON_VERSION 与 manifest.json 的 ?v=。
+- 本地装原生依赖前先跑 npx expo prebuild（expo-audio / expo-calendar 是新增原生模块）。
