@@ -87,7 +87,8 @@ export {
   assertTransition,
 } from './domain/state';
 export {
-  FOCUS_PRESET_MINUTES,
+  MAX_FOCUS_MINUTES,
+  MIN_FOCUS_MINUTES,
   assertReviewRecord,
   assertValidCalendarAction,
   assertValidCompletionRecord,

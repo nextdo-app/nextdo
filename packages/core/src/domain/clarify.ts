@@ -11,9 +11,18 @@ import { ValidationNextdoError } from '../lib/errors';
 /** Default value for the two-minute "DO NOW → became a NextAction" path. */
 export const NEXT_ACTION_DEFAULT_VALUE = 3 as const;
 
+/**
+ * Issue #62: what kind of action the user picked in the action form.
+ * `waiting` / `delegated` become a WaitingForItem (never a NextAction);
+ * `none` means "project without a first action" (project form only).
+ */
+export type ClarifyActionType = 'next' | 'waiting' | 'delegated' | 'none';
+
 export interface ClarifyAnswers {
   /** Q1: 可以行动吗？ */
   actionable: boolean;
+  /** Issue #62: 行动类型（缺省视作 `next`）。 */
+  actionType?: ClarifyActionType;
   /** Q1 follow-up, required when `actionable === false`. */
   nonActionableKind?: 'reference' | 'someday' | 'trash';
   /** Q2, actionable only: 这件事属于某个项目吗？ (wizard q2) */
@@ -93,6 +102,12 @@ export function classifyInboxItem(answers: ClarifyAnswers): ClarifyOutcome {
           'Non-actionable items require nonActionableKind: reference | someday | trash',
         );
     }
+  }
+
+  // Issue #62: an action marked waiting/delegated is a WaitingForItem — it
+  // is not the user's next action, so the project questions do not apply.
+  if (answers.actionType === 'waiting' || answers.actionType === 'delegated') {
+    return { kind: 'waiting-for' };
   }
 
   if (answers.inProject) {

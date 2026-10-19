@@ -21,7 +21,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   'validation.calendarAction.startsAt': '请选择开始时间',
   'validation.calendarAction.deadline': '截止时间格式不正确',
   'validation.nextAction.deadline': '截止时间格式不正确',
-  'validation.focusSession.plannedMinutes': '专注时长无效（预设只能是 25 / 45 / 60 分钟）',
+  'validation.focusSession.plannedMinutes': '专注时长无效（需为 1–180 之间的整数分钟）',
   'validation.focusSession.pausedSec': '暂停时长无效',
   // Storage / not-found
   'inbox.not-found': '这条收件箱记录不存在了',

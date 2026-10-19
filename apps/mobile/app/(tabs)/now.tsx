@@ -715,6 +715,12 @@ export default function NowScreen() {
     () => todayRows.filter((row) => row.today?.status === 'done').length,
     [todayRows],
   );
+  // Issue #61: habits still open today — the top strip only exists for them
+  // (a fully checked-in day needs no nagging card).
+  const uncheckedHabits = useMemo(
+    () => habits.filter((row) => row.today !== null && row.today.status === 'open'),
+    [habits],
+  );
 
   const handleCompleteHabit = useCallback(
     (habitDayId: string, habit?: HabitWithProgress['habit']) => {
@@ -756,6 +762,76 @@ export default function NowScreen() {
 
         {/* Filter and Context Card — Primary Engine Input */}
         <FilterContextCard settings={settings} update={update} />
+
+        {/* Issue #61: habits are daily and easy to forget — surface the
+         *  unchecked ones ABOVE the execution hero, with a one-tap check-in.
+         *  Hidden when nothing is open (the bottom section stays as the full
+         *  view). */}
+        {uncheckedHabits.length > 0 ? (
+          <Card className="mt-3 gap-3 rounded-2xl border border-border/70 bg-surface p-4 shadow-2xs dark:border-border-dark/70 dark:bg-surface-dark">
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center gap-2">
+                <View className="h-1.5 w-1.5 rounded-full bg-accent dark:bg-accent-dark" />
+                <Text className="font-sans text-xs font-semibold tracking-wider text-muted dark:text-muted-dark">
+                  今日习惯待打卡
+                </Text>
+                <View className="rounded-full bg-accent/15 px-2 py-0.5 dark:bg-accent-dark/25">
+                  <Text className="font-mono text-[11px] font-bold text-accent dark:text-accent-dark">
+                    {uncheckedHabits.length}
+                  </Text>
+                </View>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="查看全部习惯"
+                hitSlop={CHIP_HIT_SLOP}
+                onPress={() => router.push('/habits')}
+              >
+                <Text className="font-sans text-xs font-medium text-muted hover:text-ink dark:text-muted-dark">
+                  全部
+                </Text>
+              </Pressable>
+            </View>
+            <View className="gap-2 pt-0.5">
+              {uncheckedHabits.slice(0, 3).map((row) => (
+                <View
+                  key={row.habit.id}
+                  className="flex-row items-center justify-between rounded-xl border border-border/40 bg-surface-container/30 px-3.5 py-2 dark:border-border-dark/40 dark:bg-surface-container-dark/30"
+                >
+                  <Text
+                    className="flex-1 font-sans text-sm font-medium text-ink dark:text-ink-dark mr-2"
+                    numberOfLines={1}
+                  >
+                    {row.habit.title}
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`快速打卡：${row.habit.title}`}
+                    hitSlop={CHIP_HIT_SLOP}
+                    onPress={() => handleCompleteHabit(row.today!.id, row.habit)}
+                    className="h-7 items-center justify-center rounded-full border border-accent/50 bg-accent/10 px-3 active:scale-95 dark:border-accent-dark/50 dark:bg-accent-dark/20"
+                  >
+                    <Text className="font-sans text-xs font-semibold text-accent dark:text-accent-dark">
+                      ✓ 打卡
+                    </Text>
+                  </Pressable>
+                </View>
+              ))}
+              {uncheckedHabits.length > 3 ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="查看全部未打卡习惯"
+                  onPress={() => router.push('/habits')}
+                  className="pt-0.5"
+                >
+                  <Text className="font-sans text-xs text-muted dark:text-muted-dark">
+                    还有 {uncheckedHabits.length - 3} 项…
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          </Card>
+        ) : null}
 
         {mutationError !== null ? (
           <Text className="mt-2 font-sans text-sm text-danger">{errorMessage(mutationError)}</Text>

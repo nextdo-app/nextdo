@@ -141,6 +141,8 @@ export const AppSchema = new Schema({
     waiting_on: column.text,
     expected_by: column.text,
     follow_up_at: column.text,
+    /** Issue #62: 'waiting' | 'delegated' — null on legacy rows. */
+    kind: column.text,
   }),
 
   calendar_actions: new Table(
@@ -465,6 +467,7 @@ export function waitingForItemFromRow(row: WaitingForItemRow): WaitingForItem {
     waitingOn: row.waiting_on ?? '',
     expectedBy: row.expected_by ?? undefined,
     followUpAt: row.follow_up_at ?? undefined,
+    kind: row.kind === 'waiting' || row.kind === 'delegated' ? row.kind : undefined,
   };
 }
 
@@ -475,6 +478,7 @@ export function waitingForItemToRow(item: WaitingForItem): Omit<WaitingForItemRo
     waiting_on: item.waitingOn,
     expected_by: item.expectedBy ?? null,
     follow_up_at: item.followUpAt ?? null,
+    kind: item.kind ?? null,
   };
 }
 

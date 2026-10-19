@@ -165,6 +165,7 @@ describe('outcome 4 — project (q2 yes → 新建项目 → 项目 + 首个行�
     expect(submission.target).toEqual({
       projectTitle: TITLE,
       projectValue: 4,
+      actionType: 'next',
       actionTitle: TITLE,
       estMinutes: 45,
     });
@@ -264,6 +265,8 @@ describe('buildFormSubmission — the projectId three-state (action form)', () =
       projectTitle: TITLE,
       projectOutcome: '',
       projectValue: 3,
+      actionType: 'next',
+      projectFirstAction: 'yes',
       actionTitle: TITLE,
       estMinutes: null,
       value: 3,
@@ -552,6 +555,8 @@ describe('validateForm edge cases', () => {
     projectTitle: TITLE,
     projectOutcome: '',
     projectValue: 3,
+    actionType: 'next',
+    projectFirstAction: 'yes',
     actionTitle: TITLE,
     estMinutes: null,
     value: 3,
@@ -829,6 +834,8 @@ describe('the 场景 (contexts) feature is offline (#46)', () => {
     projectTitle: TITLE,
     projectOutcome: '跑完 baseline',
     projectValue: 3,
+    actionType: 'next',
+    projectFirstAction: 'yes',
     actionTitle: TITLE,
     estMinutes: 20,
     value: 3,
@@ -857,6 +864,87 @@ describe('the 场景 (contexts) feature is offline (#46)', () => {
       { type: 'answer-q5', fixedTime: false },
     );
     expect('contextIds' in formState(state).fields).toBe(false);
+  });
+});
+
+describe('issue #62 — action types and an optional first action', () => {
+  const base = (): FormFields => ({
+    title: TITLE,
+    url: '',
+    note: '',
+    waitingOn: '',
+    expectedBy: '',
+    projectTitle: TITLE,
+    projectOutcome: '',
+    projectValue: 3,
+    actionType: 'next',
+    projectFirstAction: 'yes',
+    actionTitle: TITLE,
+    estMinutes: 20,
+    value: 3,
+    deadline: '',
+    startsAtDate: '',
+    startsAtTime: '',
+  });
+
+  it('a waiting action needs who/what it waits on, not an estimate', () => {
+    const fields = fill(base(), { actionType: 'waiting', estMinutes: null });
+    expect(validateForm('action', fields)).toBe('请填写在等谁 / 什么');
+    expect(validateForm('action', fill(fields, { waitingOn: '设计师' }))).toBeNull();
+  });
+
+  it('a waiting action builds a waiting target and answers with its type', () => {
+    const fields = fill(base(), {
+      actionType: 'waiting',
+      waitingOn: '设计师',
+      expectedBy: '2026-10-20',
+      estMinutes: null,
+      value: 3,
+    });
+    const submission = buildFormSubmission('clarify', 'action', fields, false);
+    expect(submission.answers).toMatchObject({ actionType: 'waiting' });
+    expect(submission.target).toMatchObject({
+      title: TITLE,
+      actionType: 'waiting',
+      waitingKind: 'waiting',
+      waitingOn: '设计师',
+    });
+    expect(submission.target.estMinutes).toBeUndefined();
+    expect(submission.target.value).toBeUndefined();
+  });
+
+  it('a project can be parked without any first action', () => {
+    const fields = fill(base(), {
+      projectOutcome: '跑完 baseline',
+      projectFirstAction: 'no',
+      estMinutes: null,
+    });
+    expect(validateForm('project', fields)).toBeNull();
+    const submission = buildFormSubmission('clarify', 'project', fields, false);
+    expect(submission.answers).toMatchObject({ inProject: true, projectChoice: 'new' });
+    expect(submission.target).toMatchObject({
+      projectTitle: TITLE,
+      projectValue: 3,
+      actionType: 'none',
+    });
+    expect(submission.target.actionTitle).toBeUndefined();
+    expect(submission.target.estMinutes).toBeUndefined();
+  });
+
+  it('a project can start with a waiting item instead of a next action', () => {
+    const fields = fill(base(), {
+      projectOutcome: '跑完 baseline',
+      actionType: 'delegated',
+      waitingOn: '实习生',
+      estMinutes: null,
+    });
+    expect(validateForm('project', fields)).toBeNull();
+    const submission = buildFormSubmission('clarify', 'project', fields, false);
+    expect(submission.target).toMatchObject({
+      actionType: 'delegated',
+      waitingOn: '实习生',
+    });
+    expect(submission.target.estMinutes).toBeUndefined();
   });
 });
 

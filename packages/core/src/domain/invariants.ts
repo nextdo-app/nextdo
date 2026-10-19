@@ -229,17 +229,22 @@ export function assertValidReminder(reminder: Reminder): void {
   }
 }
 
-export const FOCUS_PRESET_MINUTES = [2, 25, 45, 60] as const;
+export const MIN_FOCUS_MINUTES = 1;
+export const MAX_FOCUS_MINUTES = 180;
 
 export function assertValidFocusSession(session: FocusSession): void {
   if (session.mode === 'preset') {
+    // Issue #59: any whole minute inside the supported range is a valid preset
+    // length — the chips on the pick step are UI convenience, not a contract.
     if (
       session.plannedMinutes === null ||
-      !(FOCUS_PRESET_MINUTES as readonly number[]).includes(session.plannedMinutes)
+      !Number.isInteger(session.plannedMinutes) ||
+      session.plannedMinutes < MIN_FOCUS_MINUTES ||
+      session.plannedMinutes > MAX_FOCUS_MINUTES
     ) {
       throw new ValidationNextdoError(
         'validation.focusSession.plannedMinutes',
-        `preset focus sessions require plannedMinutes in ${FOCUS_PRESET_MINUTES.join('/')}`,
+        `preset focus sessions require a whole plannedMinutes in ${MIN_FOCUS_MINUTES}–${MAX_FOCUS_MINUTES}`,
       );
     }
   } else if (session.plannedMinutes !== null) {

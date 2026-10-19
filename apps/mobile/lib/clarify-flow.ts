@@ -58,6 +58,14 @@ export interface FormFields {
   projectOutcome: string;
   projectValue: Value;
   actionTitle: string;
+  /**
+   * Issue #62: what kind of action this is. The action form offers all three;
+   * the project form offers them for its optional first action.
+   * `waiting` / `delegated` never become a NextAction.
+   */
+  actionType: 'next' | 'waiting' | 'delegated';
+  /** Issue #62: 项目形式 —— 是否现在就定首个行动（默认是）。 */
+  projectFirstAction: 'yes' | 'no';
   estMinutes: number | null;
   value: Value;
   deadline: string;
@@ -218,6 +226,8 @@ function emptyFields(defaultTitle: string): FormFields {
     projectOutcome: '',
     projectValue: 3,
     actionTitle: defaultTitle,
+    actionType: 'next',
+    projectFirstAction: 'yes',
     estMinutes: null,
     value: 3,
     deadline: '',
@@ -561,6 +571,11 @@ export function validateForm(form: FormKind, fields: FormFields): string | null 
     case 'project':
       if (fields.projectTitle.trim() === '') return '项目名不能为空';
       if (fields.projectOutcome.trim() === '') return '请填写项目结果（"完成"是什么样）';
+      // Issue #62: the first action is optional.
+      if (fields.projectFirstAction === 'no') return null;
+      if (fields.actionType !== 'next') {
+        return fields.waitingOn.trim() === '' ? '请填写在等谁 / 什么' : null;
+      }
       return validEstMinutes(fields.estMinutes) ? null : '请选择或填写预估时长（分钟）';
     case 'waiting':
       return fields.waitingOn.trim() === '' ? '请填写在等谁 / 什么' : null;
@@ -570,6 +585,10 @@ export function validateForm(form: FormKind, fields: FormFields): string | null 
       }
       return validEstMinutes(fields.estMinutes) ? null : '请选择或填写预估时长（分钟）';
     case 'action':
+      // Issue #62: a waiting/delegated action only needs who/what it waits on.
+      if (fields.actionType !== 'next') {
+        return fields.waitingOn.trim() === '' ? '请填写在等谁 / 什么' : null;
+      }
       return validEstMinutes(fields.estMinutes) ? null : '请选择或填写预估时长（分钟）';
   }
 }
@@ -655,11 +674,22 @@ export function buildFormSubmission(
       throw new Error('unreachable: re-clarify re-enters at Q2 (no trash branch)');
     }
     case 'project': {
+      const actionType = fields.projectFirstAction === 'no' ? 'none' : fields.actionType;
       const target: ClarifyTarget = {
         projectTitle: fields.projectTitle.trim(),
         projectValue: fields.projectValue,
-        actionTitle: fields.actionTitle.trim(),
-        estMinutes: fields.estMinutes as number,
+        actionType,
+        ...(actionType === 'none'
+          ? {}
+          : {
+              actionTitle: fields.actionTitle.trim(),
+              ...(actionType === 'next'
+                ? { estMinutes: fields.estMinutes as number }
+                : {
+                    waitingOn: fields.waitingOn.trim(),
+                    expectedBy: fields.expectedBy !== '' ? (endOfLocalDayIso(fields.expectedBy) ?? undefined) : undefined,
+                  }),
+            }),
       };
       const projectOutcome = fields.projectOutcome.trim();
       if (mode === 'clarify') {
@@ -718,20 +748,35 @@ export function buildFormSubmission(
       };
     }
     case 'action': {
+      const actionType = fields.actionType;
+      const isWaiting = actionType === 'waiting' || actionType === 'delegated';
       const target: ClarifyTarget = {
         title: fields.actionTitle.trim(),
-        estMinutes: fields.estMinutes as number,
-        // Two-minute path: value is the fixed spec default — omit it and
-        // let the db layer apply the default (3) / keep the re-clarify old
-        // value. Clarified path: the user-set value.
-        ...(twoMinute ? {} : { value: fields.value }),
-        deadline: fields.deadline !== '' ? (localDateTimeToIso(fields.deadline) ?? undefined) : undefined,
+        actionType,
+        ...(isWaiting
+          ? {
+              waitingOn: fields.waitingOn.trim(),
+              waitingKind: actionType,
+              expectedBy: fields.expectedBy !== '' ? (endOfLocalDayIso(fields.expectedBy) ?? undefined) : undefined,
+            }
+          : {
+              estMinutes: fields.estMinutes as number,
+              // Two-minute path: value is the fixed spec default — omit it and
+              // let the db layer apply the default (3) / keep the re-clarify old
+              // value. Clarified path: the user-set value.
+              ...(twoMinute ? {} : { value: fields.value }),
+              deadline: fields.deadline !== '' ? (localDateTimeToIso(fields.deadline) ?? undefined) : undefined,
+            }),
       };
+      // Issue #62: waiting/delegated is recorded as a WaitingForItem, not a
+      // NextAction — core short-circuits the table before the project question.
+      const actionTypeAnswers = isWaiting ? { actionType } : {};
       if (mode === 'clarify') {
         return {
           mode,
           answers: {
             actionable: true,
+            ...actionTypeAnswers,
             twoMinutes: twoMinute,
             ...(twoMinute ? { completedOnTheSpot: false } : {}),
             myResponsibility: true,
@@ -749,6 +794,7 @@ export function buildFormSubmission(
       return {
         mode,
         answers: {
+          ...actionTypeAnswers,
           twoMinutes: twoMinute,
           ...(twoMinute ? { completedOnTheSpot: false } : {}),
           myResponsibility: true,

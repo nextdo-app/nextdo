@@ -33,7 +33,7 @@ function WaitingRow({
     Boolean(item.expectedBy) && new Date(item.expectedBy!).getTime() < now.getTime();
 
   return (
-    <Card className="gap-2.5 p-3.5">
+    <Card className="gap-3 p-4 rounded-2xl border-border/70 bg-surface dark:border-border-dark/70 dark:bg-surface-dark shadow-2xs">
       <View className="flex-row items-start justify-between gap-2">
         <Text className="flex-1 font-sans text-base font-semibold text-ink dark:text-ink-dark">
           {item.title}
@@ -41,11 +41,20 @@ function WaitingRow({
         <Tag label={`等待: ${item.waitingOn}`} tone="accent" />
       </View>
 
-      <View className="mt-1 flex-row items-center justify-between">
-        <View className="flex-row items-center gap-1.5">
+      <View className="flex-row items-center justify-between pt-1">
+        <View className="flex-row items-center gap-2">
+          {/* Issue #62: 等待 vs 已委派 are distinct action kinds. */}
+          <Tag
+            label={item.kind === 'delegated' ? '已委派' : '等待外部'}
+            tone={item.kind === 'delegated' ? 'neutral' : 'accent'}
+          />
           {item.expectedBy ? (
             <Tag
-              label={isOverdue ? `已逾期: ${formatLocalDate(item.expectedBy)}` : `预期: ${formatLocalDate(item.expectedBy)}`}
+              label={
+                isOverdue
+                  ? `已逾期: ${formatLocalDate(item.expectedBy)}`
+                  : `预期: ${formatLocalDate(item.expectedBy)}`
+              }
               tone={isOverdue ? 'danger' : 'neutral'}
             />
           ) : (
@@ -58,7 +67,7 @@ function WaitingRow({
         <Button
           size="sm"
           label="已得到结果"
-          variant="tinted"
+          variant="secondary"
           onPress={() => onFinish(item.id)}
         />
       </View>
@@ -71,11 +80,12 @@ function WaitingForm({
   add,
   onAdded,
 }: {
-  add: (input: { title: string; waitingOn: string; expectedBy?: string; followUpAt?: string }) => Promise<boolean>;
+  add: (input: { title: string; waitingOn: string; expectedBy?: string; followUpAt?: string; kind?: WaitingForItem['kind'] }) => Promise<boolean>;
   onAdded: () => void;
 }) {
   const [title, setTitle] = useState('');
   const [waitingOn, setWaitingOn] = useState('');
+  const [kind, setKind] = useState<NonNullable<WaitingForItem['kind']>>('waiting');
   const [submitting, setSubmitting] = useState(false);
 
   const canSubmit = title.trim() !== '' && waitingOn.trim() !== '' && !submitting;
@@ -86,6 +96,7 @@ function WaitingForm({
     const success = await add({
       title: title.trim(),
       waitingOn: waitingOn.trim(),
+      kind,
     });
     setSubmitting(false);
     if (success) {
@@ -96,7 +107,7 @@ function WaitingForm({
   };
 
   return (
-    <Card className="gap-3 p-4">
+    <Card className="gap-3.5 p-4 rounded-2xl border-border/70 bg-surface dark:border-border-dark/70 dark:bg-surface-dark shadow-2xs">
       <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
         新增等待事项
       </Text>
@@ -109,6 +120,22 @@ function WaitingForm({
           accessibilityLabel="等待事项名称"
         />
       </FormField>
+      <FormField label="类型">
+        <View className="flex-row gap-2">
+          <Button
+            size="sm"
+            label="等待外部"
+            variant={kind === 'waiting' ? 'primary' : 'secondary'}
+            onPress={() => setKind('waiting')}
+          />
+          <Button
+            size="sm"
+            label="已委派"
+            variant={kind === 'delegated' ? 'primary' : 'secondary'}
+            onPress={() => setKind('delegated')}
+          />
+        </View>
+      </FormField>
       <FormField label="等待谁">
         <TextInput
           className={INPUT_CLASS}
@@ -118,7 +145,7 @@ function WaitingForm({
           accessibilityLabel="等待对象"
         />
       </FormField>
-      <View className="flex-row justify-end">
+      <View className="flex-row justify-end pt-1">
         <Button
           size="sm"
           label="添加等待"

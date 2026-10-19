@@ -1,11 +1,12 @@
 /**
- * Inbox screen tests — the R1 capture → Clarify handoff (design §2: 记一条问一条)
- * + the Paper Serenity row rework.
+ * Inbox screen tests — capture / clarify decoupling (#58) + the Paper
+ * Serenity row rework.
  *
- * Both capture paths (quick-capture modal + inline capture card) must funnel
- * through the same handoff: save → the modal closes → the Clarify wizard
- * opens for the new item; and the one-shot `recapture=1` route param (from
- * the wizard's "再记一条") reopens the modal and clears itself.
+ * A plain save (Enter / [记录], in the modal or the inline card) leaves the
+ * item pending in the inbox; only [记录并澄清] funnels through the R1 handoff
+ * (design §2: 记一条问一条) and opens the wizard. [开始澄清] walks the pending
+ * list in batch mode. The one-shot `recapture=1` route param (from the
+ * wizard's "再记一条") reopens the modal and clears itself.
  *
  * Row rework (design §2): relative capture time from the app clock, the
  * warning-colored "优先澄清" meta for captures older than 24h (the text
@@ -115,7 +116,7 @@ jest.mock('expo-notifications', () => mockExpoNotifications);
 
 import { mockExpoNotifications } from './mocks/expo-notifications';
 
-import { act, fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
+import { act, fireEvent, renderRouter, screen, waitFor, within } from 'expo-router/testing-library';
 import { router } from 'expo-router';
 import { Modal } from 'react-native';
 import { addInboxItem } from '@nextdo/db';
@@ -134,8 +135,8 @@ beforeEach(() => {
   mockQueryResult.data = [];
 });
 
-describe('Inbox screen — R1 capture → Clarify handoff', () => {
-  it('inline capture card: save → the Clarify wizard opens for the new item', async () => {
+describe('Inbox screen — capture / clarify decoupling (#58)', () => {
+  it('inline capture card: [记录并澄清] opens the Clarify wizard for the new item', async () => {
     const view = renderRouter('app', { initialUrl: '/(tabs)/inbox' });
     await act(async () => {});
 
@@ -146,25 +147,54 @@ describe('Inbox screen — R1 capture → Clarify handoff', () => {
     const input = screen.getByPlaceholderText('有什么事情占据着你现在的注意力？');
     expect(screen.getByText('支持自然输入，待会儿逐个澄清')).toBeTruthy();
     fireEvent.changeText(input, '内联捕获');
-    fireEvent(input, 'submitEditing');
+    fireEvent.press(screen.getByText('记录并澄清'));
 
     await waitFor(() => expect(view.getPathname().startsWith('/clarify/')).toBe(true));
     expect(mockedAddInboxItem).toHaveBeenCalledTimes(1);
     expect(mockedAddInboxItem.mock.calls[0][1]).toMatchObject({ title: '内联捕获' });
   });
 
-  it('quick-capture modal: save → onCaptured hands off to the Clarify wizard', async () => {
+  it('inline capture card: [记录] / Enter saves and stays on the inbox', async () => {
+    const view = renderRouter('app', { initialUrl: '/(tabs)/inbox' });
+    await act(async () => {});
+    fireEvent.press(screen.getByText('稍后再说'));
+
+    const input = screen.getByPlaceholderText('有什么事情占据着你现在的注意力？');
+    fireEvent.changeText(input, '先记下来');
+    fireEvent(input, 'submitEditing');
+
+    await waitFor(() => expect(mockedAddInboxItem).toHaveBeenCalledTimes(1));
+    expect(mockedAddInboxItem.mock.calls[0][1]).toMatchObject({ title: '先记下来' });
+    // #58: the item stays pending — no wizard, no navigation.
+    expect(view.getPathname()).toBe('/inbox');
+  });
+
+  it('quick-capture modal: [记录] saves and closes the modal only', async () => {
     const view = renderRouter('app', { initialUrl: '/(tabs)/inbox' });
     await act(async () => {});
 
-    // The launch modal is open — capture straight from it.
     const input = screen.getByPlaceholderText('记下任何事…（Enter 快速保存）');
     fireEvent.changeText(input, '弹窗捕获');
     fireEvent(input, 'submitEditing');
 
+    await waitFor(() => expect(mockedAddInboxItem).toHaveBeenCalledTimes(1));
+    expect(mockedAddInboxItem.mock.calls[0][1]).toMatchObject({ title: '弹窗捕获' });
+    expect(view.getPathname()).toBe('/inbox');
+    expect(view.root.findByType(Modal).props.visible).toBe(false);
+  });
+
+  it('quick-capture modal: [记录并澄清] hands off to the Clarify wizard', async () => {
+    const view = renderRouter('app', { initialUrl: '/(tabs)/inbox' });
+    await act(async () => {});
+
+    const input = screen.getByPlaceholderText('记下任何事…（Enter 快速保存）');
+    fireEvent.changeText(input, '弹窗澄清');
+    // The inline card behind the modal carries the same label — scope to the modal.
+    fireEvent.press(within(view.root.findByType(Modal)).getByText('记录并澄清'));
+
     await waitFor(() => expect(view.getPathname().startsWith('/clarify/')).toBe(true));
     expect(mockedAddInboxItem).toHaveBeenCalledTimes(1);
-    expect(mockedAddInboxItem.mock.calls[0][1]).toMatchObject({ title: '弹窗捕获' });
+    expect(mockedAddInboxItem.mock.calls[0][1]).toMatchObject({ title: '弹窗澄清' });
     // The modal closed as part of the handoff.
     expect(view.root.findByType(Modal).props.visible).toBe(false);
   });
@@ -226,16 +256,28 @@ describe('Inbox screen — Paper Serenity rows (design §2)', () => {
     return view;
   }
 
-  it('shows the 清空大脑 header, the 记录并澄清 CTA and the 待处理 count', async () => {
+  it('shows the 清空大脑 header, both capture actions and the 待澄清 count', async () => {
     await renderWithTwoRows();
     await act(async () => {});
     expect(screen.getByText('清空大脑')).toBeTruthy();
     expect(screen.getByText('先记下来，不用现在想清楚。')).toBeTruthy();
     expect(screen.getByText('记录并澄清')).toBeTruthy();
-    // The count row is the mockup's 待处理 control: label + a solid count badge.
-    expect(screen.getByText('待处理')).toBeTruthy();
+    expect(screen.getByText('记录')).toBeTruthy();
+    // #58: the count row names what is actually pending — 待澄清.
+    expect(screen.getByText('待澄清')).toBeTruthy();
     expect(screen.getByText('2')).toBeTruthy();
+    expect(screen.getByText('开始澄清')).toBeTruthy();
     expect(screen.getByText('GTD 澄清心法')).toBeTruthy();
+  });
+
+  it('[开始澄清] opens the oldest pending item in batch mode', async () => {
+    const view = await renderWithTwoRows();
+    await act(async () => {});
+
+    fireEvent.press(screen.getByText('开始澄清'));
+
+    await waitFor(() => expect(view.getPathname()).toBe('/clarify/inbox-old'));
+    expect(view.getSearchParams().batch).toBe('1');
   });
 
   it('captures older than 24h carry the 优先澄清 meta; fresh ones do not', async () => {

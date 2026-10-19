@@ -194,3 +194,28 @@ describe('classifyInboxItem — Q4 / Q5', () => {
     expect(classifyInboxItem(base)).toEqual({ kind: 'next-action', source: 'clarified' });
   });
 });
+
+describe('classifyInboxItem — issue #62 action types', () => {
+  it('a waiting action is waiting-for even inside a project', () => {
+    expect(
+      classifyInboxItem({
+        ...base,
+        actionType: 'waiting',
+        inProject: true,
+        projectChoice: 'new',
+        projectOutcome: 'x',
+      }),
+    ).toEqual({ kind: 'waiting-for' });
+  });
+
+  it('a delegated action is waiting-for', () => {
+    expect(classifyInboxItem({ ...base, actionType: 'delegated' })).toEqual({ kind: 'waiting-for' });
+  });
+
+  it('next keeps the regular chain', () => {
+    expect(classifyInboxItem({ ...base, actionType: 'next' })).toEqual({
+      kind: 'next-action',
+      source: 'clarified',
+    });
+  });
+});

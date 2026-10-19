@@ -54,6 +54,44 @@ describe('QuickCaptureModal', () => {
     expect(screen.getByPlaceholderText(/记下任何事/).props.value).toBe('');
   });
 
+  it('记录并澄清 saves then hands the item to onCapturedAndClarify (issue #58)', async () => {
+    const onAdd = jest.fn(async () => ITEM);
+    const onCaptured = jest.fn();
+    const onCapturedAndClarify = jest.fn();
+    render(
+      <QuickCaptureModal
+        visible={true}
+        onClose={jest.fn()}
+        onAdd={onAdd}
+        onCaptured={onCaptured}
+        onCapturedAndClarify={onCapturedAndClarify}
+      />,
+    );
+
+    const input = screen.getByPlaceholderText(/记下任何事/);
+    fireEvent.changeText(input, '买牛奶和咖啡豆');
+    fireEvent.press(screen.getByText('记录并澄清'));
+
+    await waitFor(() => {
+      expect(onCapturedAndClarify).toHaveBeenCalledWith(ITEM);
+    });
+    // A clarify handoff is NOT a plain save — the parent gets exactly one.
+    expect(onCaptured).not.toHaveBeenCalled();
+  });
+
+  it('hides 记录并澄清 when the parent does not offer the handoff', () => {
+    render(
+      <QuickCaptureModal
+        visible={true}
+        onClose={jest.fn()}
+        onAdd={jest.fn(async () => null)}
+        onCaptured={jest.fn()}
+      />,
+    );
+
+    expect(screen.queryByText('记录并澄清')).toBeNull();
+  });
+
   it('a failed save (null) does not call onCaptured', async () => {
     const onAdd = jest.fn(async () => null);
     const onCaptured = jest.fn();

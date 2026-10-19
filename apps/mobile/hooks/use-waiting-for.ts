@@ -25,6 +25,8 @@ export interface AddWaitingForInput {
   waitingOn: string;
   expectedBy?: string;
   followUpAt?: string;
+  /** Issue #62: 等待外部结果（默认）vs 已委派。 */
+  kind?: WaitingForItem['kind'];
 }
 
 export interface UseWaitingForItemsResult {
@@ -55,6 +57,7 @@ export function useWaitingForItems(): UseWaitingForItemsResult {
           waitingOn: input.waitingOn.trim(),
           expectedBy: input.expectedBy ? toIso(new Date(input.expectedBy)) : undefined,
           followUpAt: input.followUpAt ? toIso(new Date(input.followUpAt)) : undefined,
+          kind: input.kind,
           createdAt: toIso(now),
           updatedAt: toIso(now),
           deletedAt: null,

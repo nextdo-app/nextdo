@@ -76,14 +76,18 @@ describe('listFocusSessions', () => {
 });
 
 describe('addFocusSession / startFocusSession', () => {
-  it('add: inserts a valid session; rejects an off-preset plannedMinutes', async () => {
+  it('add: inserts a valid session; rejects an out-of-range plannedMinutes', async () => {
     const { db, close } = await open();
     try {
       const session = makeSession();
       await addFocusSession(db, session);
       expect(await listFocusSessions(db)).toHaveLength(1);
+      await addFocusSession(db, makeSession({ plannedMinutes: 30 }));
       await expect(
-        addFocusSession(db, makeSession({ plannedMinutes: 30 })),
+        addFocusSession(db, makeSession({ plannedMinutes: 181 })),
+      ).rejects.toMatchObject({ code: 'validation.focusSession.plannedMinutes' });
+      await expect(
+        addFocusSession(db, makeSession({ plannedMinutes: 0 })),
       ).rejects.toMatchObject({ code: 'validation.focusSession.plannedMinutes' });
       await expect(
         addFocusSession(db, makeSession({ mode: 'free', plannedMinutes: 25 })),

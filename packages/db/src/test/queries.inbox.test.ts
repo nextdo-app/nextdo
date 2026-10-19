@@ -253,6 +253,67 @@ describe('applyClarify', () => {
     }
   });
 
+  it('#62 project: the first action can be omitted (project only)', async () => {
+    const { db, close } = await open(true);
+    try {
+      const result = await applyClarify(db, {
+        inboxId: I.plain,
+        answers: answers({ inProject: true, projectChoice: 'new', projectOutcome: '设备恢复可用' }),
+        target: { projectValue: 4, actionType: 'none' },
+        now: FIXTURE_NOW,
+      });
+      expect(result.outcome).toEqual({ kind: 'project' });
+      expect(result.createdIds).toHaveLength(1);
+      expect((await listNextActions(db)).some((item) => item.id === result.createdIds[0])).toBe(false);
+    } finally {
+      await close();
+    }
+  });
+
+  it('#62 project: a waiting first action becomes a WaitingForItem', async () => {
+    const { db, close } = await open(true);
+    try {
+      const result = await applyClarify(db, {
+        inboxId: I.plain,
+        answers: answers({ inProject: true, projectChoice: 'new', projectOutcome: '设备恢复可用' }),
+        target: { projectValue: 4, actionType: 'waiting', waitingOn: '维修师', actionTitle: '等报修回执' },
+        now: FIXTURE_NOW,
+      });
+      expect(result.createdIds).toHaveLength(2);
+      const row = await db
+        .selectFrom('waiting_for_items')
+        .selectAll()
+        .where('id', '=', result.createdIds[1] as string)
+        .executeTakeFirst();
+      expect(row?.waiting_on).toBe('维修师');
+      expect(row?.kind).toBe('waiting');
+    } finally {
+      await close();
+    }
+  });
+
+  it('#62 action: a delegated action creates a WaitingForItem (kind delegated)', async () => {
+    const { db, close } = await open(true);
+    try {
+      const result = await applyClarify(db, {
+        inboxId: I.plain,
+        answers: answers({ actionType: 'delegated' }),
+        target: { title: '周报交给助理', waitingOn: '助理', waitingKind: 'delegated' },
+        now: FIXTURE_NOW,
+      });
+      expect(result.outcome).toEqual({ kind: 'waiting-for' });
+      const row = await db
+        .selectFrom('waiting_for_items')
+        .selectAll()
+        .where('id', '=', result.createdIds[0] as string)
+        .executeTakeFirst();
+      expect(row?.kind).toBe('delegated');
+      expect(row?.waiting_on).toBe('助理');
+    } finally {
+      await close();
+    }
+  });
+
   it('waiting-for: creates a WaitingForItem (waitingOn required)', async () => {
     const { db, close } = await open(true);
     try {

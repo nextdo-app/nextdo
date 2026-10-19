@@ -315,7 +315,9 @@ A rule generating a recurring action (Proposal §7).
 
 ### FocusSession (Proposal §9)
 - `actionId`, `actionKind`, `mode: "preset" | "free"`,
-  `plannedMinutes: number | null` (preset ∈ {25, 45, 60}; `null` for free timer),
+  `plannedMinutes: number | null` (preset is any whole minute in
+  `MIN_FOCUS_MINUTES`–`MAX_FOCUS_MINUTES` = 1–180 — issue #59 made the length
+  user-choosable; `null` for free timer),
   `startedAt`, `pausedSec`, `endedAt?` (set when the session leaves `active`, in
   **either** terminal state — elapsed = `endedAt − startedAt − pausedSec`),
   `status: "active" | "completed" | "abandoned"`.

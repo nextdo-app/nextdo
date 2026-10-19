@@ -174,6 +174,16 @@ export interface ClarifyTarget {
   expectedBy?: string;
   projectTitle?: string;
   projectValue?: Value;
+  /**
+   * Issue #62: what to create alongside the project (project outcome only).
+   * `none` = the project alone (no first action); `waiting` / `delegated`
+   * = a WaitingForItem instead of a NextAction; `next` (default) = the
+   * first NextAction. The action outcomes read it the same way: a waiting
+   * /delegated target creates a WaitingForItem.
+   */
+  actionType?: 'next' | 'waiting' | 'delegated' | 'none';
+  /** Issue #62: 等待外部结果 vs 已委派（waiting-for outcomes; default waiting）. */
+  waitingKind?: 'waiting' | 'delegated';
   actionTitle?: string;
   estMinutes?: number;
   contextIds?: string[];
@@ -432,10 +442,34 @@ export async function applyClarify(
           status: 'active',
         };
         assertValidProject(project);
+        createdIds.push(project.id);
+        await tx.insertInto('projects').values({ id: project.id, ...projectToRow(project) }).execute();
+        // Issue #62: the first action is optional, and "waiting" actions
+        // never become a NextAction (they are not ours to execute).
+        const projectActionType = target.actionType ?? 'next';
+        if (projectActionType === 'none') break;
+        if (projectActionType === 'waiting' || projectActionType === 'delegated') {
+          const waiting: WaitingForItem = {
+            id: ulid(now),
+            createdAt: nowIso,
+            updatedAt: nowIso,
+            deletedAt: null,
+            title: target.actionTitle ?? inbox.title,
+            waitingOn: target.waitingOn ?? '',
+            expectedBy: target.expectedBy,
+            kind: projectActionType,
+          };
+          assertValidWaitingForItem(waiting);
+          createdIds.push(waiting.id);
+          await tx
+            .insertInto('waiting_for_items')
+            .values({ id: waiting.id, ...waitingForItemToRow(waiting) })
+            .execute();
+          break;
+        }
         const action = buildNextAction(now, { ...base, projectId: project.id, title: target.actionTitle ?? inbox.title }, target);
         assertValidNextAction(action);
-        createdIds.push(project.id, action.id);
-        await tx.insertInto('projects').values({ id: project.id, ...projectToRow(project) }).execute();
+        createdIds.push(action.id);
         await tx.insertInto('next_actions').values({ id: action.id, ...nextActionToRow(action) }).execute();
         break;
       }
@@ -448,6 +482,7 @@ export async function applyClarify(
           title: target.title ?? inbox.title,
           waitingOn: target.waitingOn ?? '',
           expectedBy: target.expectedBy,
+          kind: target.waitingKind,
         };
         // throws validation.waitingForItem.waitingOn when empty
         assertValidWaitingForItem(item);
@@ -465,6 +500,27 @@ export async function applyClarify(
         break;
       }
       case 'next-action': {
+        // Issue #62: a waiting/delegated action is recorded as a
+        // WaitingForItem (never enters the engine pool).
+        if (target.actionType === 'waiting' || target.actionType === 'delegated') {
+          const waiting: WaitingForItem = {
+            id: ulid(now),
+            createdAt: nowIso,
+            updatedAt: nowIso,
+            deletedAt: null,
+            title: target.title ?? inbox.title,
+            waitingOn: target.waitingOn ?? '',
+            expectedBy: target.expectedBy,
+            kind: target.actionType,
+          };
+          assertValidWaitingForItem(waiting);
+          createdIds.push(waiting.id);
+          await tx
+            .insertInto('waiting_for_items')
+            .values({ id: waiting.id, ...waitingForItemToRow(waiting) })
+            .execute();
+          break;
+        }
         // project-attach: the project's value is the DEFAULT — the form
         // value still wins (buildNextAction: target.value ?? keptValue ?? 3).
         const actionBase =
@@ -594,10 +650,33 @@ export async function reclarifyAction(
           status: 'active',
         };
         assertValidProject(project);
+        createdIds.push(project.id);
+        await tx.insertInto('projects').values({ id: project.id, ...projectToRow(project) }).execute();
+        // Issue #62: same optional-first-action rule as applyClarify.
+        const projectActionType = target.actionType ?? 'next';
+        if (projectActionType === 'none') break;
+        if (projectActionType === 'waiting' || projectActionType === 'delegated') {
+          const waiting: WaitingForItem = {
+            id: ulid(now),
+            createdAt: nowIso,
+            updatedAt: nowIso,
+            deletedAt: null,
+            title: target.actionTitle ?? oldTitle,
+            waitingOn: target.waitingOn ?? '',
+            expectedBy: target.expectedBy,
+            kind: projectActionType,
+          };
+          assertValidWaitingForItem(waiting);
+          createdIds.push(waiting.id);
+          await tx
+            .insertInto('waiting_for_items')
+            .values({ id: waiting.id, ...waitingForItemToRow(waiting) })
+            .execute();
+          break;
+        }
         const action = buildNextAction(now, { ...replacementBase, projectId: project.id, title: target.actionTitle ?? oldTitle }, target);
         assertValidNextAction(action);
-        createdIds.push(project.id, action.id);
-        await tx.insertInto('projects').values({ id: project.id, ...projectToRow(project) }).execute();
+        createdIds.push(action.id);
         await tx.insertInto('next_actions').values({ id: action.id, ...nextActionToRow(action) }).execute();
         break;
       }
@@ -610,6 +689,7 @@ export async function reclarifyAction(
           title: target.title ?? oldTitle,
           waitingOn: target.waitingOn ?? '',
           expectedBy: target.expectedBy,
+          kind: target.waitingKind,
         };
         assertValidWaitingForItem(item);
         createdIds.push(item.id);
@@ -625,6 +705,27 @@ export async function reclarifyAction(
         break;
       }
       case 'next-action': {
+        // Issue #62: switching to a waiting/delegated action replaces the
+        // old action with a WaitingForItem.
+        if (target.actionType === 'waiting' || target.actionType === 'delegated') {
+          const waiting: WaitingForItem = {
+            id: ulid(now),
+            createdAt: nowIso,
+            updatedAt: nowIso,
+            deletedAt: null,
+            title: target.title ?? oldTitle,
+            waitingOn: target.waitingOn ?? '',
+            expectedBy: target.expectedBy,
+            kind: target.actionType,
+          };
+          assertValidWaitingForItem(waiting);
+          createdIds.push(waiting.id);
+          await tx
+            .insertInto('waiting_for_items')
+            .values({ id: waiting.id, ...waitingForItemToRow(waiting) })
+            .execute();
+          break;
+        }
         // q2c three-state: attach (non-empty string) / detach (null — or
         // '', defensively treated as an explicit no-attach) / keep the old
         // attachment (undefined — defensive; the wizard always answers q2).

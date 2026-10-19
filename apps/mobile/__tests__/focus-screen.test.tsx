@@ -29,6 +29,7 @@ const mockDb = {
   completeFocusSession: jest.fn(),
   abandonFocusSession: jest.fn(),
   completeAction: jest.fn(),
+  addInboxItem: jest.fn(),
 };
 
 jest.mock('@nextdo/db', () => {
@@ -61,11 +62,17 @@ jest.mock('@nextdo/db', () => {
     isReactNativeRuntime: () => false,
     listFocusSessions: async (_db: unknown, options?: { actionId?: string }) =>
       mockState.sessions.filter((s) => options?.actionId === undefined || s.actionId === options.actionId),
-    startFocusSession: mockDb.startFocusSession,
-    recordPause: mockDb.recordPause,
-    completeFocusSession: mockDb.completeFocusSession,
-    abandonFocusSession: mockDb.abandonFocusSession,
-    completeAction: mockDb.completeAction,
+    // `mockDb` is declared after this factory but only touched when the
+    // module is required — which now happens during import hoisting (the
+    // focus-settings import pulls `@nextdo/db` in), so these go through
+    // lazy wrappers instead of reading the binding at factory time.
+    startFocusSession: (...args: unknown[]) => mockDb.startFocusSession(...args),
+    recordPause: (...args: unknown[]) => mockDb.recordPause(...args),
+    completeFocusSession: (...args: unknown[]) => mockDb.completeFocusSession(...args),
+    abandonFocusSession: (...args: unknown[]) => mockDb.abandonFocusSession(...args),
+    completeAction: (...args: unknown[]) => mockDb.completeAction(...args),
+    // The focus page's quick capture (issue #58) — resolves to the item.
+    addInboxItem: (...args: unknown[]) => mockDb.addInboxItem(...args),
     listNextActions: async () => [
       {
         id: 'f-1',
@@ -120,6 +127,19 @@ jest.mock('expo-notifications', () => mockExpoNotifications);
 import { mockExpoNotifications } from './mocks/expo-notifications';
 
 import { fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
+import { FOCUS_SETTINGS_KEY, __setFocusSettingsStoreForTests } from '@/lib/focus-settings';
+
+/** Device-local preference fixture (the module otherwise uses localStorage). */
+const focusStore = (() => {
+  const map = new Map<string, string>();
+  return {
+    map,
+    getItem: async (key: string) => map.get(key) ?? null,
+    setItem: async (key: string, value: string) => {
+      map.set(key, value);
+    },
+  };
+})();
 
 function minutesAgo(minutes: number): string {
   return new Date(Date.now() - minutes * 60_000).toISOString();
@@ -144,6 +164,9 @@ function seedActiveSession(overrides: Partial<Session> = {}): Session {
 beforeEach(() => {
   mockState.sessions = [];
   jest.clearAllMocks();
+  focusStore.map.clear();
+  __setFocusSettingsStoreForTests(focusStore);
+  mockDb.addInboxItem.mockImplementation(async (_db: unknown, item: unknown) => item);
   mockDb.startFocusSession.mockImplementation(async (_db: unknown, args: { now: Date; plannedMinutes: number | null; mode: string }) => {
     const session: Session = {
       id: 's-new',
@@ -185,9 +208,10 @@ beforeEach(() => {
 });
 
 describe('Focus screen', () => {
-  it('with no active session: the pick step offers 25/45/60/free', async () => {
+  it('with no active session: the pick step offers 15/25/45/60/free', async () => {
     renderRouter('app', { initialUrl: '/focus/f-1?kind=next' });
     await waitFor(() => expect(screen.getByText('选择本次专注时长')).toBeTruthy());
+    expect(screen.getByText('15 分钟')).toBeTruthy();
     expect(screen.getByText('25 分钟')).toBeTruthy();
     expect(screen.getByText('45 分钟')).toBeTruthy();
     expect(screen.getByText('60 分钟')).toBeTruthy();
@@ -314,6 +338,62 @@ describe('Focus screen', () => {
     await waitFor(() => expect(screen.getByText(/1[45]:\d{2}/)).toBeTruthy());
     // The action title (from the db) renders in the card header.
     expect(screen.getByText('写季度总结')).toBeTruthy();
+  });
+
+  it('starts a custom duration (issue #59) and remembers it for next time', async () => {
+    renderRouter('app', { initialUrl: '/focus/f-1?kind=next' });
+    await waitFor(() => expect(screen.getByText('选择本次专注时长')).toBeTruthy());
+
+    fireEvent.changeText(screen.getByLabelText('自定义专注时长（分钟）'), '30');
+    fireEvent.press(screen.getByText('开始'));
+
+    await waitFor(() => expect(mockDb.startFocusSession).toHaveBeenCalledTimes(1));
+    const call = mockDb.startFocusSession.mock.calls[0][1];
+    expect(call.plannedMinutes).toBe(30);
+    expect(call.mode).toBe('preset');
+    await waitFor(() =>
+      expect(focusStore.map.get(FOCUS_SETTINGS_KEY)).toBe(JSON.stringify({ lastMinutes: 30 })),
+    );
+  });
+
+  it('rejects a custom duration outside 1–180 with a hint (issue #59)', async () => {
+    renderRouter('app', { initialUrl: '/focus/f-1?kind=next' });
+    await waitFor(() => expect(screen.getByText('选择本次专注时长')).toBeTruthy());
+
+    fireEvent.changeText(screen.getByLabelText('自定义专注时长（分钟）'), '300');
+    fireEvent.press(screen.getByText('开始'));
+
+    expect(screen.getByText('请输入 1–180 之间的整数分钟')).toBeTruthy();
+    expect(mockDb.startFocusSession).not.toHaveBeenCalled();
+  });
+
+  it('offers the remembered duration first as the default (issue #59)', async () => {
+    focusStore.map.set(FOCUS_SETTINGS_KEY, JSON.stringify({ lastMinutes: 30 }));
+    renderRouter('app', { initialUrl: '/focus/f-1?kind=next' });
+
+    await waitFor(() => expect(screen.getByText('30 分钟')).toBeTruthy());
+    fireEvent.press(screen.getByText('30 分钟'));
+
+    await waitFor(() => expect(mockDb.startFocusSession).toHaveBeenCalledTimes(1));
+    expect(mockDb.startFocusSession.mock.calls[0][1].plannedMinutes).toBe(30);
+  });
+
+  it('速记 captures an inbox item without leaving the running session (issue #58)', async () => {
+    seedActiveSession();
+    const view = renderRouter('app', { initialUrl: '/focus/f-1?kind=next' });
+    await waitFor(() => expect(screen.getByText('暂停')).toBeTruthy());
+
+    fireEvent.press(screen.getByText('速记一笔'));
+    fireEvent.changeText(screen.getByPlaceholderText(/记下任何事/), '先记个想法');
+    fireEvent.press(screen.getByText('记录'));
+
+    await waitFor(() => expect(mockDb.addInboxItem).toHaveBeenCalledTimes(1));
+    expect(mockDb.addInboxItem.mock.calls[0][1]).toMatchObject({ title: '先记个想法' });
+    // Saving confirms in place (issue #58) instead of silently closing.
+    await waitFor(() => expect(screen.getByText(/已记入收集箱/)).toBeTruthy());
+    // The timer keeps running — capture never navigates away.
+    expect(view.getPathname()).toBe('/focus/f-1');
+    expect(screen.getByText('暂停')).toBeTruthy();
   });
 
   it('auto-starts a 2-minute focus session when preset=2 and autoStart=1 are provided (Issue 51)', async () => {

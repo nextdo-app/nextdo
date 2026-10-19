@@ -620,6 +620,59 @@ describe('Now screen', () => {
   });
 
   describe('habit block', () => {
+    // Issue #61: the block alone sits at the very bottom of a long scroll, so
+    // an open habit also gets a one-tap strip above the execution hero.
+    it('an open habit surfaces a top quick-check-in card that disappears after the check-in', async () => {
+      habitListRef.current = [habitFixture()];
+      habitDaysRef.current = [habitDayFixture({ id: 'hd-top', status: 'open' })];
+      setPool([]);
+      renderRouter('app', { initialUrl: '/(tabs)/now' });
+
+      await waitFor(() => expect(screen.getByText('今日习惯待打卡')).toBeTruthy());
+      expect(screen.getByRole('button', { name: '快速打卡：阅读' })).toBeTruthy();
+
+      // The write lands, the block re-reads, and the strip goes away.
+      habitDaysRef.current = [habitDayFixture({ id: 'hd-top', status: 'done' })];
+      fireEvent.press(screen.getByRole('button', { name: '快速打卡：阅读' }));
+
+      await waitFor(() => expect(screen.queryByText('今日习惯待打卡')).toBeNull());
+    });
+
+    it('no top card when every habit is already checked in today', async () => {
+      habitListRef.current = [habitFixture()];
+      habitDaysRef.current = [habitDayFixture({ id: 'hd-top', status: 'done' })];
+      setPool([]);
+      renderRouter('app', { initialUrl: '/(tabs)/now' });
+
+      await waitFor(() => expect(screen.getByText('今天习惯 1/1')).toBeTruthy());
+      expect(screen.queryByText('今日习惯待打卡')).toBeNull();
+    });
+
+    it('the top card caps at three rows and counts the rest', async () => {
+      habitListRef.current = [
+        habitFixture(),
+        habitFixture({ id: 'h-2', title: '冥想' }),
+        habitFixture({ id: 'h-3', title: '晨跑' }),
+        habitFixture({ id: 'h-4', title: '写作' }),
+      ];
+      habitDaysRef.current = [
+        habitDayFixture({ id: 'hd-1' }),
+        habitDayFixture({ id: 'hd-2', habitId: 'h-2' }),
+        habitDayFixture({ id: 'hd-3', habitId: 'h-3' }),
+        habitDayFixture({ id: 'hd-4', habitId: 'h-4' }),
+      ];
+      setPool([]);
+      renderRouter('app', { initialUrl: '/(tabs)/now' });
+
+      await waitFor(() => expect(screen.getByText('今日习惯待打卡')).toBeTruthy());
+      expect(screen.getByRole('button', { name: '快速打卡：阅读' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: '快速打卡：冥想' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: '快速打卡：晨跑' })).toBeTruthy();
+      // The fourth stays out of the strip — the 管理 link covers the rest.
+      expect(screen.queryByRole('button', { name: '快速打卡：写作' })).toBeNull();
+      expect(screen.getByText('还有 1 项…')).toBeTruthy();
+    });
+
     it('zero habits → the block shows the guidance entry (not a silent 0/0 with no way out)', async () => {
       setPool([]);
       renderRouter('app', { initialUrl: '/(tabs)/now' });

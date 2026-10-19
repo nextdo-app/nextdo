@@ -28,24 +28,7 @@ import { resolvePermissionStatus } from '../permission-status';
 import type { ReconcileItem, ReconcileOutput } from '../reminder-scheduler';
 import type { DeliveryAdapter, ReminderPermissionState, ReminderSoundPreferences } from './types';
 import { KIND_TITLES } from './types';
-
-/**
- * The three Android channels (design §2.3). Importance is FIXED at first
- * creation (Android OS: only name/description are mutable afterwards), so
- * the parameters are settled once — the creation is idempotent
- * (`setNotificationChannelAsync` = "assigning the configuration to a
- * channel of a specified name (creating it if need be)").
- */
-const CHANNEL_IDS = {
-  normal: 'nextdo-normal',
-  important: 'nextdo-important',
-  alarm: 'nextdo-alarm',
-  /** Issue #54: used when the user turns the reminder sound OFF. Separate
-   *  from the three intensity channels because an Android channel's sound
-   *  is immutable once created — silencing must pick a different channel
-   *  (and one without vibration, so "silent" really is silent). */
-  silent: 'nextdo-silent',
-} as const;
+import { NOTIFICATION_CHANNEL_IDS as CHANNEL_IDS } from '../../notification-channels';
 
 const INTENSITY_CHANNEL: Record<
   string,
@@ -69,7 +52,16 @@ const INTENSITY_SOUND: Record<string, string | undefined> = {
 
 let channelsReady = false;
 let responseListener: { remove(): void } | null = null;
-let onOpened: (() => void) | null = null;
+let onOpened: ((route?: string) => void) | null = null;
+
+/** Issue #60: the deep-link route carried in `content.data.route` (focus
+ *  notifications set it; reminder notifications do not, and land on the Now
+ *  tab as before). */
+function readRoute(data: unknown): string | undefined {
+  if (data === null || typeof data !== 'object') return undefined;
+  const route = (data as { route?: unknown }).route;
+  return typeof route === 'string' && route.length > 0 ? route : undefined;
+}
 
 /** Issue #54: whether reminder notifications may make a sound. Read at
  *  schedule time (the channel + `content.sound`) AND by the foreground
@@ -161,32 +153,42 @@ export function createNativeAdapter(): DeliveryAdapter {
   return {
     platform: 'native',
 
-    async init(callback: () => void): Promise<void> {
+    async init(callback: (route?: string) => void): Promise<void> {
       onOpened = callback;
       // Foreground presentation: the default banner + sound, badge off
       // (design §4.1 — without this handler, notifications that fire
-      // while the app is in the foreground are NOT shown).
+      // while the app is in the foreground are NOT shown). A focus
+      // completion (issue #60) stays silent here: the in-app tone already
+      // played, an OS tone as well would double the chime.
       Notifications.setNotificationHandler({
-        handleNotification: async () => ({
-          shouldShowBanner: true,
-          shouldShowList: true,
-          shouldPlaySound: reminderSoundEnabled,
-          shouldSetBadge: false,
-        }),
+        handleNotification: async (notification) => {
+          const data = notification.request.content.data as
+            | { focusNotification?: unknown }
+            | undefined;
+          return {
+            shouldShowBanner: true,
+            shouldShowList: true,
+            shouldPlaySound:
+              data?.focusNotification === true ? false : reminderSoundEnabled,
+            shouldSetBadge: false,
+          };
+        },
       });
       await ensureChannels();
       // Hot start: the tap arrives while JS is running.
       responseListener?.remove();
-      responseListener = Notifications.addNotificationResponseReceivedListener(() => {
-        onOpened?.();
-      });
+      responseListener = Notifications.addNotificationResponseReceivedListener(
+        (response) => {
+          onOpened?.(readRoute(response.notification.request.content.data));
+        },
+      );
       // Cold start (terminated): the tap that LAUNCHED the app is still
       // retrievable exactly once — consume + clear it so a later hot
       // start never re-routes (the official expo-router pattern).
       try {
         const last = await Notifications.getLastNotificationResponseAsync();
         if (last !== null) {
-          onOpened?.();
+          onOpened?.(readRoute(last.notification.request.content.data));
           await Notifications.clearLastNotificationResponseAsync();
         }
       } catch (error) {

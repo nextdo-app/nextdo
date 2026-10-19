@@ -2,14 +2,15 @@
  * The Inbox tab (design §2 — Paper Serenity rework): low-friction capture +
  * list. "清空大脑" — the buffer, not a to-do list.
  *
- * - capture: one TextInput in the capture card, Enter or [记录并澄清] saves
- *   immediately (no classification, no required fields);
+ * - capture is DECOUPLED from clarification (issue #58): Enter or [记录]
+ *   saves the item and leaves it pending; [记录并澄清] (inline card and the
+ *   quick capture modal) keeps the R1 one-tap handoff (记一条问一条);
+ * - the count row names the pending state (待澄清) and [开始澄清] starts the
+ *   batch walk at the oldest item — the wizard's done step then offers
+ *   [澄清下一条], so the backlog can be cleared without coming back here;
  * - quick capture modal: automatically displayed on launch for zero-friction
- *   thought dump (skin only — behavior untouched);
- * - R1 handoff: EVERY capture path (modal + inline card) funnels through
- *   `handoffToClarify` — the modal closes and the Clarify wizard opens for
- *   the new item immediately (记一条问一条); "再记一条" from the wizard
- *   returns here via the one-shot `recapture=1` route param;
+ *   thought dump; its [记录] also leaves the item pending; "再记一条" from
+ *   the wizard returns here via the one-shot `recapture=1` route param;
  * - list: oldest first; a row's title opens the Clarify wizard (R3) and the
  *   row's 处理 → button does the same; the trash button confirms inline
  *   (one tap to arm, one tap to delete);
@@ -160,9 +161,9 @@ export default function InboxScreen() {
   const [showQuickCapture, setShowQuickCapture] = useState(true);
   const insets = useAppInsets();
   const topPadding = Math.max(insets.top, 16);
-  // R1: the SINGLE handoff for both capture paths (modal onCaptured +
-  // inline card) — close the modal (if open) and open the Clarify wizard
-  // for the freshly captured item.
+  // R1 handoff for the [记录并澄清] paths (modal + inline card) — close the
+  // modal (if open) and open the Clarify wizard for the captured item. A
+  // plain [记录] deliberately does NOT call this (issue #58).
   const handoffToClarify = useCallback((item: InboxItem) => {
     setShowQuickCapture(false);
     router.push(`/clarify/${item.id}`);
@@ -178,7 +179,7 @@ export default function InboxScreen() {
     }
   }, [recapture]);
 
-  const capture = async () => {
+  const capture = async (mode: 'save' | 'clarify') => {
     const title = draft.trim();
     if (title === '' || saving) return;
     setSaving(true);
@@ -186,7 +187,8 @@ export default function InboxScreen() {
       const item = await add(title);
       if (item !== null) {
         setDraft('');
-        handoffToClarify(item);
+        // save = just capture (the item stays pending); clarify = R1 handoff.
+        if (mode === 'clarify') handoffToClarify(item);
       }
     } finally {
       setSaving(false);
@@ -194,6 +196,7 @@ export default function InboxScreen() {
   };
 
   const mutationError = captureError ?? trashError;
+  const startClarifyId = data[0]?.id ?? null;
 
   return (
     <View
@@ -216,7 +219,7 @@ export default function InboxScreen() {
           value={draft}
           onChangeText={setDraft}
           placeholder="有什么事情占据着你现在的注意力？"
-          onSubmitEditing={() => void capture()}
+          onSubmitEditing={() => void capture('save')}
           blurOnSubmit={false}
         />
         <View className="flex-row items-center gap-2.5">
@@ -225,8 +228,14 @@ export default function InboxScreen() {
           </Text>
           <Button
             label="记录并澄清"
+            variant="secondary"
+            onPress={() => void capture('clarify')}
+            disabled={draft.trim() === '' || saving}
+          />
+          <Button
+            label="记录"
             variant="primary"
-            onPress={() => void capture()}
+            onPress={() => void capture('save')}
             disabled={draft.trim() === '' || saving}
           />
         </View>
@@ -244,7 +253,17 @@ export default function InboxScreen() {
         <>
           {/* Count row */}
           <View className="mb-3 mt-4 flex-row items-center justify-between">
-            <Tag label="待处理" count={data.length} />
+            <View className="flex-row items-center gap-2">
+              <Tag label="待澄清" count={data.length} />
+              {startClarifyId !== null ? (
+                <Button
+                  label="开始澄清"
+                  variant="secondary"
+                  size="sm"
+                  onPress={() => router.push(`/clarify/${startClarifyId}?batch=1`)}
+                />
+              ) : null}
+            </View>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="查看等待事项"
@@ -303,13 +322,14 @@ export default function InboxScreen() {
         <Ionicons name="add" size={28} color={isDark ? colors.onAccentDark : colors.onAccent} />
       </Pressable>
 
-      {/* On-launch & triggerable quick capture modal (R1: onCaptured hands
-       *  the saved item to the Clarify wizard) */}
+      {/* On-launch & triggerable quick capture modal (#58): [记录] leaves the
+       *  item pending, [记录并澄清] keeps the R1 handoff */}
       <QuickCaptureModal
         visible={showQuickCapture}
         onClose={() => setShowQuickCapture(false)}
         onAdd={add}
-        onCaptured={handoffToClarify}
+        onCaptured={() => setShowQuickCapture(false)}
+        onCapturedAndClarify={handoffToClarify}
         error={captureError}
       />
     </View>
