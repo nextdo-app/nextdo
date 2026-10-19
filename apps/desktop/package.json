@@ -1,6 +1,6 @@
 {
   "name": "@nextdo/desktop",
-  "version": "0.1.9-beta.4",
+  "version": "0.1.9-beta.5",
   "private": true,
   "description": "Nextdo — Tauri v2 desktop shell. A thin native window that loads the @nextdo/mobile web build (expo export --platform web); no React code lives in this workspace.",
   "scripts": {
