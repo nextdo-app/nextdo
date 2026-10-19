@@ -3,19 +3,26 @@
  * Provides offline caching, App Shell fallback, and Web Push notifications.
  */
 
-const CACHE_NAME = 'nextdo-pwa-v1';
+// Bump this whenever cached static assets change so `activate` drops the old
+// cache. Icons also carry ICON_VERSION below, which is what actually defeats
+// the browser's long-lived favicon cache.
+const CACHE_NAME = 'nextdo-pwa-v2';
+
+// Kept in sync with ICON_VERSION in scripts/post-export-web.mjs and the `src`
+// values in public/manifest.json. Bump all three together with a new icon.
+const ICON_VERSION = '2';
 
 // Essential assets to cache immediately upon install
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/favicon.ico',
-  '/apple-touch-icon.png',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-  '/icons/icon-512-maskable.png',
-  '/icons/apple-touch-icon.png'
+  `/favicon.ico?v=${ICON_VERSION}`,
+  `/apple-touch-icon.png?v=${ICON_VERSION}`,
+  `/icons/icon-192.png?v=${ICON_VERSION}`,
+  `/icons/icon-512.png?v=${ICON_VERSION}`,
+  `/icons/icon-512-maskable.png?v=${ICON_VERSION}`,
+  `/icons/apple-touch-icon.png?v=${ICON_VERSION}`
 ];
 
 self.addEventListener('install', (event) => {

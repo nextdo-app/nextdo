@@ -9,12 +9,17 @@ const mobileDir = path.resolve(__dirname, '..');
 const distDir = path.resolve(mobileDir, 'dist');
 const publicDir = path.resolve(mobileDir, 'public');
 
+// Must match ICON_VERSION in public/sw.js and the `?v=` values in
+// public/manifest.json. Bump all three when the icon artwork changes so the
+// browser's long-lived favicon cache is bypassed by a new URL.
+const ICON_VERSION = '2';
+
 console.log('[post-export-web] Post-processing Expo Web output for PWA...');
 
 // 1. Copy all assets from public/ to dist/
 if (fs.existsSync(publicDir)) {
   fs.cpSync(publicDir, distDir, { recursive: true });
-  console.log('[post-export-web] Copied public/ assets (manifest, sw.js, icons) into dist/');
+  console.log('[post-export-web] Copied public/ assets (manifest, sw.js, _headers, icons) into dist/');
 }
 
 // 2. Patch dist/index.html with PWA meta tags & Service Worker registration
@@ -35,6 +40,15 @@ if (fs.existsSync(indexPath)) {
     );
   }
 
+  // Version the icon URLs. Browsers cache favicons for months on an exact URL
+  // and a normal reload does not invalidate that entry, so the icon links must
+  // carry a changing query string to be refetched after an artwork update.
+  html = html.replace(/href="\/favicon\.ico"/g, `href="/favicon.ico?v=${ICON_VERSION}"`);
+  html = html.replace(
+    /href="(\/icons\/[a-z0-9-]+\.png)"/g,
+    (_match, href) => `href="${href}?v=${ICON_VERSION}"`,
+  );
+
   // Inject PWA and iOS tags before </head>
   const pwaTags = `
     <!-- Nextdo PWA & iOS Safari Configuration -->
@@ -42,9 +56,9 @@ if (fs.existsSync(indexPath)) {
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Nextdo" />
-    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=${ICON_VERSION}" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png?v=${ICON_VERSION}" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png?v=${ICON_VERSION}" />
     <meta name="theme-color" content="#0f202b" media="(prefers-color-scheme: dark)" />
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
     <meta name="mobile-web-app-capable" content="yes" />

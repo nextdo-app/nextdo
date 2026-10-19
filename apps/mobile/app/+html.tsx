@@ -21,8 +21,11 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Nextdo" />
-        <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-        <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+        {/* Icon URLs carry ?v= so a changed icon bypasses the browser favicon
+            cache; keep in sync with ICON_VERSION in public/sw.js and
+            scripts/post-export-web.mjs. */}
+        <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=2" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png?v=2" />
 
         {/* Browser & OS Theme Color */}
         <meta name="theme-color" content="#0f202b" media="(prefers-color-scheme: dark)" />

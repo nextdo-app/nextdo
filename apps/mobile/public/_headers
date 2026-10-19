@@ -1,0 +1,23 @@
+# Cloudflare Pages response headers (copied into dist/ by post-export-web.mjs).
+#
+# Icons are versioned with ?v= in index.html and manifest.json, so a changed
+# icon always arrives under a new URL. These directives only need to stop the
+# browser from pinning a stale icon for months on the unversioned path.
+#
+# sw.js must never be cached: a byte change is what tells the browser a new
+# service worker is available.
+
+/favicon.ico
+  Cache-Control: public, max-age=600, must-revalidate
+
+/apple-touch-icon.png
+  Cache-Control: public, max-age=600, must-revalidate
+
+/icons/*
+  Cache-Control: public, max-age=600, must-revalidate
+
+/manifest.json
+  Cache-Control: public, max-age=600, must-revalidate
+
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
