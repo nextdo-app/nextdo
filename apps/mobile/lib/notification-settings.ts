@@ -28,6 +28,16 @@ import { isReactNativeRuntime } from '@nextdo/db';
 
 export const NOTIFICATION_SETTINGS_KEY = 'nextdo.settings.notifications';
 
+/** The in-app reminder tones (issue #54) — the asset basenames live in
+ *  `lib/notification-sound.ts`; the stored value is just the choice. */
+export type NotificationSoundTone = 'gentle' | 'important' | 'alarm';
+
+export const NOTIFICATION_SOUND_TONES: readonly NotificationSoundTone[] = [
+  'gentle',
+  'important',
+  'alarm',
+];
+
 export interface NotificationSettings {
   /**
    * The in-app master switch (R2). OFF suppresses delivery entirely —
@@ -36,10 +46,36 @@ export interface NotificationSettings {
    * the switch keeps the behavior it had before issue #24 shipped.
    */
   masterEnabled: boolean;
+  /**
+   * Issue #54: the focus-timer completion chime (independent of the reminder
+   * switch — a user may want a quiet focus session without losing reminders).
+   * Defaults to ON: reaching zero is the moment the user must look at the
+   * screen. Plays in-app on every platform.
+   */
+  focusSoundEnabled: boolean;
+  /**
+   * Issue #54: the reminder sound switch. Native: whether the OS-delivered
+   * notification plays a sound (silent channel / `sound: false`); Tauri:
+   * whether the in-app tone plays with the desktop notification. Defaults ON.
+   */
+  reminderSoundEnabled: boolean;
+  /** Issue #54: the in-app tone (focus completion + desktop reminder). Played
+   *  at unity gain — the device volume is the only level control. */
+  soundTone: NotificationSoundTone;
+  /**
+   * Issue #54: sync scheduled reminders with explicit time windows into the
+   * system calendar (with a calendar alarm at the event start). Defaults OFF
+   * — it needs a calendar permission prompt, so it is opt-in.
+   */
+  calendarEnabled: boolean;
 }
 
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   masterEnabled: true,
+  focusSoundEnabled: true,
+  reminderSoundEnabled: true,
+  soundTone: 'gentle',
+  calendarEnabled: false,
 };
 
 interface KeyValue {
@@ -123,17 +159,33 @@ function getBackend(): KeyValue {
   return backend;
 }
 
+function pickEnum<T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+  fallback: T,
+): T {
+  return typeof value === 'string' && (allowed as readonly string[]).includes(value)
+    ? (value as T)
+    : fallback;
+}
+
+function pickBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
 /** Normalize a stored value; anything unreadable falls back to the defaults. */
 export function parseNotificationSettings(raw: string | null): NotificationSettings {
   if (raw === null) return DEFAULT_NOTIFICATION_SETTINGS;
   try {
     const parsed = JSON.parse(raw) as Partial<NotificationSettings>;
     if (typeof parsed !== 'object' || parsed === null) return DEFAULT_NOTIFICATION_SETTINGS;
+    const defaults = DEFAULT_NOTIFICATION_SETTINGS;
     return {
-      masterEnabled:
-        typeof parsed.masterEnabled === 'boolean'
-          ? parsed.masterEnabled
-          : DEFAULT_NOTIFICATION_SETTINGS.masterEnabled,
+      masterEnabled: pickBoolean(parsed.masterEnabled, defaults.masterEnabled),
+      focusSoundEnabled: pickBoolean(parsed.focusSoundEnabled, defaults.focusSoundEnabled),
+      reminderSoundEnabled: pickBoolean(parsed.reminderSoundEnabled, defaults.reminderSoundEnabled),
+      soundTone: pickEnum(parsed.soundTone, NOTIFICATION_SOUND_TONES, defaults.soundTone),
+      calendarEnabled: pickBoolean(parsed.calendarEnabled, defaults.calendarEnabled),
     };
   } catch {
     return DEFAULT_NOTIFICATION_SETTINGS;
@@ -181,6 +233,10 @@ export async function saveNotificationSettings(
   const current = cachedSettings ?? (await loadNotificationSettings());
   const next: NotificationSettings = {
     masterEnabled: patch.masterEnabled ?? current.masterEnabled,
+    focusSoundEnabled: patch.focusSoundEnabled ?? current.focusSoundEnabled,
+    reminderSoundEnabled: patch.reminderSoundEnabled ?? current.reminderSoundEnabled,
+    soundTone: patch.soundTone ?? current.soundTone,
+    calendarEnabled: patch.calendarEnabled ?? current.calendarEnabled,
   };
   // Write FIRST, then adopt: a failed write must not leave the cache claiming
   // a preference the device never stored — the switch would read OFF while

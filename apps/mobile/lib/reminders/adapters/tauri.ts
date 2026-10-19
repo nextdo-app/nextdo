@@ -37,9 +37,10 @@
  */
 import { isPermissionGranted } from '@tauri-apps/plugin-notification';
 import { logger } from '@nextdo/core';
+import { playReminderSound } from '../../notification-sound';
 import { postDebugLog } from '../debug-log';
 import type { ReconcileOutput } from '../reminder-scheduler';
-import type { DeliveryAdapter, ReminderPermissionState } from './types';
+import type { DeliveryAdapter, ReminderPermissionState, ReminderSoundPreferences } from './types';
 import { KIND_TITLES } from './types';
 
 /**
@@ -66,6 +67,14 @@ const FAILURE_LOG_GAP_MS = 60_000;
 const firedIds = new Set<string>();
 const lastFailureLoggedAt = new Map<string, number>();
 let sessionStart: Date | null = null;
+
+/** Issue #54: desktop delivery is in-session, so the reminder tone is played
+ *  by the app itself. There is no OS scheduling here to mute, so the switch
+ *  only gates that playback. Defaults match `DEFAULT_NOTIFICATION_SETTINGS`. */
+let soundPreferences: ReminderSoundPreferences = {
+  enabled: true,
+  tone: 'gentle',
+};
 
 /**
  * The Tauri v2 IPC bridge, injected into the webview as a window global
@@ -145,6 +154,12 @@ export function createTauriAdapter(): DeliveryAdapter {
           // window, instead of being silently lost for the session.
           rememberFired([item.row.id]);
           lastFailureLoggedAt.delete(item.row.id);
+          // Issue #54: audible alert alongside the desktop notification.
+          // Fire-and-forget — playback failure must never mark the send as
+          // failed (the notification itself was delivered).
+          if (soundPreferences.enabled) {
+            void playReminderSound();
+          }
           postDebugLog({ kind: 'send', ok: true, reminderId: item.row.id, title: item.title });
         } catch (error) {
           const nowMs = Date.now();
@@ -197,6 +212,10 @@ export function createTauriAdapter(): DeliveryAdapter {
 
     tauriContext(): { firedIds: ReadonlySet<string>; sessionStart: Date } {
       return { firedIds, sessionStart: sessionStart ?? new Date() };
+    },
+
+    setSoundPreferences(preferences: ReminderSoundPreferences): void {
+      soundPreferences = preferences;
     },
 
     dispose(): void {

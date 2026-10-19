@@ -228,15 +228,20 @@ describe('Focus screen', () => {
     expect(call.pausedSec).toBeGreaterThanOrEqual(0);
   });
 
-  it('a time-up session shows the banner; 继续 dismisses it (session stays active)', async () => {
+  it('a time-up session shows the notice; 继续专注 dismisses it (session stays active)', async () => {
     // 26 minutes elapsed on a 25-minute preset.
     seedActiveSession({ startedAt: minutesAgo(26) });
     renderRouter('app', { initialUrl: '/focus/f-1?kind=next' });
 
     await waitFor(() => expect(screen.getByText('时间到')).toBeTruthy());
-    // The banner offers 结束专注 / 继续 (the controls row is replaced).
+    // Issue 56: the notice is an alert INSIDE the focus card (no nested
+    // Card), and the dimmed clock names the actual focus duration.
+    expect(screen.getByLabelText('专注时间到')).toBeTruthy();
+    expect(screen.getByText('本次专注满 25 分钟。结束专注，或继续再专注一会儿。')).toBeTruthy();
+    expect(screen.getByText('本次专注 26 分钟')).toBeTruthy();
+    // The notice offers 结束专注 / 继续专注 (the controls row is replaced).
     expect(screen.queryByText('暂停')).toBeNull();
-    fireEvent.press(screen.getByText('继续'));
+    fireEvent.press(screen.getByText('继续专注'));
     expect(screen.queryByText('时间到')).toBeNull();
     expect(screen.getByText('暂停')).toBeTruthy();
     expect(mockState.sessions[0]?.status).toBe('active');

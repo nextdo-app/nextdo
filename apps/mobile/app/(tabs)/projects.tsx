@@ -292,7 +292,7 @@ export default function ProjectsScreen() {
       style={{ paddingTop: topPadding }}
       className="flex-1 w-full bg-canvas px-4 pb-4 dark:bg-canvas-dark"
     >
-      <View className="flex-1 w-full">
+      <View className="flex-1 w-full max-w-4xl mx-auto">
       {/* Header block (design §4.2) */}
       <Text className="font-display text-3xl font-bold tracking-tight text-ink dark:text-ink-dark">
         项目

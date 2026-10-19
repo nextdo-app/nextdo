@@ -30,7 +30,7 @@ import { localDayAt, tomorrowAt } from '@/lib/review-dates';
 import type { DailyReviewAnswers } from '@nextdo/core';
 
 const INPUT_CLASS =
-  'flex-1 rounded-md border border-border bg-surface p-2 text-sm text-ink placeholder:text-muted dark:border-border-dark dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark';
+  'flex-1 rounded-xl border border-border/80 bg-surface px-3.5 py-2 text-sm text-ink placeholder:text-muted shadow-2xs focus:border-accent dark:border-border-dark dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark';
 
 /** The per-row answer (single choice — pressing one clears the others). */
 type RowChoice =

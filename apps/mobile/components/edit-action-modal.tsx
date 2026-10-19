@@ -15,7 +15,7 @@ import {
   View,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Button, ValueChips, cn } from '@nextdo/ui';
+import { Button, ValueChips, cn, colors } from '@nextdo/ui';
 import {
   type NextAction,
   type Value,
@@ -25,6 +25,7 @@ import { PickerField } from '@/components/picker-field';
 import { useAppClock } from '@/hooks/use-app-clock';
 import { useUpdateNextAction } from '@/hooks/use-update-next-action';
 import { useAppInsets } from '@/lib/use-app-insets';
+import { useAppTheme } from '@/lib/theme';
 import { localDateTimeKey, localDateTimeToIso } from '@/lib/clarify-flow';
 import { formatDateTimeValue } from '@/lib/datetime-field';
 import { useActionReminderField } from '@/hooks/use-action-reminder';
@@ -40,7 +41,7 @@ export interface EditActionModalProps {
 const EST_CHIPS = [5, 10, 20, 30, 60, 120] as const;
 
 const INPUT_CLASS =
-  'rounded-md border border-border/80 bg-surface p-3 text-base text-ink placeholder:text-muted focus:border-accent dark:border-border-dark dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark';
+  'rounded-xl border border-border/80 bg-surface px-3.5 py-3 text-base text-ink placeholder:text-muted shadow-2xs focus:border-accent dark:border-border-dark dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark';
 
 function EstChip({
   label,
@@ -58,7 +59,7 @@ function EstChip({
       accessibilityState={{ selected: active }}
       onPress={onPress}
       className={cn(
-        'h-8 w-8 items-center justify-center rounded-full border',
+        'h-8 min-w-[36px] px-2.5 items-center justify-center rounded-full border',
         active
           ? 'border-accent bg-accent dark:border-accent-dark dark:bg-accent-dark'
           : 'border-border bg-surface dark:border-border-dark dark:bg-surface-dark',
@@ -83,6 +84,7 @@ export const EditActionModal = memo(function EditActionModal({
   onSaved,
 }: EditActionModalProps) {
   const now = useAppClock();
+  const { isDark } = useAppTheme();
   const { update, error } = useUpdateNextAction();
 
   const [title, setTitle] = useState('');
@@ -194,7 +196,7 @@ export const EditActionModal = memo(function EditActionModal({
               onPress={onClose}
               className="h-7 w-7 items-center justify-center rounded-full bg-surface-container active:scale-95 dark:bg-surface-container-dark"
             >
-              <Ionicons name="close" size={16} color="#716b64" />
+              <Ionicons name="close" size={16} color={isDark ? colors.mutedDark : colors.muted} />
             </Pressable>
           </View>
 

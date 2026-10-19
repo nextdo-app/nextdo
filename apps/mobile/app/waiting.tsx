@@ -17,7 +17,7 @@ import { goBack } from '@/lib/go-back';
 import type { WaitingForItem } from '@nextdo/core';
 
 const INPUT_CLASS =
-  'rounded-md border border-border/80 bg-surface p-3 text-base text-ink placeholder:text-muted focus:border-accent dark:border-border-dark dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark';
+  'rounded-xl border border-border/80 bg-surface px-3.5 py-3 text-base text-ink placeholder:text-muted shadow-2xs focus:border-accent dark:border-border-dark dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark';
 
 /** One waiting item row with delegation details and finish/trash action. */
 function WaitingRow({
@@ -143,7 +143,7 @@ export default function WaitingScreen() {
       contentContainerStyle={{ paddingTop: topPadding, paddingHorizontal: 16, paddingBottom: 40 }}
       keyboardShouldPersistTaps="handled"
     >
-      <View className="w-full max-w-2xl mx-auto flex-1">
+      <View className="w-full max-w-4xl mx-auto flex-1">
       <View className="mb-2 flex-row items-center justify-between">
         <Button label="← 收件箱" variant="ghost" onPress={() => goBack('/(tabs)/inbox')} />
       </View>

@@ -39,10 +39,11 @@ import { useMemo, useReducer, useState, type Dispatch, type ReactNode } from 're
 import { router } from 'expo-router';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Button, Card, ProgressBar, Tag, cn } from '@nextdo/ui';
+import { Button, Card, ProgressBar, Tag, cn, colors } from '@nextdo/ui';
 import { DateTimePicker } from '@/components/datetime-picker';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { goBack } from '@/lib/go-back';
+import { useAppTheme } from '@/lib/theme';
 import {
   applyClarify,
   reclarifyAction,
@@ -83,7 +84,7 @@ import {
 } from '@/lib/clarify-flow';
 
 const INPUT_CLASS =
-  'rounded-md border border-border bg-surface p-3 text-base text-ink placeholder:text-muted dark:border-border-dark dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark';
+  'rounded-xl border border-border/80 bg-surface px-3.5 py-3 text-base text-ink placeholder:text-muted shadow-2xs focus:border-accent dark:border-border-dark dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark';
 
 const EST_CHIPS = [5, 10, 20, 30, 60, 120];
 const VALUE_CHIPS: Value[] = [1, 2, 3, 4, 5];
@@ -407,7 +408,7 @@ export function WizardBody({
        * on a 800px-tall desktop window, or the keyboard on phone) — the
        * whole body scrolls, same pattern as the review screens. */}
       <ScrollView className="flex-1" keyboardShouldPersistTaps="handled">
-      <View className="w-full">
+      <View className="w-full max-w-2xl mx-auto">
       {/* 1. header row: unified back button + step navigation on left, status tag on right */}
       <View className="mb-3.5 flex-row items-center justify-between">
         <View className="flex-row items-center gap-2">
@@ -551,6 +552,7 @@ function DecisionSummaryCard({
   mode: WizardMode;
   answered: AnsweredQuestion[];
 }) {
+  const { isDark } = useAppTheme();
   const [isExpanded, setIsExpanded] = useState(false);
   const chain = mode === 'clarify' ? CLARIFY_CHAIN : RECLARIFY_CHAIN;
   const answeredCount = answered.length;
@@ -582,7 +584,7 @@ function DecisionSummaryCard({
           <Ionicons
             name={isExpanded ? 'chevron-up' : 'chevron-down'}
             size={14}
-            color="#9b948a"
+            color={isDark ? colors.mutedDark : colors.muted}
           />
         </View>
       </Pressable>

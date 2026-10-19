@@ -1601,3 +1601,125 @@ NextAction / CalendarAction / HabitDay 并支持逐条恢复为未完成；顺�
 
 - 推送 feat/issues-50-51 并开 PR，CI 通过后合并
 - 建发布分支 bump 六处版本号到测试版 0.1.8-beta.1，合并后打 tag 触发 release 流水线并核验资产
+
+
+## Session 51: UI 体验与交互全栈优化
+<!-- trellis-session: v=2 fp=e46fe8a8ff622844 -->
+
+**Date**: 2026-10-18
+**Task**: UI 体验与交互全栈优化
+**Branch**: `release/0.1.8-beta.1`
+
+### Summary
+
+全面审查并优化 Nextdo UI 设计系统与核心流体验：设计令牌纯度、圆角几何规范、现在Tab情境排版、专注Timer沉浸感、桌面宽屏自适应与无障碍微字号容错
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d3df034` | feat(mobile,ui): 全面优化 UI 设计令牌、核心流排版、专注计时器与大屏响应式 |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 52: 深色模式跟随系统主题、桌面端关闭最小化与移动端主动申请通知权限
+<!-- trellis-session: v=2 fp=70817368e75e41aa -->
+
+**Date**: 2026-10-18
+**Task**: 深色模式跟随系统主题、桌面端关闭最小化与移动端主动申请通知权限
+**Branch**: `release/0.1.8-beta.1`
+
+### Summary
+
+修复外观主题跟随系统在深色模式下半浅半黑问题；桌面端关闭改为隐藏到托盘/Dock而非立即退出；移动端主动向手机系统申请通知权限
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b3605fa` | fix(mobile,desktop): 修复跟随系统深色主题、桌面端关闭最小化与移动端主动申请通知权限 |
+
+### Status
+
+[OK] **Completed**
+
+## Session 53: Android 应用内安装无响应（缺失 REQUEST_INSTALL_PACKAGES）
+
+**Date**: 2026-10-18
+**Task**: Android 应用内安装无响应（缺失 REQUEST_INSTALL_PACKAGES）
+**Branch**: `release/0.1.8-beta.1`
+
+### Summary
+
+发布 APK 缺失 REQUEST_INSTALL_PACKAGES / SCHEDULE_EXACT_ALARM / USE_EXACT_ALARM，点「立即安装」被系统静默忽略；权限从无效的 expo-build-properties.android.manifestPermissions 迁到 expo.android.permissions，补「安装未知应用」授权入口与 Android 通知设置深链，新增配置回归测试，发布 0.1.9-beta.1。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `055b006` | fix(mobile): 修复 Android 应用内安装无响应（补齐 REQUEST_INSTALL_PACKAGES） |
+| `acc7f43` | chore(task): archive 10-18-android-install-permission |
+
+### Status
+
+[OK] **Completed**
+
+## Session 54: 桌面端 Reopen 事件平台编译错误
+
+**Date**: 2026-10-18
+**Task**: 桌面端 Reopen 事件平台编译错误
+**Branch**: `release/0.1.8-beta.1`
+
+### Summary
+
+v0.1.9-beta.1 发布构建中 Windows / Linux 因 RunEvent::Reopen 仅存在于 macOS 而报 E0599；用 cfg(target_os = "macos") 隔离，cargo check 通过后重新发布 0.1.9-beta.2。
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 55: issues #56 / #54：提示音与系统日历同步、「时间到」卡片改版，发布 0.1.9-beta.3
+<!-- trellis-session: v=2 fp=ae07ad0c62a2a992 -->
+
+**Date**: 2026-10-19
+**Task**: issues #56 / #54：提示音与系统日历同步、「时间到」卡片改版，发布 0.1.9-beta.3
+**Branch**: `release/0.1.8-beta.1`
+
+### Summary
+
+完成 #56 时间到提示卡改版与 #54 提示音（点击试听、音量跟随系统）+ 系统日历同步，门禁与浏览器实测通过，版本 bump 至 0.1.9-beta.3 并归档任务。
+
+### Main Changes
+
+- #54 提示音：专注结束 / 提醒触发播放提示音，设置页可独立开关；音色三选（轻柔 / 提醒 / 闹铃），点击即试听并保存；播放保持 unity gain，音量完全跟随系统音量，移除应用内音量档位。
+- #54 系统日历：带起止时间的行动写入系统日历并由系统提醒，行动变更时幂等对账更新 / 删除事件；未授权给出去系统设置引导；Web / 桌面降级为应用内提醒并给出说明。
+- #56 专注页「时间到」改为单层提示区块（左侧 4px warning 色条、纵向全宽按钮、清晰标题层级），消除 Card 嵌套 Card。
+- 版本号 6 处同步 bump 到 0.1.9-beta.3；任务目录归档到 .trellis/tasks/archive/2026-10/。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `af16ee4` | feat(mobile): 提示音（点击试听、音量跟随系统）、系统日历同步与「时间到」卡片改版 (#54, #56) |
+| `154dbd7` | chore(release): 0.1.9-beta.3 |
+| `7875c70` | chore(task): archive 10-18-issues-54-56 |
+
+### Testing
+
+- [OK] pnpm verify:web 全绿（lint → typecheck → test → build:web，静态服务 :4180 起服务）。
+- [OK] 浏览器实测 .verify/issues-54-56/capture.mjs：6 步 / 8 条断言全通过（含点击音色触发 WAV 加载、localStorage 无 soundVolume 字段、「时间到」单层区块几何值）。
+- [OK] pnpm typecheck 全包通过；settings-screen jest 70/70。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 推送 release/0.1.8-beta.1 并用 gh 创建 PR（正文 Closes #56 #54）。
+- 打 tag v0.1.9-beta.3 并推送以触发 release 工作流。
+- 用 .verify/issues-50-51/evidence.md 的复核说明关闭 #50 / #51。

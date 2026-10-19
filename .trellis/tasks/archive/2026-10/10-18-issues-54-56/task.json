@@ -1,0 +1,29 @@
+{
+  "id": "issues-54-56",
+  "name": "issues-54-56",
+  "title": "解决 issues #56 #54 并复核关闭 #50 #51（专注时间到卡片 UI、提示音与系统日历提醒）",
+  "description": "统筹解决 #56（专注页「时间到」提示卡视觉样式）与 #54（专注结束与提醒提示音、系统日历提醒），复核 #50/#51 修复已在发布分支，统一门禁、浏览器实测、发版并关闭 issue。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "printsdfu",
+  "assignee": "printsdfu",
+  "createdAt": "2026-10-18",
+  "completedAt": "2026-10-19",
+  "branch": "release/0.1.8-beta.1",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-18-issue-56-focus-timeup-ui",
+    "10-18-issue-54-sound-calendar"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

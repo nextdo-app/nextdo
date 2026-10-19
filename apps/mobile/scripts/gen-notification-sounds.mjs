@@ -1,8 +1,9 @@
 /**
- * Notification sound assets (task 09-30, design §2.3) — regenerates the two
- * custom reminder tones as 16-bit mono PCM WAV (44.1 kHz, far under Apple's
- * 30 s cap):
+ * Notification sound assets (task 09-30, design §2.3; issue #54 adds the
+ * user-selectable 'gentle' tone) — regenerates the three custom tones as
+ * 16-bit mono PCM WAV (44.1 kHz, far under Apple's 30 s cap):
  *
+ *   assets/sounds/gentle.wav    — the soft default chime (660 → 880 Hz);
  *   assets/sounds/important.wav — a short two-tone chirp (880 → 1320 Hz);
  *   assets/sounds/alarm.wav     — a triple beep (1046 Hz × 3).
  *
@@ -46,7 +47,13 @@ function sequence(parts) {
   return out;
 }
 
-/** The two tones — deliberately different: a rising chirp vs a repeated beep. */
+/** Issue #54 — the default tone: lower, slower, softer than the other two. */
+const gentle = sequence([
+  { samples: tone(660, 180), gapBefore: 100 },
+  { samples: tone(880, 240), gapBefore: 70 },
+]);
+
+/** The two reminder tones — deliberately different: a rising chirp vs a repeated beep. */
 const important = sequence([
   { samples: tone(880, 160), gapBefore: 120 },
   { samples: tone(1320, 200), gapBefore: 60 },
@@ -83,9 +90,11 @@ function toWav(samples) {
 
 const outDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'sounds');
 mkdirSync(outDir, { recursive: true });
+writeFileSync(join(outDir, 'gentle.wav'), toWav(gentle));
 writeFileSync(join(outDir, 'important.wav'), toWav(important));
 writeFileSync(join(outDir, 'alarm.wav'), toWav(alarm));
 console.log(
-  `wrote important.wav (${((important.length / SAMPLE_RATE) * 1000).toFixed(0)} ms) and ` +
+  `wrote gentle.wav (${((gentle.length / SAMPLE_RATE) * 1000).toFixed(0)} ms), ` +
+    `important.wav (${((important.length / SAMPLE_RATE) * 1000).toFixed(0)} ms) and ` +
     `alarm.wav (${((alarm.length / SAMPLE_RATE) * 1000).toFixed(0)} ms)`,
 );

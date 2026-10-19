@@ -18,9 +18,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Button } from '@nextdo/ui';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { Button, colors } from '@nextdo/ui';
 import { errorMessage } from '@/lib/error-messages';
 import { useAppInsets } from '@/lib/use-app-insets';
+import { useAppTheme } from '@/lib/theme';
 import type { InboxItem } from '@nextdo/core';
 
 export interface QuickCaptureModalProps {
@@ -42,6 +44,7 @@ export function QuickCaptureModal({
 }: QuickCaptureModalProps) {
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
+  const { isDark } = useAppTheme();
   const insets = useAppInsets();
   const bottomPadding = Math.max(insets.bottom, 16);
 
@@ -77,7 +80,7 @@ export function QuickCaptureModal({
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ pointerEvents: 'auto' }}
-        className="flex-1 justify-end bg-black/40 md:items-center md:justify-center md:px-4"
+        className="flex-1 justify-end bg-black/30 dark:bg-black/50 md:items-center md:justify-center md:px-4"
       >
         {/* Backdrop dismiss */}
         <Pressable
@@ -93,17 +96,25 @@ export function QuickCaptureModal({
           className="relative z-10 w-full rounded-t-3xl border-t border-border/80 bg-surface p-5 pt-3 shadow-2xl dark:border-border-dark dark:bg-surface-dark md:max-w-md md:rounded-2xl md:border md:p-6"
         >
           {/* Mobile top drag handle indicator */}
-          <View className="mx-auto mb-3 h-1 w-10 rounded-full bg-border dark:bg-border-dark md:hidden" />
+          <View className="mx-auto mb-3.5 h-1.5 w-12 rounded-full bg-border/80 dark:bg-border-dark md:hidden" />
 
           <View className="mb-3.5 flex-row items-center justify-between">
             <View>
-              <Text className="text-lg font-bold tracking-tight text-ink dark:text-ink-dark md:text-xl">
+              <Text className="font-display text-lg font-bold tracking-tight text-ink dark:text-ink-dark md:text-xl">
                 有什么想记下的？
               </Text>
-              <Text className="mt-0.5 text-xs text-muted dark:text-muted-dark">
+              <Text className="mt-0.5 font-sans text-xs text-muted dark:text-muted-dark">
                 清空大脑：记录想法、待办或灵感
               </Text>
             </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="关闭速记弹窗"
+              onPress={handleClose}
+              className="h-7 w-7 items-center justify-center rounded-full bg-surface-container/60 active:scale-95 dark:bg-surface-container-dark/60"
+            >
+              <Ionicons name="close" size={16} color={isDark ? colors.mutedDark : colors.muted} />
+            </Pressable>
           </View>
 
           <TextInput

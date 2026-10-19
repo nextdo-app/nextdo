@@ -384,8 +384,8 @@ const ActionRow = memo(function ActionRow({
                 )}
               </View>
             </View>
-            <View className="flex-row justify-end gap-1.5 pt-0.5 border-t border-border/40 dark:border-border-dark/40">
-              <Button size="sm" label="完成" variant="ghost" onPress={() => onComplete(action.kind, action.id)} />
+            <View className="flex-row items-center justify-end gap-1.5 pt-1.5 border-t border-border/40 dark:border-border-dark/40">
+              <Button size="sm" label="完成" variant="tinted" onPress={() => onComplete(action.kind, action.id)} />
               <Button size="sm" label="稍后" variant="ghost" onPress={() => onSnooze(action.kind, action.id)} />
               {action.kind === 'next' ? (
                 <Button size="sm" label="编辑" variant="ghost" onPress={() => onEdit(action as NextCandidate)} />
@@ -750,9 +750,12 @@ export default function NowScreen() {
         contentContainerStyle={{ paddingTop: topPadding, paddingHorizontal: 16, paddingBottom: 32 }}
         keyboardShouldPersistTaps="handled"
       >
-        <View className="w-full flex-1">
+        <View className="w-full max-w-4xl mx-auto flex-1">
         {/* Top Header */}
         <TopHeader />
+
+        {/* Filter and Context Card — Primary Engine Input */}
+        <FilterContextCard settings={settings} update={update} />
 
         {mutationError !== null ? (
           <Text className="mt-2 font-sans text-sm text-danger">{errorMessage(mutationError)}</Text>
@@ -765,14 +768,16 @@ export default function NowScreen() {
               <Text className="mt-1 font-sans text-xs text-muted">{errorMessage(error)}</Text>
             </Card>
           ) : data === null ? (
-            <Card className="items-center p-6 text-center">
-              <Text className="font-sans text-sm font-medium text-muted">加载中…</Text>
+            <Card className="items-center gap-3 p-6 text-center">
+              <View className="flex-row items-center gap-2">
+                <View className="h-4 w-16 rounded-full bg-surface-container dark:bg-surface-container-dark" />
+                <View className="h-4 w-12 rounded-full bg-surface-container/60 dark:bg-surface-container-dark/60" />
+              </View>
+              <View className="h-6 w-3/4 rounded-lg bg-surface-container dark:bg-surface-container-dark" />
+              <Text className="font-sans text-xs font-medium text-muted dark:text-muted-dark">加载中…</Text>
             </Card>
           ) : data.poolEmpty ? (
-            <>
-              <EmptyExecutionPool />
-              <FilterContextCard settings={settings} update={update} />
-            </>
+            <EmptyExecutionPool />
           ) : (
             <>
               {displayed !== null &&
@@ -921,9 +926,6 @@ export default function NowScreen() {
                   ) : null}
                 </Card>
               )}
-
-              {/* Filter and Context Card — contextual fine-tuning after hero card */}
-              <FilterContextCard settings={settings} update={update} />
 
               {/* Stats row — pool overview */}
               <View className="flex-row items-center rounded-2xl border border-border/60 bg-surface/70 px-2 py-1.5 shadow-2xs backdrop-blur-sm dark:border-border-dark/60 dark:bg-surface-dark/70">

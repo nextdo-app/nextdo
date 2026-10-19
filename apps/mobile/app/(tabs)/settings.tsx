@@ -42,7 +42,7 @@
  * All auth work goes through the `useCloudSync` UI hook (the packages/db
  * boundary); this screen owns only the form's transient state.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ComponentProps } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
@@ -53,6 +53,9 @@ import { Button, Card, cn, colors } from '@nextdo/ui';
 import { useCloudSync } from '@/hooks/use-cloud-sync';
 import { useSyncStatus } from '@/hooks/use-sync-status';
 import { useNotificationSettings } from '@/hooks/use-notification-settings';
+import { useCalendarPermission } from '@/hooks/use-calendar-permission';
+import type { NotificationSoundTone } from '@/lib/notification-settings';
+import { playNotificationTone } from '@/lib/notification-sound';
 import { useReminderPermission } from '@/hooks/use-reminder-permission';
 import type { ReminderPermissionState } from '@/lib/reminders/adapters';
 import { useAppClock } from '@/hooks/use-app-clock';
@@ -120,6 +123,22 @@ function isIosWebSafari(): boolean {
   return /iPad|iPhone|iPod/.test(ua) && host.window?.navigator?.standalone !== true;
 }
 
+type IoniconsName = ComponentProps<typeof Ionicons>['name'];
+
+const SOUND_TONE_LABELS: Record<NotificationSoundTone, string> = {
+  gentle: '轻柔',
+  important: '提醒',
+  alarm: '闹铃',
+};
+
+const SOUND_TONE_ICONS: Record<NotificationSoundTone, IoniconsName> = {
+  gentle: 'leaf-outline',
+  important: 'notifications-outline',
+  alarm: 'alarm-outline',
+};
+
+const SOUND_TONES = Object.keys(SOUND_TONE_LABELS) as NotificationSoundTone[];
+
 const THEME_OPTIONS: Array<{
   value: ThemePreference;
   label: string;
@@ -138,9 +157,10 @@ function SectionHeader({
   title: string;
   icon: keyof typeof Ionicons.glyphMap;
 }) {
+  const { isDark } = useAppTheme();
   return (
     <View className="flex-row items-center gap-1.5 mt-7 mb-2 px-1">
-      <Ionicons name={icon} size={14} color="#8a847c" />
+      <Ionicons name={icon} size={14} color={isDark ? colors.mutedDark : colors.muted} />
       <Text className="font-sans text-xs font-semibold text-muted dark:text-muted-dark">
         {title}
       </Text>
@@ -317,32 +337,40 @@ export function describeNotificationState(
     default:
       return {
         title: '等待系统授权',
-        detail: '首次真正需要提醒时，Nextdo 会请求通知权限。',
+        detail:
+          permission.platform === 'native'
+            ? '点下方按钮开启通知，准时接收稍后与习惯提醒。'
+            : '首次真正需要提醒时，Nextdo 会请求通知权限。',
       };
   }
 }
 
 /** The single platform action row under the switch, if any (issue #45 R4/R6). */
-export type NotificationAction = 'web-request' | 'open-system-settings' | null;
+export type NotificationAction = 'native-request' | 'web-request' | 'open-system-settings' | null;
 
 export function notificationActionFor(
   permission: ReminderPermissionState | null,
 ): NotificationAction {
   if (permission === null) return null;
   if (permission.status !== 'undetermined' && permission.status !== 'denied') return null;
+  if (permission.platform === 'native' && permission.status === 'undetermined') {
+    return 'native-request';
+  }
   // Browsers require a user gesture — that button is the ONLY viable entry
-  // there, not a redundant manual step. Native asks by itself at the first
-  // real need, so it gets no button (a denied app can only send the user to
-  // the system settings, which only iOS can deep-link).
+  // there, not a redundant manual step.
   if (permission.platform === 'web') return 'web-request';
-  if (permission.status === 'denied' && Platform.OS === 'ios') return 'open-system-settings';
+  // Once denied the OS no longer prompts; both iOS and Android deep-link
+  // their notification settings, so every native denial gets that escape hatch.
+  if (permission.platform === 'native' && permission.status === 'denied') {
+    return 'open-system-settings';
+  }
   return null;
 }
 
 export default function SettingsScreen() {
   const { preference, updatePreference, isDark } = useAppTheme();
   const switchTrackColor = {
-    false: isDark ? '#38322a' : '#e5e2db',
+    false: isDark ? colors.borderDark : colors.border,
     true: isDark ? colors.accentDark : colors.accent,
   };
   const switchThumbColor = '#ffffff';
@@ -356,7 +384,13 @@ export default function SettingsScreen() {
   } = useSyncStatus(state === 'connected');
   const { state: notificationPermission, openSystemSettings, requestPermission } =
     useReminderPermission();
-  const { masterEnabled, setMasterEnabled } = useNotificationSettings();
+  const {
+    settings: notificationSettings,
+    masterEnabled,
+    updateSettings,
+    setMasterEnabled,
+  } = useNotificationSettings();
+  const calendarPermission = useCalendarPermission();
   // 有效状态（issue #45 R5）：开关 ∧ 系统授权 —— 两个纯函数决定文案与平台动作。
   const notificationState = describeNotificationState(masterEnabled, notificationPermission);
   const notificationAction = notificationActionFor(notificationPermission);
@@ -561,7 +595,7 @@ export default function SettingsScreen() {
         contentContainerStyle={{ paddingTop: topPadding, paddingHorizontal: 16, paddingBottom: 40 }}
         keyboardShouldPersistTaps="handled"
       >
-        <View className="w-full pb-12">
+        <View className="w-full max-w-4xl mx-auto pb-12">
         {/* Header block (matches the other tabs) */}
         <View className="mb-1">
           <Text className="font-display text-3xl font-bold tracking-tight text-ink dark:text-ink-dark">
@@ -601,7 +635,15 @@ export default function SettingsScreen() {
                 <Ionicons
                   name={option.icon}
                   size={18}
-                  color={preference === option.value ? '#c85a17' : '#716b64'}
+                  color={
+                    preference === option.value
+                      ? isDark
+                        ? colors.accentDark
+                        : colors.accent
+                      : isDark
+                        ? colors.mutedDark
+                        : colors.muted
+                  }
                 />
                 <Text
                   className={cn(
@@ -625,7 +667,7 @@ export default function SettingsScreen() {
           {/* 1) 有效状态先行（issue #45 R5）：应用内开关 ∧ 系统授权，未授权绝不显示为「已开启」。 */}
           <View className="flex-row items-center gap-3">
             <View className="h-8 w-8 rounded-lg bg-surface-container/60 dark:bg-surface-container-dark/60 items-center justify-center shrink-0">
-              <Ionicons name="notifications-outline" size={16} color={isDark ? '#9b948a' : '#716b64'} />
+              <Ionicons name="notifications-outline" size={16} color={isDark ? colors.mutedDark : colors.muted} />
             </View>
             <View className="flex-1 min-w-0">
               <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
@@ -653,6 +695,9 @@ export default function SettingsScreen() {
                 value={masterEnabled ?? true}
                 onValueChange={(val) => {
                   void setMasterEnabled(val);
+                  if (val && notificationPermission?.status === 'undetermined') {
+                    void requestPermission();
+                  }
                 }}
                 trackColor={switchTrackColor}
                 thumbColor={switchThumbColor}
@@ -661,11 +706,24 @@ export default function SettingsScreen() {
             </View>
           </View>
 
-          {/* 3) 平台动作（issue #45 R4/R6）：native 不再提供手动申请按钮；
-           *    web 受浏览器机制所限，保留唯一的手势入口。 */}
+          {/* 3) 平台动作：native 提供开启通知按钮，被拒后引导至设置；
+           *    web 受浏览器机制所限，保留手势入口。 */}
           {notificationAction === null ? null : (
             <View className="border-t border-border/40 pt-2.5 dark:border-border-dark/40">
-              {notificationAction === 'web-request' ? (
+              {notificationAction === 'native-request' ? (
+                <View className="gap-2">
+                  <Text className="font-sans text-sm text-muted dark:text-muted-dark">
+                    开启系统通知权限后，任务到期与习惯打卡将准时提醒。
+                  </Text>
+                  <Button
+                    label="开启通知"
+                    variant="secondary"
+                    onPress={() => {
+                      void requestPermission();
+                    }}
+                  />
+                </View>
+              ) : notificationAction === 'web-request' ? (
                 <View className="gap-2">
                   <Text className="font-sans text-sm text-muted dark:text-muted-dark">
                     {isIosWebSafari()
@@ -685,11 +743,9 @@ export default function SettingsScreen() {
                   <Text className="font-sans text-sm text-muted dark:text-muted-dark">
                     {Platform.OS === 'ios'
                       ? '已拒绝过系统权限 — 只能到系统设置里重新允许。'
-                      : '可在「系统设置 → 应用 → Nextdo → 通知」中重新允许。'}
+                      : '系统通知权限已被拒绝 — 到系统设置里为 Nextdo 重新开启即可。'}
                   </Text>
-                  {Platform.OS === 'ios' ? (
-                    <Button label="去系统设置" variant="secondary" onPress={openSystemSettings} />
-                  ) : null}
+                  <Button label="去系统设置" variant="secondary" onPress={openSystemSettings} />
                 </View>
               )}
             </View>
@@ -700,7 +756,7 @@ export default function SettingsScreen() {
             <View className="flex-row items-center justify-between gap-2">
               <View className="flex-row items-center gap-3 flex-1 min-w-0 pr-1">
                 <View className="h-8 w-8 rounded-lg bg-surface-container/60 dark:bg-surface-container-dark/60 items-center justify-center shrink-0">
-                  <Ionicons name="calendar-outline" size={16} color={isDark ? '#9b948a' : '#716b64'} />
+                  <Ionicons name="calendar-outline" size={16} color={isDark ? colors.mutedDark : colors.muted} />
                 </View>
                 <View className="flex-1 min-w-0">
                   <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
@@ -759,7 +815,173 @@ export default function SettingsScreen() {
           </View>
         </Card>
 
-        {/* Section 3: 数据与同步 */}
+        {/* Section 3: 声音与日历（issue #54） */}
+        <SectionHeader title="声音与日历" icon="volume-high-outline" />
+        <Card className="gap-3.5 p-4">
+          {/* 1) 提醒提示音开关。 */}
+          <View className="flex-row items-center justify-between gap-2">
+            <View className="flex-1 min-w-0 pr-2">
+              <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+                提醒音效
+              </Text>
+              <Text className="mt-0.5 font-sans text-[11px] leading-tight text-muted dark:text-muted-dark">
+                提醒触发时播放提示音（音量跟随系统音量）。
+              </Text>
+            </View>
+            <View className="shrink-0">
+              <Switch
+                accessibilityLabel="提醒音效"
+                value={notificationSettings?.reminderSoundEnabled ?? true}
+                onValueChange={(val) => void updateSettings({ reminderSoundEnabled: val })}
+                trackColor={switchTrackColor}
+                thumbColor={switchThumbColor}
+                {...({ activeThumbColor: switchThumbColor } as object)}
+              />
+            </View>
+          </View>
+
+          {/* 2) 专注结束音效开关。 */}
+          <View className="flex-row items-center justify-between gap-2 border-t border-border/40 pt-3 dark:border-border-dark/40">
+            <View className="flex-1 min-w-0 pr-2">
+              <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+                专注结束音效
+              </Text>
+              <Text className="mt-0.5 font-sans text-[11px] leading-tight text-muted dark:text-muted-dark">
+                计时结束时播放提示音，避免错过收尾。
+              </Text>
+            </View>
+            <View className="shrink-0">
+              <Switch
+                accessibilityLabel="专注结束音效"
+                value={notificationSettings?.focusSoundEnabled ?? true}
+                onValueChange={(val) => void updateSettings({ focusSoundEnabled: val })}
+                trackColor={switchTrackColor}
+                thumbColor={switchThumbColor}
+                {...({ activeThumbColor: switchThumbColor } as object)}
+              />
+            </View>
+          </View>
+
+          {/* 3) 音色选择：点击即试听并保存。 */}
+          <View className="rounded-xl bg-surface-container/30 p-2.5 dark:bg-surface-container-dark/30">
+            <View className="flex-row items-center justify-between">
+              <Text className="font-sans text-xs font-medium text-ink dark:text-ink-dark">音色</Text>
+              <Text className="font-sans text-[11px] text-muted dark:text-muted-dark">点击可试听</Text>
+            </View>
+            <View className="mt-2 flex-row gap-2">
+              {SOUND_TONES.map((tone) => (
+                <Pressable
+                  key={tone}
+                  accessibilityLabel={`音色：${SOUND_TONE_LABELS[tone]}`}
+                  accessibilityHint="双击试听并设为当前音色"
+                  accessibilityRole="button"
+                  onPress={() => {
+                    void updateSettings({ soundTone: tone });
+                    void playNotificationTone(tone);
+                  }}
+                  className={cn(
+                    'flex-1 items-center gap-1.5 rounded-xl border px-2 py-2.5',
+                    notificationSettings?.soundTone === tone
+                      ? 'border-accent bg-accent/10'
+                      : 'border-border/60 dark:border-border-dark/60',
+                  )}
+                >
+                  <Ionicons
+                    name={SOUND_TONE_ICONS[tone]}
+                    size={18}
+                    color={
+                      notificationSettings?.soundTone === tone
+                        ? isDark
+                          ? colors.accentDark
+                          : colors.accent
+                        : isDark
+                          ? colors.mutedDark
+                          : colors.muted
+                    }
+                  />
+                  <Text
+                    className={cn(
+                      'font-sans text-xs font-semibold',
+                      notificationSettings?.soundTone === tone
+                        ? 'text-accent dark:text-accent-dark'
+                        : 'text-ink dark:text-ink-dark',
+                    )}
+                  >
+                    {SOUND_TONE_LABELS[tone]}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+
+          {/* 4) 系统日历同步（issue #54）：仅原生平台提供；web 明确说明。 */}
+          <View className="border-t border-border/40 pt-3 dark:border-border-dark/40">
+            {calendarPermission.supported ? (
+              <>
+                <View className="flex-row items-center justify-between gap-2">
+                  <View className="flex-1 min-w-0 pr-2">
+                    <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+                      写入系统日历
+                    </Text>
+                    <Text className="mt-0.5 font-sans text-[11px] leading-tight text-muted dark:text-muted-dark">
+                      把有明确起止时间的行动同步为系统日历事件，由系统原生提醒；关闭后会清理已经写入的事件。
+                    </Text>
+                  </View>
+                  <View className="shrink-0">
+                    <Switch
+                      accessibilityLabel="写入系统日历"
+                      value={notificationSettings?.calendarEnabled ?? false}
+                      onValueChange={(val) => {
+                        if (!val) {
+                          void updateSettings({ calendarEnabled: false });
+                          return;
+                        }
+                        void calendarPermission.requestAccess().then((next) => {
+                          if (next === 'granted') {
+                            void updateSettings({ calendarEnabled: true });
+                          }
+                        });
+                      }}
+                      trackColor={switchTrackColor}
+                      thumbColor={switchThumbColor}
+                      {...({ activeThumbColor: switchThumbColor } as object)}
+                    />
+                  </View>
+                </View>
+
+                {!notificationSettings?.calendarEnabled &&
+                calendarPermission.permission === 'denied' ? (
+                  <View className="mt-2.5 gap-2">
+                    <Text className="font-sans text-[11px] leading-relaxed text-muted dark:text-muted-dark">
+                      未获得日历权限。请在系统设置中允许 Nextdo 访问日历，然后重新开启。
+                    </Text>
+                    <Button
+                      label="去系统设置开启日历"
+                      variant="secondary"
+                      onPress={() => void calendarPermission.openSystemSettings()}
+                    />
+                  </View>
+                ) : null}
+              </>
+            ) : (
+              <View className="flex-row items-start gap-3">
+                <View className="h-8 w-8 rounded-lg bg-surface-container/60 dark:bg-surface-container-dark/60 items-center justify-center shrink-0">
+                  <Ionicons name="calendar-outline" size={16} color={isDark ? colors.mutedDark : colors.muted} />
+                </View>
+                <View className="flex-1 min-w-0">
+                  <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+                    系统日历同步
+                  </Text>
+                  <Text className="mt-0.5 font-sans text-[11px] leading-tight text-muted dark:text-muted-dark">
+                    当前平台不支持系统日历，仍可使用应用内提醒。
+                  </Text>
+                </View>
+              </View>
+            )}
+          </View>
+        </Card>
+
+        {/* Section 4: 数据与同步 */}
         <SectionHeader title="数据与同步" icon="cloud-outline" />
         <Card className="gap-3.5 p-4">
         <View className="flex-row items-center justify-between">
@@ -839,13 +1061,13 @@ export default function SettingsScreen() {
             {storedConfig !== null ? (
               <View className="gap-1.5 rounded-xl border border-border/60 bg-surface-container/30 p-3 dark:border-border-dark/60 dark:bg-surface-container-dark/30">
                 <View className="flex-row items-center gap-1.5">
-                  <Ionicons name="server-outline" size={13} color="#716b64" />
+                  <Ionicons name="server-outline" size={13} color={isDark ? colors.mutedDark : colors.muted} />
                   <Text className="font-sans text-xs text-muted dark:text-muted-dark">
                     后端地址：{storedConfig.backendUrl}
                   </Text>
                 </View>
                 <View className="flex-row items-center gap-1.5">
-                  <Ionicons name="git-network-outline" size={13} color="#716b64" />
+                  <Ionicons name="git-network-outline" size={13} color={isDark ? colors.mutedDark : colors.muted} />
                   <Text className="font-sans text-xs text-muted dark:text-muted-dark">
                     同步流地址：{storedConfig.endpoint}
                   </Text>
@@ -853,9 +1075,9 @@ export default function SettingsScreen() {
               </View>
             ) : null}
             {rejections.length > 0 && rejections[rejections.length - 1] ? (
-              <View className="gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 p-3">
+              <View className="gap-1.5 rounded-lg border border-danger/30 bg-danger/10 p-3 dark:border-danger-dark/30 dark:bg-danger-dark/15">
                 <View className="flex-row items-center justify-between">
-                  <Text className="font-sans text-xs font-semibold text-red-500 dark:text-red-400">
+                  <Text className="font-sans text-xs font-semibold text-danger dark:text-danger-dark">
                     ⚠️ 发现 {rejections.length} 条操作被服务端拒绝同步
                   </Text>
                   <Pressable
@@ -939,7 +1161,7 @@ export default function SettingsScreen() {
             >
               <View className="flex-row items-center gap-3 flex-1 min-w-0 pr-2">
                 <View className="h-8 w-8 rounded-lg bg-accent/10 dark:bg-accent-dark/15 items-center justify-center shrink-0">
-                  <Ionicons name="book-outline" size={16} color={isDark ? '#e0703a' : '#c85a17'} />
+                  <Ionicons name="book-outline" size={16} color={isDark ? colors.accentDark : colors.accent} />
                 </View>
                 <View className="flex-1 min-w-0">
                   <Text className="font-sans text-xs font-semibold text-ink dark:text-ink-dark">
@@ -950,7 +1172,7 @@ export default function SettingsScreen() {
                   </Text>
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={14} color={isDark ? '#9b948a' : '#716b64'} />
+              <Ionicons name="chevron-forward" size={14} color={isDark ? colors.mutedDark : colors.muted} />
             </Pressable>
 
             {/* 同步方式选择器 */}
@@ -973,7 +1195,15 @@ export default function SettingsScreen() {
                 <Ionicons
                   name="key-outline"
                   size={14}
-                  color={syncMode === 'pair' ? '#c85a17' : '#716b64'}
+                  color={
+                    syncMode === 'pair'
+                      ? isDark
+                        ? colors.accentDark
+                        : colors.accent
+                      : isDark
+                        ? colors.mutedDark
+                        : colors.muted
+                  }
                 />
                 <Text
                   className={cn(
@@ -1278,7 +1508,15 @@ export default function SettingsScreen() {
                 <Ionicons
                   name="shield-checkmark-outline"
                   size={14}
-                  color={update.preferredChannel === 'stable' ? '#c85a17' : '#716b64'}
+                  color={
+                    update.preferredChannel === 'stable'
+                      ? isDark
+                        ? colors.accentDark
+                        : colors.accent
+                      : isDark
+                        ? colors.mutedDark
+                        : colors.muted
+                  }
                 />
                 <Text
                   className={cn(
@@ -1308,7 +1546,15 @@ export default function SettingsScreen() {
                 <Ionicons
                   name="flask-outline"
                   size={14}
-                  color={update.preferredChannel === 'beta' ? '#c85a17' : '#716b64'}
+                  color={
+                    update.preferredChannel === 'beta'
+                      ? isDark
+                        ? colors.accentDark
+                        : colors.accent
+                      : isDark
+                        ? colors.mutedDark
+                        : colors.muted
+                  }
                 />
                 <Text
                   className={cn(
@@ -1345,7 +1591,7 @@ export default function SettingsScreen() {
                 'h-6 w-11 rounded-full p-0.5 justify-center shrink-0',
                 update.autoCheckEnabled
                   ? 'bg-accent dark:bg-accent-dark'
-                  : 'bg-[#e5e2db] dark:bg-[#38322a]',
+                  : 'bg-surface-container dark:bg-surface-container-dark',
               )}
             >
               <View

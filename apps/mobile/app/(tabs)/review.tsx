@@ -4,7 +4,7 @@
  * append-only history (newest first — the tab's list query orders by
  * `at` ascending, so the trail is reversed client-side).
  */
-import { Card, EmptyState, Tag } from '@nextdo/ui';
+import { Card, EmptyState, Tag, colors } from '@nextdo/ui';
 import { FlatList, Pressable, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAppInsets } from '@/lib/use-app-insets';
@@ -12,6 +12,7 @@ import { router } from 'expo-router';
 import type { ReviewRecord } from '@nextdo/core';
 import { useReviewRecords } from '@/hooks/use-review-records';
 import { formatLocalDate } from '@/lib/format';
+import { useAppTheme } from '@/lib/theme';
 
 const REVIEW_KIND_LABELS: Record<ReviewRecord['kind'], string> = {
   daily: '日常',
@@ -32,13 +33,14 @@ export default function ReviewScreen() {
   const records = data.slice().reverse();
   const insets = useAppInsets();
   const topPadding = Math.max(insets.top, 16);
+  const { isDark } = useAppTheme();
 
   return (
     <View
       style={{ paddingTop: topPadding }}
       className="flex-1 w-full bg-canvas px-4 pb-4 dark:bg-canvas-dark"
     >
-      <View className="flex-1 w-full">
+      <View className="flex-1 w-full max-w-4xl mx-auto">
       <Text className="mb-4 text-2xl font-bold tracking-tight text-ink dark:text-ink-dark">
         回顾
       </Text>
@@ -54,14 +56,14 @@ export default function ReviewScreen() {
           <View className="flex-row items-center justify-between">
             <View className="flex-row items-center gap-2">
               <View className="h-7 w-7 rounded-lg bg-accent/15 dark:bg-accent-dark/20 items-center justify-center">
-                <Ionicons name="sunny-outline" size={15} color="#c85a17" />
+                <Ionicons name="sunny-outline" size={15} color={isDark ? colors.accentDark : colors.accent} />
               </View>
               <Text className="font-sans text-base font-semibold text-ink dark:text-ink-dark">
                 今日回顾
               </Text>
             </View>
             <View className="h-6 w-6 items-center justify-center rounded-full bg-accent/10 dark:bg-accent-dark/20">
-              <Ionicons name="chevron-forward" size={13} color="#c85a17" />
+              <Ionicons name="chevron-forward" size={13} color={isDark ? colors.accentDark : colors.accent} />
             </View>
           </View>
           <Text className="mt-2 font-sans text-xs text-muted dark:text-muted-dark">
@@ -78,14 +80,14 @@ export default function ReviewScreen() {
           <View className="flex-row items-center justify-between">
             <View className="flex-row items-center gap-2">
               <View className="h-7 w-7 rounded-lg bg-accent/15 dark:bg-accent-dark/20 items-center justify-center">
-                <Ionicons name="calendar-outline" size={15} color="#c85a17" />
+                <Ionicons name="calendar-outline" size={15} color={isDark ? colors.accentDark : colors.accent} />
               </View>
               <Text className="font-sans text-base font-semibold text-ink dark:text-ink-dark">
                 本周回顾
               </Text>
             </View>
             <View className="h-6 w-6 items-center justify-center rounded-full bg-accent/10 dark:bg-accent-dark/20">
-              <Ionicons name="chevron-forward" size={13} color="#c85a17" />
+              <Ionicons name="chevron-forward" size={13} color={isDark ? colors.accentDark : colors.accent} />
             </View>
           </View>
           <Text className="mt-2 font-sans text-xs text-muted dark:text-muted-dark">

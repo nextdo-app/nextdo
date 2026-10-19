@@ -40,17 +40,17 @@ export function Tag({ label, tone = 'neutral', dot = false, count, className }: 
     <View
       accessibilityRole="text"
       className={cn(
-        'h-[22px] flex-row items-center gap-1 rounded-full px-2.5',
+        'min-h-[22px] flex-row items-center gap-1 rounded-full px-2.5 py-0.5',
         BG_CLASSES[tone],
         className,
       )}
     >
       {dot ? <View className="h-1.5 w-1.5 rounded-full bg-accent dark:bg-accent-dark" /> : null}
-      <Text className={cn('text-[11px]', TEXT_CLASSES[tone])} numberOfLines={1}>
+      <Text className={cn('text-[11px] leading-tight', TEXT_CLASSES[tone])} numberOfLines={1}>
         {label}
       </Text>
       {count !== undefined ? (
-        <View className="h-4 min-w-4 items-center justify-center rounded-full bg-accent dark:bg-accent-dark">
+        <View className="min-h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 dark:bg-accent-dark">
           <Text className="text-[10px] font-bold text-on-accent dark:text-on-accent-dark">{count}</Text>
         </View>
       ) : null}

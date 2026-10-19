@@ -14,6 +14,7 @@
  * `reminder-scheduler.ts` and is unit-tested there.
  */
 import type { ReconcileOutput } from '../reminder-scheduler';
+import type { NotificationSoundTone } from '../../notification-settings';
 
 /** The adapter's delivery platform (drives the Settings copy, R5). */
 export type DeliveryPlatform = 'native' | 'tauri' | 'web';
@@ -29,6 +30,16 @@ export interface ReminderPermissionState {
   status: 'undetermined' | 'granted' | 'denied';
   /** Native only: whether the OS will show the prompt again. */
   canAskAgain: boolean;
+}
+
+/** Issue #54: the user's reminder-sound preferences, applied by the hook
+ *  after every settings load/change. */
+export interface ReminderSoundPreferences {
+  /** OFF → native: silent channel + `sound: false`; tauri: no in-app tone. */
+  enabled: boolean;
+  /** The in-app tone (tauri; native OS sounds follow the intensity tier).
+   *  Always played at unity gain — the device volume is the level control. */
+  tone: NotificationSoundTone;
 }
 
 export interface DeliveryAdapter {
@@ -56,13 +67,19 @@ export interface DeliveryAdapter {
   /** Ask the OS (native: the system prompt, only while undetermined;
    *  tauri: always granted, no prompt exists; web: no-op). */
   requestPermission(): Promise<ReminderPermissionState>;
-  /** iOS: jump to this app's system notification settings (denied state,
-   *  R5). No-op on other platforms (Android gets text guidance instead —
-   *  expo-notifications 57 exposes no Android equivalent). */
+  /** Native: jump to this app's system notification settings (the denied
+   *  state, R5) — iOS `app-settings:`; Android
+   *  `ACTION_APP_NOTIFICATION_SETTINGS` with the package, falling back to
+   *  the app details page. No-op on tauri/web. */
   openSystemSettings(): Promise<void>;
   /** Tauri-only reconcile context (the in-session fired set + session
    *  start) — native/web adapters omit it (their modes don't consume it). */
   tauriContext?(): { firedIds: ReadonlySet<string>; sessionStart: Date };
+  /** Issue #54: apply the reminder-sound switch/tone. Optional so the
+   *  web/noop adapters ignore it; the hook calls it after the initial
+   *  settings load and on every settings change, then re-reconciles. May be
+   *  async (native re-arms pending notifications when the switch flips). */
+  setSoundPreferences?(preferences: ReminderSoundPreferences): void | Promise<void>;
   /** Release listeners (hook unmount). Idempotent. */
   dispose(): void;
 }
