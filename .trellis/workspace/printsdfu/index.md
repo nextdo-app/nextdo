@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 57
-- **Last Active**: 2026-10-19
+- **Total Sessions**: 58
+- **Last Active**: 2026-10-20
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1787 | Active |
+| `journal-1.md` | ~1810 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 58 | 2026-10-20 | 修复主题跟随系统色彩脱节及桌面端窗口原生标题栏色彩不同步问题 | `747f5e2`, `b0b617e` | `fix/theme-system-color-sync` |
 | 57 | 2026-10-19 | 解决 issues #58–#62（记录与澄清解耦、专注时长与系统通知、习惯打卡高可见入口、项目可选首行动） | `f80bf8cfd87f0aa871a5875fe99eb0ac0f9e69d8` | `feat/issues-58-62` |
 | 56 | 2026-10-19 | 发布 0.1.9-beta.3 / beta.4，修复 PWA 图标缓存 | `2cd91ff`, `3cfd2d1` | `main` |
 | 55 | 2026-10-19 | issues #56 / #54：提示音与系统日历同步、「时间到」卡片改版，发布 0.1.9-beta.3 | `af16ee4`, `154dbd7`, `7875c70` | `release/0.1.8-beta.1` |
