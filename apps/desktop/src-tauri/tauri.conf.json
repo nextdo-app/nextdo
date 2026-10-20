@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "identifier": "com.nextdo.desktop",
   "productName": "Nextdo",
-  "version": "0.1.9-beta.5",
+  "version": "0.1.9-beta.6",
   "build": {
     "beforeDevCommand": "pnpm --filter @nextdo/mobile run web",
     "devUrl": "http://localhost:8081",
