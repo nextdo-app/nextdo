@@ -233,4 +233,43 @@ describe('useAppTheme', () => {
     expect(theme.colorScheme).toBe('light');
     expect(htmlClass()).not.toContain('dark');
   });
+
+  it('multiple subscribers (TabBar and Screen) always update in lockstep when OS theme flips', async () => {
+    mockSystemScheme = 'dark';
+    let tabTheme!: ReturnType<typeof useAppTheme>;
+    let screenTheme!: ReturnType<typeof useAppTheme>;
+
+    function MultiSubscriberProbe() {
+      tabTheme = useAppTheme();
+      screenTheme = useAppTheme();
+      return (
+        <Text testID="pair">
+          {`${tabTheme.colorScheme}:${screenTheme.colorScheme}`}
+        </Text>
+      );
+    }
+
+    const view = render(<MultiSubscriberProbe />);
+    mockRerender = () => view.rerender(<MultiSubscriberProbe />);
+    await act(async () => {});
+
+    expect(screen.getByTestId('pair').props.children).toBe('dark:dark');
+    expect(tabTheme.isDark).toBe(true);
+    expect(screenTheme.isDark).toBe(true);
+    expect(htmlClass()).toContain('dark');
+
+    // Flip OS to light
+    await setSystemScheme('light');
+    expect(screen.getByTestId('pair').props.children).toBe('light:light');
+    expect(tabTheme.isDark).toBe(false);
+    expect(screenTheme.isDark).toBe(false);
+    expect(htmlClass()).not.toContain('dark');
+
+    // Flip OS back to dark
+    await setSystemScheme('dark');
+    expect(screen.getByTestId('pair').props.children).toBe('dark:dark');
+    expect(tabTheme.isDark).toBe(true);
+    expect(screenTheme.isDark).toBe(true);
+    expect(htmlClass()).toContain('dark');
+  });
 });

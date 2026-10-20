@@ -1785,3 +1785,26 @@ Session summary was not supplied.
 ### Status
 
 [OK] **Completed**
+
+
+## Session 58: 修复主题跟随系统色彩脱节及桌面端窗口原生标题栏色彩不同步问题
+<!-- trellis-session: v=2 fp=77ac50b75769682a -->
+
+**Date**: 2026-10-20
+**Task**: 修复主题跟随系统色彩脱节及桌面端窗口原生标题栏色彩不同步问题
+**Branch**: `fix/theme-system-color-sync`
+
+### Summary
+
+重构移动端与桌面端主题状态机为全局不可变快照，修复跟随系统主题时TabBar与全局样式脱节，并通过Tauri窗口set_window_theme实时同步macOS原生标题栏外观
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `747f5e2` | fix(mobile,desktop): 修复主题跟随系统色彩脱节及桌面端窗口原生标题栏色彩不同步问题 |
+| `b0b617e` | chore(task): archive 10-20-theme-system-color-sync-fix |
+
+### Status
+
+[OK] **Completed**

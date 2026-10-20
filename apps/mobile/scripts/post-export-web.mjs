@@ -59,8 +59,8 @@ if (fs.existsSync(indexPath)) {
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=${ICON_VERSION}" />
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png?v=${ICON_VERSION}" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png?v=${ICON_VERSION}" />
-    <meta name="theme-color" content="#0f202b" media="(prefers-color-scheme: dark)" />
-    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#171412" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#faf9f6" media="(prefers-color-scheme: light)" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="format-detection" content="telephone=no" />
     <style>
@@ -71,9 +71,12 @@ if (fs.existsSync(indexPath)) {
         --sal: env(safe-area-inset-left);
       }
       html, body {
-        background-color: #0f202b;
+        background-color: #faf9f6;
         overscroll-behavior-y: none;
         -webkit-touch-callout: none;
+      }
+      html.dark, html.dark body {
+        background-color: #171412;
       }
       /* Prevent iOS tap highlight and pull-down reload on standalone */
       * {

@@ -730,6 +730,36 @@ open -n "$TARGET_APP"
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// Set desktop window theme to match the app theme ('dark' | 'light' | 'system').
+/// On macOS, this sets the native NSWindow appearance so the standard title bar
+/// precisely tracks the app theme (light title bar for light mode, dark title bar for dark mode).
+#[tauri::command]
+fn set_window_theme(app: tauri::AppHandle, theme: String) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        let t = match theme.as_str() {
+            "dark" => Some(tauri::Theme::Dark),
+            "light" => Some(tauri::Theme::Light),
+            _ => None,
+        };
+        window.set_theme(t).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Read the current OS/system theme reported by the desktop window ('dark' | 'light').
+#[tauri::command]
+fn get_system_theme(app: tauri::AppHandle) -> String {
+    if let Some(window) = app.get_webview_window("main") {
+        match window.theme() {
+            Ok(tauri::Theme::Dark) => "dark".to_string(),
+            Ok(tauri::Theme::Light) => "light".to_string(),
+            _ => "light".to_string(),
+        }
+    } else {
+        "light".to_string()
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(OwnerTokenStore::default())
@@ -887,7 +917,9 @@ pub fn run() {
             download_update,
             get_download_progress,
             open_downloaded_file,
-            install_update_and_restart
+            install_update_and_restart,
+            set_window_theme,
+            get_system_theme
         ])
         .build(tauri::generate_context!())
         .expect("error while building Nextdo desktop")
