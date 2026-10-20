@@ -50,6 +50,13 @@ export type ResolvedColorScheme = 'light' | 'dark';
 
 export const THEME_PREFERENCE_KEY = 'nextdo.settings.theme-preference';
 
+export interface ThemeSnapshot {
+  preference: ThemePreference;
+  colorScheme: ResolvedColorScheme;
+  isDark: boolean;
+  loaded: boolean;
+}
+
 interface KeyValue {
   getItem(key: string): Promise<string | null>;
   setItem(key: string, value: string): Promise<void>;
@@ -106,18 +113,102 @@ function createStorage(): KeyValue {
 
 const storage = createStorage();
 
-/* ---------------- Preference store ----------------
+/* ---------------- Preference & theme store ----------------
  *
  * Module-level (not per-hook-instance) because `useAppTheme` is called from
- * three places (root layout, tab layout, Settings). Per-instance state meant
- * three independent storage reads racing to call `setColorScheme`, so the
- * rendered scheme could depend on which effect resolved last. One cached
- * value + one read, fanned out through `useSyncExternalStore`.
+ * multiple places (root layout, tab layout, Settings, modals). Per-instance state
+ * previously caused independent resolvers racing to call `setColorScheme` and
+ * mutating DOM classList out of order, leading to half-dark/half-light tear.
+ *
+ * One immutable snapshot + one subscriber queue, fanned out through
+ * `useSyncExternalStore`.
  */
 
 let cachedPreference: ThemePreference | null = null;
 let loadStarted = false;
 const listeners = new Set<() => void>();
+
+interface WebMediaQueryList {
+  matches: boolean;
+  addEventListener?(type: string, listener: (e: { matches: boolean }) => void): void;
+  addListener?(listener: (e: { matches: boolean }) => void): void;
+}
+
+interface TauriInternals {
+  invoke(command: string, args?: Record<string, unknown>): Promise<unknown>;
+}
+
+interface WebHost {
+  window?: {
+    matchMedia?(query: string): WebMediaQueryList;
+    __TAURI_INTERNALS__?: TauriInternals;
+  };
+  document?: {
+    documentElement?: {
+      classList: {
+        add(token: string): void;
+        remove(token: string): void;
+      };
+    };
+    querySelectorAll?(selector: string): ArrayLike<{
+      setAttribute(name: string, value: string): void;
+    }>;
+  };
+}
+
+/** The single writer of `<html class="dark">`. No-ops off web (native has no
+ *  document; NativeWind resolves `dark:` variants from its observable there). */
+function applyWebDarkClass(isDark: boolean): void {
+  const root = (globalThis as unknown as WebHost).document?.documentElement;
+  if (root === undefined) return;
+  if (isDark) {
+    root.classList.add('dark');
+  } else {
+    root.classList.remove('dark');
+  }
+}
+
+function syncMetaThemeColor(isDark: boolean): void {
+  const host = globalThis as unknown as WebHost;
+  const doc = host.document;
+  if (!doc?.querySelectorAll) return;
+  const metas = doc.querySelectorAll('meta[name="theme-color"]');
+  if (metas && metas.length > 0) {
+    const color = isDark ? '#171412' : '#faf9f6';
+    for (let i = 0; i < metas.length; i++) {
+      const el = metas[i];
+      if (el) {
+        el.setAttribute('content', color);
+      }
+    }
+  }
+}
+
+/** Pure: fold a stored preference + the live system scheme into what the UI
+ *  renders. `null` preference means "not loaded yet" → follow the system, so
+ *  the first paint is already correct instead of flashing light.
+ *
+ *  `systemScheme` is RN's `ColorSchemeName` ('light' | 'dark' |
+ *  'unspecified'); 'unspecified' means "no preference" and renders light. */
+export function resolveColorScheme(
+  preference: ThemePreference | null,
+  systemScheme: ColorSchemeName,
+): ResolvedColorScheme {
+  if (preference === 'light' || preference === 'dark') return preference;
+  return systemScheme === 'dark' ? 'dark' : 'light';
+}
+
+function getRawSystemScheme(): ResolvedColorScheme {
+  const host = globalThis as unknown as WebHost;
+  if (typeof host.window?.matchMedia === 'function') {
+    try {
+      return host.window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    } catch {
+      // Fallback
+    }
+  }
+  return Appearance.getColorScheme() === 'dark' ? 'dark' : 'light';
+}
 
 /**
  * Authentic system scheme tracking.
@@ -136,27 +227,122 @@ const listeners = new Set<() => void>();
  * that concrete scheme (MODE_NIGHT_NO or MODE_NIGHT_YES) so the host Activity
  * immediately switches back.
  */
-let authenticSystemScheme: ResolvedColorScheme =
-  Appearance.getColorScheme() === 'dark' ? 'dark' : 'light';
+let authenticSystemScheme: ResolvedColorScheme = getRawSystemScheme();
 
+function computeSnapshot(
+  preference: ThemePreference | null,
+  systemScheme: ResolvedColorScheme,
+): ThemeSnapshot {
+  const resolvedSystemScheme =
+    preference === 'system' || preference === null
+      ? systemScheme
+      : authenticSystemScheme;
+  const colorScheme = resolveColorScheme(preference, resolvedSystemScheme);
+  return {
+    preference: preference ?? 'system',
+    colorScheme,
+    isDark: colorScheme === 'dark',
+    loaded: preference !== null,
+  };
+}
+
+let currentSnapshot: ThemeSnapshot = computeSnapshot(cachedPreference, authenticSystemScheme);
+// Sync web dark class at module load so initial paint is already synchronized
+applyWebDarkClass(currentSnapshot.isDark);
+
+function syncTauriWindowTheme(colorScheme: ResolvedColorScheme): void {
+  const host = globalThis as unknown as WebHost;
+  const internals = host.window?.__TAURI_INTERNALS__;
+  if (internals?.invoke) {
+    void internals.invoke('set_window_theme', { theme: colorScheme }).catch(() => {});
+  }
+}
+
+function syncPlatformTheme(snapshot: ThemeSnapshot): void {
+  applyWebDarkClass(snapshot.isDark);
+  syncMetaThemeColor(snapshot.isDark);
+  syncTauriWindowTheme(snapshot.colorScheme);
+  if (typeof isReactNativeRuntime === 'function' && isReactNativeRuntime()) {
+    try {
+      Appearance.setColorScheme(snapshot.colorScheme);
+    } catch {
+      // Appearance.setColorScheme may throw in test or unsupported environments
+    }
+  }
+}
+
+function updateThemeState(
+  newPref: ThemePreference | null,
+  newSystem: ResolvedColorScheme,
+): void {
+  cachedPreference = newPref;
+  authenticSystemScheme = newSystem;
+  const nextSnapshot = computeSnapshot(newPref, newSystem);
+  if (
+    nextSnapshot.preference === currentSnapshot.preference &&
+    nextSnapshot.colorScheme === currentSnapshot.colorScheme &&
+    nextSnapshot.isDark === currentSnapshot.isDark &&
+    nextSnapshot.loaded === currentSnapshot.loaded
+  ) {
+    return;
+  }
+  currentSnapshot = nextSnapshot;
+  syncPlatformTheme(currentSnapshot);
+  for (const listener of Array.from(listeners)) {
+    listener();
+  }
+}
+
+function handleSystemSchemeChange(nextScheme: ResolvedColorScheme): void {
+  if (cachedPreference === 'system' || cachedPreference === null) {
+    updateThemeState(cachedPreference, nextScheme);
+  } else {
+    authenticSystemScheme = nextScheme;
+  }
+}
+
+// 1. Web / Desktop media query listener (modern addEventListener with addListener fallback)
+const webHost = globalThis as unknown as WebHost;
+if (typeof webHost.window?.matchMedia === 'function') {
+  try {
+    const mql = webHost.window.matchMedia('(prefers-color-scheme: dark)');
+    const onMediaChange = (e: { matches: boolean }) => {
+      handleSystemSchemeChange(e.matches ? 'dark' : 'light');
+    };
+    if (typeof mql.addEventListener === 'function') {
+      mql.addEventListener('change', onMediaChange);
+    } else if (typeof mql.addListener === 'function') {
+      mql.addListener(onMediaChange);
+    }
+  } catch {
+    // Ignored in test/unsupported environments
+  }
+}
+
+// 2. Tauri desktop native theme detection (queries macOS native appearance directly)
+if (webHost.window?.__TAURI_INTERNALS__?.invoke) {
+  void webHost.window.__TAURI_INTERNALS__
+    .invoke('get_system_theme', {})
+    .then((theme) => {
+      if (theme === 'dark' || theme === 'light') {
+        handleSystemSchemeChange(theme);
+      }
+    })
+    .catch(() => {});
+}
+
+// 3. React Native Appearance change listener
 try {
   Appearance.addChangeListener((preferences) => {
-    if (cachedPreference === 'system' || cachedPreference === null) {
-      if (preferences.colorScheme === 'dark' || preferences.colorScheme === 'light') {
-        authenticSystemScheme = preferences.colorScheme;
-        emitPreferenceChange();
-      }
+    if (preferences.colorScheme === 'dark' || preferences.colorScheme === 'light') {
+      handleSystemSchemeChange(preferences.colorScheme);
     }
   });
 } catch {
   // Ignored in test/unsupported environments
 }
 
-function emitPreferenceChange(): void {
-  for (const listener of Array.from(listeners)) listener();
-}
-
-function subscribePreference(listener: () => void): () => void {
+function subscribeTheme(listener: () => void): () => void {
   listeners.add(listener);
   if (!loadStarted) {
     loadStarted = true;
@@ -165,9 +351,7 @@ function subscribePreference(listener: () => void): () => void {
       // junk: both resolve to 'system' (the default the UI shows first).
       const next: ThemePreference =
         stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
-      if (next === cachedPreference) return;
-      cachedPreference = next;
-      emitPreferenceChange();
+      updateThemeState(next, authenticSystemScheme);
     });
   }
   return () => {
@@ -175,118 +359,61 @@ function subscribePreference(listener: () => void): () => void {
   };
 }
 
-function getPreferenceSnapshot(): ThemePreference | null {
-  return cachedPreference;
-}
-
-interface WebDocumentHost {
-  document?: {
-    documentElement?: {
-      classList: {
-        add(token: string): void;
-        remove(token: string): void;
-      };
-    };
-  };
-}
-
-/** The single writer of `<html class="dark">`. No-ops off web (native has no
- *  document; NativeWind resolves `dark:` variants from its observable there). */
-function applyWebDarkClass(isDark: boolean): void {
-  const root = (globalThis as unknown as WebDocumentHost).document?.documentElement;
-  if (root === undefined) return;
-  if (isDark) {
-    root.classList.add('dark');
-  } else {
-    root.classList.remove('dark');
-  }
-}
-
-/** Pure: fold a stored preference + the live system scheme into what the UI
- *  renders. `null` preference means "not loaded yet" → follow the system, so
- *  the first paint is already correct instead of flashing light.
- *
- *  `systemScheme` is RN's `ColorSchemeName` ('light' | 'dark' |
- *  'unspecified'); 'unspecified' means "no preference" and renders light. */
-export function resolveColorScheme(
-  preference: ThemePreference | null,
-  systemScheme: ColorSchemeName,
-): ResolvedColorScheme {
-  if (preference === 'light' || preference === 'dark') return preference;
-  return systemScheme === 'dark' ? 'dark' : 'light';
+function getThemeSnapshot(): ThemeSnapshot {
+  return currentSnapshot;
 }
 
 export function useAppTheme() {
   const { setColorScheme } = useNativeWindColorScheme();
-  const preference = useSyncExternalStore(
-    subscribePreference,
-    getPreferenceSnapshot,
-    getPreferenceSnapshot,
-  );
   const systemScheme = useSystemColorScheme();
 
-  if (
-    (preference === 'system' || preference === null) &&
-    (systemScheme === 'dark' || systemScheme === 'light')
-  ) {
-    authenticSystemScheme = systemScheme;
-  }
+  const rawSnapshot = useSyncExternalStore(
+    subscribeTheme,
+    getThemeSnapshot,
+    getThemeSnapshot,
+  );
 
-  // When preference is 'system', use authenticSystemScheme so Android's
-  // Activity uiMode override doesn't permanently trap the resolution in dark.
-  const resolvedSystemScheme =
-    preference === 'system' || preference === null
-      ? (systemScheme ?? authenticSystemScheme)
-      : authenticSystemScheme;
-
-  // Derived in render (hook-guidelines rule 3), not synced by an effect.
-  const colorScheme = resolveColorScheme(preference, resolvedSystemScheme);
-  const isDark = colorScheme === 'dark';
+  // If live system scheme (from useColorScheme or media query) changed while in system mode,
+  // derive the effective snapshot immediately for this render pass to eliminate visual lag.
+  const snapshot =
+    (systemScheme === 'dark' || systemScheme === 'light') &&
+    systemScheme !== authenticSystemScheme &&
+    (rawSnapshot.preference === 'system' || !rawSnapshot.loaded)
+      ? computeSnapshot(rawSnapshot.preference, systemScheme)
+      : rawSnapshot;
 
   useEffect(() => {
-    if (typeof isReactNativeRuntime === 'function' && isReactNativeRuntime()) {
-      try {
-        const target = preference === 'system' ? colorScheme : (preference ?? colorScheme);
-        Appearance.setColorScheme(target);
-        setColorScheme(target);
-      } catch {
-        // Appearance.setColorScheme may throw in test or unsupported environments
-      }
-    } else {
-      // On web/desktop: never hand NativeWind 'system' because it strips the
-      // .dark HTML class even on a dark OS. Hand concrete resolved scheme instead.
-      try {
-        setColorScheme(colorScheme);
-      } catch {
-        // NativeWind throws when darkMode isn't 'class' or when there is no
-        // window (jest). The class below is the web source of truth anyway.
-      }
-      applyWebDarkClass(isDark);
+    if (
+      (systemScheme === 'dark' || systemScheme === 'light') &&
+      systemScheme !== authenticSystemScheme &&
+      (rawSnapshot.preference === 'system' || !rawSnapshot.loaded)
+    ) {
+      updateThemeState(cachedPreference, systemScheme);
     }
-  }, [colorScheme, isDark, preference, setColorScheme]);
+  }, [systemScheme, rawSnapshot.preference, rawSnapshot.loaded]);
+
+  useEffect(() => {
+    try {
+      setColorScheme(snapshot.colorScheme);
+    } catch {
+      // NativeWind throws when darkMode isn't 'class' or when there is no
+      // window (jest). The class below is the web source of truth anyway.
+    }
+    applyWebDarkClass(snapshot.isDark);
+  }, [snapshot.colorScheme, snapshot.isDark, setColorScheme]);
 
   const updatePreference = useCallback(async (next: ThemePreference) => {
-    cachedPreference = next;
-    emitPreferenceChange();
-    if (typeof isReactNativeRuntime === 'function' && isReactNativeRuntime()) {
-      try {
-        const target = next === 'system' ? authenticSystemScheme : next;
-        Appearance.setColorScheme(target);
-        setColorScheme(target);
-      } catch {
-        // Appearance.setColorScheme may throw in test or unsupported environments
-      }
-    }
+    updateThemeState(next, authenticSystemScheme);
     await storage.setItem(THEME_PREFERENCE_KEY, next);
-  }, [setColorScheme]);
+  }, []);
 
   return {
     /** The stored PREFERENCE (what the Settings row highlights). `null`
      *  until the first read lands; reported as 'system' meanwhile. */
-    preference: preference ?? 'system',
-    isDark,
-    colorScheme,
+    preference: snapshot.preference,
+    isDark: snapshot.isDark,
+    colorScheme: snapshot.colorScheme,
     updatePreference,
-    loaded: preference !== null,
+    loaded: snapshot.loaded,
   };
 }

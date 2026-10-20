@@ -28,8 +28,8 @@ export default function Root({ children }: PropsWithChildren) {
         <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png?v=2" />
 
         {/* Browser & OS Theme Color */}
-        <meta name="theme-color" content="#0f202b" media="(prefers-color-scheme: dark)" />
-        <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+        <meta name="theme-color" content="#171412" media="(prefers-color-scheme: dark)" />
+        <meta name="theme-color" content="#faf9f6" media="(prefers-color-scheme: light)" />
 
         {/* Apple Mobile Web App Splash Screen / Touch Styling */}
         <meta name="mobile-web-app-capable" content="yes" />
@@ -48,7 +48,10 @@ export default function Root({ children }: PropsWithChildren) {
                 padding: 0;
                 overflow: hidden;
                 overscroll-behavior: none;
-                background-color: #0f202b;
+                background-color: #faf9f6;
+              }
+              html.dark, html.dark body {
+                background-color: #171412;
               }
               #root {
                 display: flex;
