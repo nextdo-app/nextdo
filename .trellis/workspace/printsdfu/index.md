@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 59
+- **Total Sessions**: 60
 - **Last Active**: 2026-10-21
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1832 | Active |
+| `journal-1.md` | ~1866 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 60 | 2026-10-21 | 修复跟随系统主题被桌面端窗口外观锁死 | `c68aa33` | `main` |
 | 59 | 2026-10-21 | 修复移动端开屏图标、更新自动安装无响应与通知权限请求 | `8f685fe` | `fix/mobile-install-notification-splash` |
 | 58 | 2026-10-20 | 修复主题跟随系统色彩脱节及桌面端窗口原生标题栏色彩不同步问题 | `747f5e2`, `b0b617e` | `fix/theme-system-color-sync` |
 | 57 | 2026-10-19 | 解决 issues #58–#62（记录与澄清解耦、专注时长与系统通知、习惯打卡高可见入口、项目可选首行动） | `f80bf8cfd87f0aa871a5875fe99eb0ac0f9e69d8` | `feat/issues-58-62` |
