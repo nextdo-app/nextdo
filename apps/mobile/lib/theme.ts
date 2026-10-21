@@ -210,6 +210,28 @@ function getRawSystemScheme(): ResolvedColorScheme {
   return Appearance.getColorScheme() === 'dark' ? 'dark' : 'light';
 }
 
+/** The OS scheme actually in force right now, for the render-time overrides
+ *  and the sync effects below.
+ *
+ *  On web the media query is the authority: our own module-level listener is
+ *  what writes the store from it, while `react-native-web`'s
+ *  `useColorScheme` can trail one render behind. Trusting that stale render
+ *  value recomputed the PREVIOUS scheme and pushed it back (`dark` class on,
+ *  then immediately off, on every OS change) and could leave 「跟随系统」
+ *  stuck on the scheme from launch. Native has no media query, and there the
+ *  hook and our `Appearance` listener share one source, so its value stands. */
+function getLiveSystemScheme(renderScheme: ColorSchemeName): ColorSchemeName {
+  const host = globalThis as unknown as WebHost;
+  if (typeof host.window?.matchMedia === 'function') {
+    try {
+      return host.window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    } catch {
+      // Fall back to the render value when matchMedia misbehaves.
+    }
+  }
+  return renderScheme;
+}
+
 /**
  * Authentic system scheme tracking.
  * On native Android, Appearance.setColorScheme('dark') delegates to
@@ -250,18 +272,23 @@ let currentSnapshot: ThemeSnapshot = computeSnapshot(cachedPreference, authentic
 // Sync web dark class at module load so initial paint is already synchronized
 applyWebDarkClass(currentSnapshot.isDark);
 
-function syncTauriWindowTheme(colorScheme: ResolvedColorScheme): void {
+/** Push the stored PREFERENCE to the desktop shell. Passing the resolved
+ *  scheme here pinned macOS's app-wide appearance, which also froze the web
+ *  view's `prefers-color-scheme` — system flips then never reached the
+ *  `matchMedia` listener. 'system' must arrive verbatim so Rust can release
+ *  the override. */
+function syncTauriWindowTheme(preference: ThemePreference): void {
   const host = globalThis as unknown as WebHost;
   const internals = host.window?.__TAURI_INTERNALS__;
   if (internals?.invoke) {
-    void internals.invoke('set_window_theme', { theme: colorScheme }).catch(() => {});
+    void internals.invoke('set_window_theme', { theme: preference }).catch(() => {});
   }
 }
 
 function syncPlatformTheme(snapshot: ThemeSnapshot): void {
   applyWebDarkClass(snapshot.isDark);
   syncMetaThemeColor(snapshot.isDark);
-  syncTauriWindowTheme(snapshot.colorScheme);
+  syncTauriWindowTheme(snapshot.preference);
   if (typeof isReactNativeRuntime === 'function' && isReactNativeRuntime()) {
     try {
       Appearance.setColorScheme(snapshot.colorScheme);
@@ -365,7 +392,7 @@ function getThemeSnapshot(): ThemeSnapshot {
 
 export function useAppTheme() {
   const { setColorScheme } = useNativeWindColorScheme();
-  const systemScheme = useSystemColorScheme();
+  const systemScheme = getLiveSystemScheme(useSystemColorScheme());
 
   const rawSnapshot = useSyncExternalStore(
     subscribeTheme,

@@ -31,7 +31,14 @@
  */
 // MUST stay first: installs the localStorage / document stand-ins that
 // theme.ts captures at module load (imports are hoisted above statements).
-import { htmlClass, mockThemeStore, resetThemeEnv } from './mocks/theme-env';
+import {
+  htmlClass,
+  installTauriStub,
+  mockTauriCalls,
+  mockThemeStore,
+  removeTauriStub,
+  resetThemeEnv,
+} from './mocks/theme-env';
 
 import { act, render, screen } from '@testing-library/react-native';
 import { Text } from 'react-native';
@@ -138,6 +145,43 @@ describe('useAppTheme', () => {
     expect(mockNativeWindCalls.every((c) => c === 'light' || c === 'dark')).toBe(true);
   });
 
+  it('trusts the live media query over a stale useColorScheme value (web race)', async () => {
+    // The OS is already dark but `react-native-web`'s `useColorScheme` trails
+    // one render behind and still reports light. Trusting that stale value
+    // recomputed the previous scheme, pushed it back through the sync effect,
+    // and flipped the dark class on then straight off again.
+    const hadWindow = 'window' in globalThis;
+    const previousWindow = (globalThis as { window?: unknown }).window;
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      writable: true,
+      value: {
+        matchMedia: (query: string) => ({
+          matches: query.includes('prefers-color-scheme'),
+          addEventListener: () => {},
+          addListener: () => {},
+        }),
+      },
+    });
+    mockSystemScheme = 'light';
+    try {
+      render(<Probe />);
+      await act(async () => {});
+      expect(screen.getByTestId('scheme').props.children).toBe('dark');
+      expect(htmlClass()).toContain('dark');
+    } finally {
+      if (hadWindow) {
+        Object.defineProperty(globalThis, 'window', {
+          configurable: true,
+          writable: true,
+          value: previousWindow,
+        });
+      } else {
+        delete (globalThis as { window?: unknown }).window;
+      }
+    }
+  });
+
   it('walks every transition with the dark class and the resolved scheme in lockstep', async () => {
     // One mount, the full matrix. `theme.ts` caches its preference at module
     // scope, so a fresh install can only be observed on the FIRST mount of
@@ -191,6 +235,37 @@ describe('useAppTheme', () => {
 
     // NativeWind must never have been told 'system' at any point above.
     expect(mockNativeWindCalls.every((c) => c === 'light' || c === 'dark')).toBe(true);
+  });
+
+  it('sends the desktop shell the preference, so 「跟随系统」 can release its override', async () => {
+    // Desktop regression: forwarding the RESOLVED scheme pinned macOS's
+    // app-wide appearance, which also froze the web view's
+    // `prefers-color-scheme`. System flips then never reached the
+    // `matchMedia` listener and the app stayed on the launch-time theme.
+    installTauriStub();
+    try {
+      let theme!: ReturnType<typeof useAppTheme>;
+      render(<Probe onRender={(v) => (theme = v)} />);
+      await act(async () => {});
+
+      const lastPushedTheme = (): unknown => {
+        const pushes = mockTauriCalls.filter((c) => c.command === 'set_window_theme');
+        return pushes[pushes.length - 1]?.args?.theme;
+      };
+
+      await act(async () => {
+        await theme.updatePreference('light');
+        await theme.updatePreference('dark');
+      });
+      expect(lastPushedTheme()).toBe('dark');
+
+      await act(async () => {
+        await theme.updatePreference('system');
+      });
+      expect(lastPushedTheme()).toBe('system');
+    } finally {
+      removeTauriStub();
+    }
   });
 
   it('persists the choice so the next launch restores it', async () => {

@@ -27,6 +27,45 @@ export function resetThemeEnv(): void {
   htmlClassValue = '';
 }
 
+/** Every Tauri IPC call made while the stub is installed, in call order. */
+export const mockTauriCalls: Array<{
+  command: string;
+  args?: Record<string, unknown>;
+}> = [];
+
+let previousWindow: PropertyDescriptor | undefined;
+
+/**
+ * Installs a `window.__TAURI_INTERNALS__` stub so desktop-only theme bridging
+ * (the shell's `set_window_theme` push) can be observed. The real desktop app
+ * injects this object before any script runs; in jest there is no Tauri host.
+ */
+export function installTauriStub(): void {
+  mockTauriCalls.length = 0;
+  previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    writable: true,
+    value: {
+      __TAURI_INTERNALS__: {
+        invoke: async (command: string, args?: Record<string, unknown>) => {
+          mockTauriCalls.push({ command, args });
+        },
+      },
+    },
+  });
+}
+
+/** Restores whatever `window` looked like before `installTauriStub()`. */
+export function removeTauriStub(): void {
+  if (previousWindow) {
+    Object.defineProperty(globalThis, 'window', previousWindow);
+  } else {
+    delete (globalThis as unknown as { window?: unknown }).window;
+  }
+  previousWindow = undefined;
+}
+
 Object.defineProperty(globalThis, 'localStorage', {
   configurable: true,
   value: {
