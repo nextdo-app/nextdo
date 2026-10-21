@@ -168,8 +168,17 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
           totalBytes: progress.totalBytes,
         });
       })
-        .then((fileUri) => {
+        .then(async (fileUri) => {
           setDownloadState({ kind: 'done', filePath: fileUri });
+          // 安卓端下载完成自动调起系统安装器，无需等待用户二次点击
+          try {
+            setInstalling(true);
+            await installAndroidUpdate(fileUri);
+          } catch (e) {
+            setInstallError(String(e));
+          } finally {
+            setInstalling(false);
+          }
         })
         .catch((err) => {
           setDownloadState({ kind: 'error', error: String(err) });

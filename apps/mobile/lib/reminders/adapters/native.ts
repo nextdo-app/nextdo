@@ -235,6 +235,7 @@ export function createNativeAdapter(): DeliveryAdapter {
 
     async requestPermission(): Promise<ReminderPermissionState> {
       try {
+        await ensureChannels();
         const response = await Notifications.requestPermissionsAsync({
           ios: { allowAlert: true, allowBadge: false, allowSound: true },
         });

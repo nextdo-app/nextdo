@@ -27,7 +27,7 @@ export async function maybeRequestNotificationPermission(): Promise<void> {
     const adapter = getDeliveryAdapter();
     if (adapter.platform !== 'native') return;
     const state = await adapter.permission();
-    if (state.status === 'undetermined') {
+    if (state.status === 'undetermined' || (state.status === 'denied' && state.canAskAgain)) {
       await adapter.requestPermission();
     }
   } catch (error) {

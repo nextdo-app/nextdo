@@ -1808,3 +1808,25 @@ Session summary was not supplied.
 ### Status
 
 [OK] **Completed**
+
+
+## Session 59: 修复移动端开屏图标、更新自动安装无响应与通知权限请求
+<!-- trellis-session: v=2 fp=3f9465f5849edac9 -->
+
+**Date**: 2026-10-21
+**Task**: 修复移动端开屏图标、更新自动安装无响应与通知权限请求
+**Branch**: `fix/mobile-install-notification-splash`
+
+### Summary
+
+修复 app.json 缺失 splash 配置；修复 installAndroidUpdate contentUri 未定义及下载完成后自动调起安装器；修复 Android 13+ 通知权限在 canAskAgain 为 true 时错误跳转系统设置的问题
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8f685fe` | fix(mobile): 修复开屏启动图标、安卓更新自动安装无响应与通知权限申请逻辑 |
+
+### Status
+
+[OK] **Completed**

@@ -294,14 +294,17 @@ describe('AutoUpdateDialog - Android in-app install', () => {
     // 覆盖式下载：重试不必先清缓存。
     expect(options.idempotent).toBe(true);
 
-    // 下载完成 → 按钮从「立即更新」切成安卓的「立即安装」（不是桌面端的「并重启」）。
-    fireEvent.press(screen.getByRole('button', { name: '立即安装' }));
-    await flush();
-
+    // 下载完成 → 自动调起系统安装器
     expect(mockStartActivityAsync).toHaveBeenCalledWith('android.intent.action.VIEW', {
       data: 'content://nextdo.file-provider/nextdo-update.apk',
       type: 'application/vnd.android.package-archive',
       flags: 1,
     });
+
+    // 界面仍提供「立即安装」按钮以备重试
+    fireEvent.press(screen.getByRole('button', { name: '立即安装' }));
+    await flush();
+
+    expect(mockStartActivityAsync).toHaveBeenCalledTimes(2);
   });
 });

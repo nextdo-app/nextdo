@@ -330,6 +330,12 @@ export function describeNotificationState(
         detail: `稍后、日历与习惯提醒会按时送达。${platformNote}`,
       };
     case 'denied':
+      if (permission.platform === 'native' && permission.canAskAgain) {
+        return {
+          title: '等待系统授权',
+          detail: '点下方按钮开启通知，准时接收稍后与习惯提醒。',
+        };
+      }
       return {
         title: '系统权限未开启',
         detail: '提醒会照常记录，但不会按时送达 —— 需要到系统设置里允许。',
@@ -353,15 +359,18 @@ export function notificationActionFor(
 ): NotificationAction {
   if (permission === null) return null;
   if (permission.status !== 'undetermined' && permission.status !== 'denied') return null;
-  if (permission.platform === 'native' && permission.status === 'undetermined') {
+  // On native: if undetermined or denied with canAskAgain, we can request permission
+  if (
+    permission.platform === 'native' &&
+    (permission.status === 'undetermined' || (permission.status === 'denied' && permission.canAskAgain))
+  ) {
     return 'native-request';
   }
   // Browsers require a user gesture — that button is the ONLY viable entry
   // there, not a redundant manual step.
   if (permission.platform === 'web') return 'web-request';
-  // Once denied the OS no longer prompts; both iOS and Android deep-link
-  // their notification settings, so every native denial gets that escape hatch.
-  if (permission.platform === 'native' && permission.status === 'denied') {
+  // Once denied and can no longer prompt in-app, deep-link to system settings.
+  if (permission.platform === 'native' && permission.status === 'denied' && !permission.canAskAgain) {
     return 'open-system-settings';
   }
   return null;
@@ -1773,8 +1782,8 @@ export default function SettingsScreen() {
                 </Text>
               ) : (
                 <View className="gap-2">
-                  {/* 桌面端应用内下载进度条 */}
-                  {update.isDesktop && update.download.kind === 'downloading' ? (
+                  {/* 应用内下载进度条（桌面端及支持应用内安装的安卓端） */}
+                  {(update.isDesktop || update.canInstallInApp) && update.download.kind === 'downloading' ? (
                     <View className="gap-1.5">
                       <Text className="font-sans text-xs text-muted dark:text-muted-dark">
                         正在下载…{' '}
@@ -1796,7 +1805,7 @@ export default function SettingsScreen() {
                       </View>
                     </View>
                   ) : null}
-                  {update.isDesktop && update.download.kind === 'done' ? (
+                  {(update.isDesktop || update.canInstallInApp) && update.download.kind === 'done' ? (
                     <View className="gap-1.5">
                       <Text className="font-sans text-xs text-accent dark:text-accent-dark">
                         ✓ 新版本已下载完成，可立即安装更新
@@ -1807,7 +1816,15 @@ export default function SettingsScreen() {
                         </Text>
                       ) : null}
                       <Button
-                        label={update.installing ? '正在安装并重启…' : '立即安装并重启'}
+                        label={
+                          update.isDesktop
+                            ? update.installing
+                              ? '正在安装并重启…'
+                              : '立即安装并重启'
+                            : update.installing
+                              ? '正在打开安装程序…'
+                              : '立即安装'
+                        }
                         variant="secondary"
                         onPress={update.installUpdate}
                       />
@@ -1818,24 +1835,24 @@ export default function SettingsScreen() {
                       />
                     </View>
                   ) : null}
-                  {update.isDesktop && update.download.kind === 'error' ? (
+                  {(update.isDesktop || update.canInstallInApp) && update.download.kind === 'error' ? (
                     <Text className="font-sans text-xs text-danger dark:text-danger-dark">
                       下载失败：{update.download.error}
                     </Text>
                   ) : null}
-                  {/* 下载按钮：桌面端走应用内下载，其他端走浏览器 */}
+                  {/* 下载按钮：桌面端及安卓端走应用内下载，其他端走浏览器 */}
                   {update.download.kind !== 'downloading' && update.download.kind !== 'done'
                     ? update.outcome.downloads.map((dl) => (
                         <Button
                           key={dl.url}
                           label={
-                            update.isDesktop
+                            update.isDesktop || update.canInstallInApp
                               ? `下载并安装 ${dl.label}`
                               : `下载 ${dl.label}`
                           }
                           variant="secondary"
                           onPress={() => {
-                            if (update.isDesktop) {
+                            if (update.isDesktop || update.canInstallInApp) {
                               update.startDownload(dl.url);
                             } else {
                               void openExternalUrl(dl.url);
