@@ -1147,11 +1147,44 @@ export async function downloadAndroidUpdate(
 }
 
 /**
+ * 将本地 APK 文件解析为系统安装器可读的 `content://` URI。
+ *
+ * Android 7+（API 24+）禁止向外部应用暴露 `file://` URI（触发 FileUriExposedException）。
+ * Expo SDK 57 的 `File` 实例不再暴露 `contentUri` 属性，必须通过 `expo-file-system/legacy`
+ * 的 `getContentUriAsync`（底层调用 `FileProvider.getUriForFile`）获取 `content://` URI。
+ */
+async function resolveAndroidContentUri(fileUri: string): Promise<string> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const legacyFs = require('expo-file-system/legacy') as {
+      getContentUriAsync?: (uri: string) => Promise<string>;
+    };
+    if (typeof legacyFs.getContentUriAsync === 'function') {
+      return await legacyFs.getContentUriAsync(fileUri);
+    }
+  } catch {
+    // fallback to filesystem module
+  }
+  const fs = loadFileSystemModule();
+  if (fs !== null) {
+    const anyFs = fs as unknown as { getContentUriAsync?: (uri: string) => Promise<string> };
+    if (typeof anyFs.getContentUriAsync === 'function') {
+      return await anyFs.getContentUriAsync(fileUri);
+    }
+    const file = new fs.File(fileUri) as unknown as { contentUri?: string };
+    if (typeof file.contentUri === 'string' && file.contentUri !== '') {
+      return file.contentUri;
+    }
+  }
+  return fileUri;
+}
+
+/**
  * 调起系统安装器安装已下载的 APK。
  *
  * 三处不能改：
  * - 必须传 `content://` URI（直接给 `file://` 会触发 FileUriExposedException），
- *   由 `File.contentUri` 经 FileProvider 暴露；
+ *   由 `getContentUriAsync` 经 FileProvider 暴露；
  * - `flags = 1`（FLAG_GRANT_READ_URI_PERMISSION）把该文件的读权限授给安装器；
  * - MIME 为 `application/vnd.android.package-archive`，否则没有应用能处理这个 Intent。
  *
@@ -1163,12 +1196,11 @@ export async function downloadAndroidUpdate(
  * 「点了立即安装没反应」。
  */
 export async function installAndroidUpdate(fileUri: string): Promise<void> {
-  const fs = loadFileSystemModule();
   const launcher = loadIntentLauncherModule();
-  if (fs === null || launcher === null) {
+  if (launcher === null) {
     throw new Error('native modules are unavailable');
   }
-  const contentUri = new fs.File(fileUri).contentUri;
+  const contentUri = await resolveAndroidContentUri(fileUri);
   await launcher.startActivityAsync('android.intent.action.VIEW', {
     data: contentUri,
     type: 'application/vnd.android.package-archive',

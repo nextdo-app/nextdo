@@ -5,6 +5,11 @@
     "version": "0.1.9-beta.6",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f202b"
+    },
     "scheme": "nextdo",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,

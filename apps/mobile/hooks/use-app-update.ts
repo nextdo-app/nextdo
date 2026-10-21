@@ -361,10 +361,23 @@ export function useAppUpdate(): UseAppUpdateResult {
             });
           }
         })
-          .then((fileUri) => {
+          .then(async (fileUri) => {
             if (mountedRef.current) {
               setDownload({ kind: 'done', filePath: fileUri });
               setInstallError(null);
+              // 安卓端下载完成自动调起系统安装器
+              setInstalling(true);
+              try {
+                await installAndroidUpdate(fileUri);
+              } catch (err) {
+                if (mountedRef.current) {
+                  setInstallError(err instanceof Error ? err.message : String(err));
+                }
+              } finally {
+                if (mountedRef.current) {
+                  setInstalling(false);
+                }
+              }
             }
           })
           .catch((e) => {

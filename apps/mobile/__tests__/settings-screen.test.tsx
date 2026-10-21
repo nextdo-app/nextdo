@@ -1564,6 +1564,21 @@ describe('settings notifications block (issue #45)', () => {
     // Not granted ⇒ the card must never claim 已开启 (issue #45 R5).
     expect(screen.queryByText('已开启')).toBeNull();
   });
+
+  it('denied with canAskAgain: true (Android 13+ fresh install before user prompt) → 等待系统授权 and offers 开启通知 button', async () => {
+    mockExpoNotifications.getPermissionsAsync.mockResolvedValue({
+      status: 'denied',
+      granted: false,
+      canAskAgain: true,
+      expires: 'never',
+    });
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+
+    expect(screen.getByText('等待系统授权')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '开启通知' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '去系统设置' })).toBeNull();
+  });
 });
 
 /* ------------------------------------------------------------------ *
