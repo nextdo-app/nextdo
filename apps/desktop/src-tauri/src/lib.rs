@@ -729,10 +729,14 @@ open -n "$TARGET_APP"
     }
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-/// Set desktop window theme to match the app theme ('dark' | 'light' | 'system').
-/// On macOS, this sets the native NSWindow appearance so the standard title bar
-/// precisely tracks the app theme (light title bar for light mode, dark title bar for dark mode).
+/// Set the desktop window appearance from the stored theme PREFERENCE.
+///
+/// `system` releases any app-wide override so the window — and the web view's
+/// `prefers-color-scheme` — follows the OS again; `light` / `dark` pin it for
+/// an explicit choice. On macOS the theme is app-wide (not title-bar-only),
+/// which is why 「跟随系统」 must reach this command verbatim instead of a
+/// resolved scheme: pinning a concrete value freezes system-appearance
+/// detection and later OS flips never reach the web view.
 #[tauri::command]
 fn set_window_theme(app: tauri::AppHandle, theme: String) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
@@ -760,6 +764,7 @@ fn get_system_theme(app: tauri::AppHandle) -> String {
     }
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(OwnerTokenStore::default())

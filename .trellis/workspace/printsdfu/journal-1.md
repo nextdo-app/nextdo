@@ -1830,3 +1830,37 @@ Session summary was not supplied.
 ### Status
 
 [OK] **Completed**
+
+
+## Session 60: 修复跟随系统主题被桌面端窗口外观锁死
+<!-- trellis-session: v=2 fp=a5c46e9dca6e3e31 -->
+
+**Date**: 2026-10-21
+**Task**: 修复跟随系统主题被桌面端窗口外观锁死
+**Branch**: `main`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+- ①set_window_theme 接受 system（None），显式模式仍钉住窗口外观；②syncTauriWindowTheme 原样传 ThemePreference；③主题派生改用实时 matchMedia，规避 WKWebView 解除锁定后不补发 change；④修正被错放到命令上的 mobile_entry_point 属性
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c68aa33` | fix(mobile): 修复跟随系统主题被桌面端窗口外观锁死 |
+
+### Testing
+
+- [OK] pnpm verify:web 全绿（lint/typecheck/test/build:web）；theme.test.tsx 11/11；无头 Chrome 对生产产物实测 set_window_theme 收到 system 且跟随系统恢复正常，证据在 .verify/10-21-fix-theme-follow-system-lock/
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 重建/安装 macOS 应用后人工切换系统外观做最终确认

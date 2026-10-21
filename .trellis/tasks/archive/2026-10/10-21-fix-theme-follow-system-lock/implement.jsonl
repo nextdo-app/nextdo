@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/app/index.md", "reason": "Expo app pre-development checklist and quality gate for apps/mobile changes"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Theme preference crosses JS state machine, Tauri IPC, and native appearance layers"}
