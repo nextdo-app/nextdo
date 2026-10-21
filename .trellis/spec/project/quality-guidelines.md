@@ -46,6 +46,13 @@ index.html 回落 —— 直接访问 `/settings` 这类深层路由不会 404�
 在 CI 上没有浏览器时，把这一条降级为「至少跑 `pnpm verify:web
 --no-serve`」（门禁 + 构建通过），并在交付说明里注明界面未实测。
 
+### 构建产物由 CI 产出
+
+安装包（桌面 `.dmg` / `.exe` / `.AppImage`、Android `.apk`）不在本地构建：
+推分支并开 PR，由 `.github/workflows/ci.yml` 跑门禁、`.github/workflows/release.yml`
+在 `v*` tag 或 `workflow_dispatch` 时构建并发布 Release。本地构建产物
+（`apps/desktop/src-tauri/target`、`apps/mobile/dist`）不要留在工作区。
+
 ### 交互态截图（headless Chrome + CDP）
 
 静态路由截图可以「打开即拍」，但表单一类的交互态必须先点到目标状态再拍。既有脚本

@@ -32,6 +32,18 @@
 详细门禁清单与常见坑见
 [`.trellis/spec/project/quality-guidelines.md`](.trellis/spec/project/quality-guidelines.md)。
 
+## 构建产物：不在本地构建，交给 GitHub Actions
+
+需要安装包（macOS `.dmg` / Windows `.exe` / Linux `.AppImage` / Android `.apk`）时，
+**不要在本地跑 `tauri build` 或 `eas build`**。正确路径是推送分支并开 PR：
+
+- PR 由 `.github/workflows/ci.yml` 跑 lint / typecheck / test（Quality Gate）作为门禁；
+- 安装包由 `.github/workflows/release.yml` 在 `v*` tag 或 `workflow_dispatch` 时构建并发布 Release。
+
+本地只做：改代码 → `pnpm verify:web` 的 lint/typecheck/test → 浏览器实测截图。
+不要用本地构建出来的包当作「已验证」的依据，也不要把构建产物
+（`apps/desktop/src-tauri/target`、`apps/mobile/dist` 等）留在工作区或提交进仓库。
+
 ---
 
 <!-- TRELLIS:START -->
