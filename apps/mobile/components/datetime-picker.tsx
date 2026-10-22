@@ -730,7 +730,12 @@ export function DateTimePicker({
                       <View key={cell.key} style={{ width: '14.285%' }} className="items-center py-0.5">
                         <Pressable
                           accessibilityRole="button"
-                          accessibilityLabel={`日 ${cell.day}`}
+                          // Adjacent-month days repeat day numbers (the grid fills whole
+                          // weeks), so their label carries the month — two buttons with the
+                          // same accessible name are indistinguishable.
+                          accessibilityLabel={
+                            isCurrentMonth ? `日 ${cell.day}` : `${cell.month}月${cell.day}日`
+                          }
                           accessibilityState={{ selected: isSelected }}
                           onPress={() => {
                             setSelectedYear(cell.year);
