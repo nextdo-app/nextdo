@@ -63,6 +63,7 @@ function candidateToNextAction(candidate: NextCandidate, now: Date): NextAction 
     lastSnoozedAt: candidate.lastSnoozedAt,
     consecutiveSkips: candidate.consecutiveSkips,
     lastSkippedAt: candidate.lastSkippedAt,
+    note: candidate.note,
     status: 'open',
   };
 }
@@ -351,9 +352,18 @@ const ActionRow = memo(function ActionRow({
         )}
       </View>
       <Pressable
+        accessibilityRole={action.kind === 'next' ? 'button' : undefined}
+        accessibilityLabel={action.kind === 'next' ? `编辑：${action.title}` : undefined}
+        accessibilityHint={action.kind === 'next' ? '双击打开编辑面板，可补充备注' : undefined}
         onPress={() => {
-          // Tapping the row itself dismisses the exposed button.
-          if (swipe.revealed) swipe.close();
+          // Tapping the row dismisses the exposed button first; a second tap
+          // (or a tap on an unswiped row) opens the editor — the TickTick-style
+          // "tap an item to jot down what it is actually about" gesture.
+          if (swipe.revealed) {
+            swipe.close();
+            return;
+          }
+          if (action.kind === 'next') onEdit(action as NextCandidate);
         }}
       >
         <Animated.View
@@ -368,6 +378,16 @@ const ActionRow = memo(function ActionRow({
                 {action.title}
               </Text>
             </View>
+            {action.kind === 'next' && (action as NextCandidate).note !== undefined ? (
+              // The note rides along on the candidate (issue #63) so the list
+              // shows the detail without opening the editor.
+              <Text
+                numberOfLines={2}
+                className="font-sans text-sm leading-snug text-muted dark:text-muted-dark"
+              >
+                {(action as NextCandidate).note}
+              </Text>
+            ) : null}
             <View className="flex-row flex-wrap items-center gap-1.5">
               {projectName !== undefined ? <Tag label={projectName} tone="neutral" /> : null}
               <View className="ml-auto flex-row items-center gap-1">

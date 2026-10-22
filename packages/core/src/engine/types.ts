@@ -40,6 +40,10 @@ export interface CandidateBase {
   /** ISO datetime. */
   createdAt: string;
   lastSnoozedAt?: string;
+  /** The action's free-form note (issue #63) — carried through the pool so
+   *  the Now list can show it without a second query, and so a reminder
+   *  delivered through the system calendar writes it into the event. */
+  note?: string;
 }
 
 export interface NextCandidate extends CandidateBase {

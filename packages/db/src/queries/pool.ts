@@ -24,7 +24,7 @@ import {
   type CandidateAction,
   type CandidateBase,
 } from '@nextdo/core';
-import { parseJson } from '../schema';
+import { normalizeNote, parseJson } from '../schema';
 import type { NextdoDb } from '../types';
 
 export interface EnginePool {
@@ -75,6 +75,7 @@ function baseFromRow(row: {
   consecutive_skips?: number | null;
   last_skipped_at?: string | null;
   created_at: string | null;
+  note?: string | null;
 }): CandidateBase {
   return {
     id: row.id,
@@ -97,6 +98,7 @@ function baseFromRow(row: {
     dependencyDone: true, // resolved below
     createdAt: row.created_at ?? '',
     lastSnoozedAt: row.last_snoozed_at ?? undefined,
+    note: normalizeNote(row.note) ?? undefined,
   };
 }
 

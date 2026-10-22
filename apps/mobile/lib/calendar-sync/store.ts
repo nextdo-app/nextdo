@@ -14,6 +14,12 @@ export interface CalendarSyncState {
   /** The OS calendar we created/reused for Nextdo events. */
   calendarId: string | null;
   mappings: CalendarSyncMappings;
+  /**
+   * Issue #63: reminderId → event. Kept apart from `mappings` because the
+   * two sources are switched independently — turning calendar sync off must
+   * not withdraw the events a reminder channel owns (and vice versa).
+   */
+  reminderMappings: CalendarSyncMappings;
 }
 
 const FILE_NAME = 'nextdo-calendar-sync.json';
@@ -86,7 +92,7 @@ async function writeRaw(raw: string | null): Promise<void> {
 }
 
 function emptyState(): CalendarSyncState {
-  return { calendarId: null, mappings: {} };
+  return { calendarId: null, mappings: {}, reminderMappings: {} };
 }
 
 function parseState(raw: string | null): CalendarSyncState {
@@ -106,7 +112,19 @@ function parseState(raw: string | null): CalendarSyncState {
         mappings[actionId] = { eventId: entry.eventId, signature: entry.signature };
       }
     }
-    return { calendarId, mappings };
+    const reminderMappings: CalendarSyncMappings = {};
+    const rawReminderMappings = record.reminderMappings;
+    if (typeof rawReminderMappings === 'object' && rawReminderMappings !== null) {
+      for (const [reminderId, value] of Object.entries(
+        rawReminderMappings as Record<string, unknown>,
+      )) {
+        if (typeof value !== 'object' || value === null) continue;
+        const entry = value as Record<string, unknown>;
+        if (typeof entry.eventId !== 'string' || typeof entry.signature !== 'string') continue;
+        reminderMappings[reminderId] = { eventId: entry.eventId, signature: entry.signature };
+      }
+    }
+    return { calendarId, mappings, reminderMappings };
   } catch {
     return emptyState();
   }
@@ -122,9 +140,10 @@ export async function saveCalendarSyncState(state: CalendarSyncState): Promise<v
   cached = state;
   await writeRaw(
     JSON.stringify({
-      version: 1,
+      version: 2,
       calendarId: state.calendarId,
       mappings: state.mappings,
+      reminderMappings: state.reminderMappings,
     }),
   );
 }

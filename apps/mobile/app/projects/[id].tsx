@@ -314,6 +314,8 @@ function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; 
     now,
   });
   const [customEst, setCustomEst] = useState('');
+  /** Issue #63: the long-form note travels with the row and into the calendar event. */
+  const [note, setNote] = useState(action.note ?? '');
   const [submitting, setSubmitting] = useState(false);
 
   const canSubmit = title.trim() !== '' && estMinutes !== null && !submitting;
@@ -338,6 +340,7 @@ function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; 
         estMinutes,
         value,
         deadline: deadlineIso,
+        note: note.trim(),
         ...(reminder.write !== undefined ? { reminderAt: reminder.write } : {}),
       },
     });
@@ -390,6 +393,18 @@ function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; 
           placeholder="不提醒"
           onPress={() => setShowReminderPicker(true)}
           onClear={() => reminder.setValue('')}
+        />
+      </FormField>
+      <FormField label="备注">
+        <TextInput
+          className={`${INPUT_CLASS} min-h-[88px]`}
+          style={{ minHeight: 88, textAlignVertical: 'top' }}
+          placeholder="记下关键信息：链接、编号、对方说了什么……"
+          value={note}
+          onChangeText={setNote}
+          multiline
+          accessibilityLabel="备注输入框"
+          accessibilityHint="这里写的内容会一并写入系统日历事件"
         />
       </FormField>
       {showPicker ? (

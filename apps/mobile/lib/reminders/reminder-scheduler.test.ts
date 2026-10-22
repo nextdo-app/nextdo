@@ -28,13 +28,19 @@ const MIN = 60 * 1000;
 
 /** Build a scheduled reminder row relative to NOW. */
 function row(overrides: Partial<ScheduledReminderRow> & { id: string }): ScheduledReminderRow {
+  // `Partial` lets a caller pass `note: undefined`; the column is nullable
+  // but never undefined, so pull it out and normalize it explicitly. Same for
+  // `estMinutes`.
+  const { note, estMinutes, ...rest } = overrides;
   return {
     kind: 'next',
     actionId: `act-${overrides.id}`,
     firesAt: new Date(NOW.getTime() + 30 * MIN).toISOString(),
     intensity: 'normal',
     title: '默认标题',
-    ...overrides,
+    note: note ?? null,
+    estMinutes: estMinutes ?? null,
+    ...rest,
   };
 }
 

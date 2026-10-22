@@ -20,6 +20,9 @@ export interface CalendarSyncEventSpec {
   startsAt: string;
   /** ISO-8601 — start + `estMinutes` (min 1 minute). */
   endsAt: string;
+  /** Event description. For a reminder event this carries the action's
+   *  note (issue #63), so the information survives outside the app. */
+  notes?: string;
 }
 
 /** What we persisted for one action after creating/updating its event. */
@@ -55,7 +58,7 @@ export interface CalendarSyncPlan {
 
 /** The persisted fingerprint of one event's user-visible content. */
 export function calendarEventSignature(spec: CalendarSyncEventSpec): string {
-  return [spec.title, spec.startsAt, spec.endsAt].join('\u0000');
+  return [spec.title, spec.startsAt, spec.endsAt, spec.notes ?? ''].join('\u0000');
 }
 
 export interface CalendarSyncPlanInput {
@@ -99,6 +102,7 @@ export function buildCalendarSyncPlan(input: CalendarSyncPlanInput): CalendarSyn
       title: action.title,
       startsAt: new Date(startsAtMs).toISOString(),
       endsAt: new Date(endsAtMs).toISOString(),
+      notes: action.note === undefined || action.note === '' ? undefined : action.note,
     });
   }
 

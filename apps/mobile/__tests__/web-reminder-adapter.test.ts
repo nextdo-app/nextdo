@@ -105,6 +105,8 @@ describe('createWebAdapter', () => {
         firesAt: '2026-10-09T12:00:00.000Z',
         intensity: 'normal' as const,
         title: '复习英语单词',
+        note: null,
+        estMinutes: 25,
       },
       title: '复习英语单词',
     };

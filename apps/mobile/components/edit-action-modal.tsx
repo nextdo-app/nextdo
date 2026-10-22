@@ -91,6 +91,9 @@ export const EditActionModal = memo(function EditActionModal({
   const [estMinutes, setEstMinutes] = useState<number | null>(null);
   const [value, setValue] = useState<Value>(3);
   const [deadline, setDeadline] = useState('');
+  /** Issue #63: free-form note — the detail the user would otherwise have to
+   *  dig out of the original message or file. */
+  const [note, setNote] = useState('');
   const [showPicker, setShowPicker] = useState(false);
   const [showReminderPicker, setShowReminderPicker] = useState(false);
   const [customEst, setCustomEst] = useState('');
@@ -114,6 +117,7 @@ export const EditActionModal = memo(function EditActionModal({
           : localDateTimeKey(action.deadline),
       );
       setCustomEst('');
+      setNote(action.note ?? '');
     }
   }, [action]);
 
@@ -138,6 +142,9 @@ export const EditActionModal = memo(function EditActionModal({
         estMinutes,
         value,
         deadline: deadlineIso,
+        // An emptied note is `''`, not `undefined`: the patch is a full-row
+        // write, so `undefined` would leave the old text in place.
+        note: note.trim(),
         ...(reminder.write !== undefined ? { reminderAt: reminder.write } : {}),
       },
     });
@@ -275,6 +282,25 @@ export const EditActionModal = memo(function EditActionModal({
                 placeholder="不提醒"
                 onPress={() => setShowReminderPicker(true)}
                 onClear={() => reminder.setValue('')}
+              />
+            </View>
+
+            {/* Field 7: Note (issue #63) — kept last: it is the long-form
+                field, and putting it above the pickers would push them off a
+                small screen. */}
+            <View className="gap-1.5">
+              <Text className="font-sans text-xs font-semibold text-muted dark:text-muted-dark">
+                备注
+              </Text>
+              <TextInput
+                className={`${INPUT_CLASS} min-h-[88px]`}
+                style={{ minHeight: 88, textAlignVertical: 'top' }}
+                placeholder="记下关键信息：链接、编号、对方说了什么……"
+                value={note}
+                onChangeText={setNote}
+                multiline
+                accessibilityLabel="备注输入框"
+                accessibilityHint="这里写的内容会一并写入系统日历事件"
               />
             </View>
 

@@ -124,6 +124,9 @@ export const AppSchema = new Schema({
       status: column.text,
       source_inbox_id: column.text,
       replaces_action_id: column.text,
+      /** Free-form note (click a row to edit). Additive + nullable so
+       *  rows written by older clients read back as note-less. */
+      note: column.text,
     },
     {
       indexes: {
@@ -164,6 +167,9 @@ export const AppSchema = new Schema({
       status: column.text,
       source_inbox_id: column.text,
       replaces_action_id: column.text,
+      /** Mirrors `next_actions.note`; also written into the calendar
+       *  event's description so the text is visible in the system app. */
+      note: column.text,
     },
     { indexes: { calendarActionsStartsAt: ['starts_at'] } },
   ),
@@ -430,7 +436,22 @@ export function nextActionFromRow(row: NextActionRow): NextAction {
     status: row.status as ActionStatus,
     sourceInboxId: row.source_inbox_id ?? undefined,
     replacesActionId: row.replaces_action_id ?? undefined,
+    note: normalizeNote(row.note) ?? undefined,
   };
+}
+
+/**
+ * A free-form note (issue #63) is stored as NULL when it carries no text.
+ *
+ * The editor submits `note.trim()`, so an emptied field arrives as `''`;
+ * kept verbatim that is a row which is note-less only by an empty string —
+ * enough to draw a blank line on the Now card and an empty description on a
+ * calendar event. Reading applies the same rule, so rows written before this
+ * normalization also read back as note-less.
+ */
+export function normalizeNote(note: string | null | undefined): string | null {
+  const trimmed = note?.trim();
+  return trimmed === undefined || trimmed === '' ? null : trimmed;
 }
 
 export function nextActionToRow(action: NextAction): Omit<NextActionRow, 'id'> {
@@ -455,6 +476,7 @@ export function nextActionToRow(action: NextAction): Omit<NextActionRow, 'id'> {
     status: action.status,
     source_inbox_id: action.sourceInboxId ?? null,
     replaces_action_id: action.replacesActionId ?? null,
+    note: normalizeNote(action.note),
   };
 }
 
@@ -501,6 +523,7 @@ export function calendarActionFromRow(row: CalendarActionRow): CalendarAction {
     status: row.status as ActionStatus,
     sourceInboxId: row.source_inbox_id ?? undefined,
     replacesActionId: row.replaces_action_id ?? undefined,
+    note: normalizeNote(row.note) ?? undefined,
   };
 }
 
@@ -521,6 +544,7 @@ export function calendarActionToRow(action: CalendarAction): Omit<CalendarAction
     status: action.status,
     source_inbox_id: action.sourceInboxId ?? null,
     replaces_action_id: action.replacesActionId ?? null,
+    note: normalizeNote(action.note),
   };
 }
 

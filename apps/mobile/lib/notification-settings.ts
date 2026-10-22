@@ -68,7 +68,27 @@ export interface NotificationSettings {
    * — it needs a calendar permission prompt, so it is opt-in.
    */
   calendarEnabled: boolean;
+  /**
+   * Which channel delivers a reminder notification:
+   *   `app`      — the app's own OS notification (default, unchanged);
+   *   `calendar` — a system calendar event with an alarm, so the OS calendar
+   *                app notifies even when Nextdo is force-killed;
+   *   `both`     — both channels.
+   *
+   * `calendar`/`both` are native-only: the desktop runtime has no calendar
+   * module, so it always falls back to `app` (see the delivery hook).
+   */
+  reminderChannel: ReminderDeliveryChannel;
 }
+
+/** Issue #63: how a reminder reaches the user. */
+export type ReminderDeliveryChannel = 'app' | 'calendar' | 'both';
+
+export const REMINDER_DELIVERY_CHANNELS: readonly ReminderDeliveryChannel[] = [
+  'app',
+  'calendar',
+  'both',
+];
 
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   masterEnabled: true,
@@ -76,6 +96,7 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   reminderSoundEnabled: true,
   soundTone: 'gentle',
   calendarEnabled: false,
+  reminderChannel: 'app',
 };
 
 interface KeyValue {
@@ -186,6 +207,11 @@ export function parseNotificationSettings(raw: string | null): NotificationSetti
       reminderSoundEnabled: pickBoolean(parsed.reminderSoundEnabled, defaults.reminderSoundEnabled),
       soundTone: pickEnum(parsed.soundTone, NOTIFICATION_SOUND_TONES, defaults.soundTone),
       calendarEnabled: pickBoolean(parsed.calendarEnabled, defaults.calendarEnabled),
+      reminderChannel: pickEnum(
+        parsed.reminderChannel,
+        REMINDER_DELIVERY_CHANNELS,
+        defaults.reminderChannel,
+      ),
     };
   } catch {
     return DEFAULT_NOTIFICATION_SETTINGS;
@@ -237,6 +263,7 @@ export async function saveNotificationSettings(
     reminderSoundEnabled: patch.reminderSoundEnabled ?? current.reminderSoundEnabled,
     soundTone: patch.soundTone ?? current.soundTone,
     calendarEnabled: patch.calendarEnabled ?? current.calendarEnabled,
+    reminderChannel: patch.reminderChannel ?? current.reminderChannel,
   };
   // Write FIRST, then adopt: a failed write must not leave the cache claiming
   // a preference the device never stored — the switch would read OFF while
