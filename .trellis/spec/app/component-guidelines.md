@@ -220,6 +220,17 @@
   reads the stored value BEFORE its first reconcile (otherwise it would
   schedule and immediately withdraw) and re-reconciles on every preference
   poke — that poke is the "即时生效" path, not a poll.
+- **Reminder delivery channel (issue #63):** the 「提醒方式」 picker
+  (`reminderChannel`) chooses WHO notifies: `app` (default) / `calendar` /
+  `both`. `calendar`/`both` write one alarm-backed calendar event per
+  scheduled reminder through `use-calendar-sync.ts` +
+  `lib/calendar-sync/reminder-plan.ts`; `calendar` additionally suppresses the
+  app's notification, otherwise the same reminder rings twice. Suppression is
+  permission-aware: `calendarOwnsReminderDelivery()` returns false on web/Tauri
+  and when the calendar permission is not `granted`, so the app keeps
+  delivering and Settings explains why the calendar did not take over. The
+  reminder events have their own mapping map, independent of the 「写入系统日历」
+  action-sync switch; native-only is a hard platform rule, not a UI preference.
 - The one-shot first-run guide (`components/notification-optin-dialog.tsx`,
   mounted in the root layout beside `IosInstallPrompt` / `AutoUpdateNotifier`)
   shows only while the OS state is `undetermined` AND the user has never been
@@ -264,6 +275,7 @@
 
 - **DateTimePicker 模态弹窗与滚动体布局（Issue #50）**：
   在未设显式固定 `height` 的弹窗容器中（仅有 `max-height`），内部主体 `ScrollView` 严禁使用 `flex-1`（即 `flexGrow: 1, flexShrink: 1, flexBasis: 0`）。在 React Native Yoga 布局引擎下，未确定主轴高度的容器无法向 `flexBasis: 0` 的子项分配剩余空间，会导致滚动区域固有尺寸测量为 0、整个中间时间转盘坍塌消失。应使用 `className="shrink"` / `style={{ flexGrow: 0, flexShrink: 1 }}`，让 `ScrollView` 自适应由内容撑开，并在内容总高超过容器 `max-height` 约束时触发弹性收缩和内部滚动。
+- **DateTimePicker 日历格子的无障碍标签**：日期网格会补齐整周，相邻月份的日子出现在首尾（如 10 月 1 日与 11 月 1 日同屏）。本月格子用 `日 N`，补位格子必须用 `M月D日` —— 否则两个无障碍名称相同的按钮既无法被屏幕阅读器区分，也让 `getByLabelText` 在测试里抛 "multiple elements"。
 
 ## App update (Settings 「应用更新」 card + startup 「发现新版本」 dialog)
 
