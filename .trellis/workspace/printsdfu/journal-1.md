@@ -1864,3 +1864,46 @@ Session summary was not supplied.
 ### Next Steps
 
 - 重建/安装 macOS 应用后人工切换系统外观做最终确认
+
+
+## Session 61: 提醒接入系统日历通知通道并为行动增加备注
+<!-- trellis-session: v=2 fp=fa463a47fdbc25c0 -->
+
+**Date**: 2026-10-22
+**Task**: 提醒接入系统日历通知通道并为行动增加备注
+**Branch**: `main`
+
+### Summary
+
+新增 reminderChannel（app/calendar/both）让系统日历接管提醒投递：reminder-plan.ts 纯函数把每条待触发提醒映射为带闹钟的日历事件（标题=行动标题、start=firesAt、end=firesAt+estMinutes、描述=行动备注、闹钟偏移 0），映射独立存放于 reminderMappings；权限未授予或非原生平台时 calendarOwnsReminderDelivery() 返回 false，应用内通知继续投递，避免静默。同时给 NextAction/CalendarAction 增加 note 备注字段（跨 core/db/schema/powersync/UI），Now 卡片与项目详情展示、点击行打开编辑器，并修复日期选择器相邻月份补位日的重复无障碍标签。
+
+### Main Changes
+
+- 新增 reminderChannel 设置（app 默认 / calendar / both）与设置页「提醒方式」三选一，日历通道需先申请系统日历权限
+- 新增 lib/calendar-sync/reminder-plan.ts 纯函数与 reminder-plan.test.ts：提醒→日历事件计划、reminderMappings 独立映射，与行动日历同步开关互不影响
+- use-calendar-sync / use-reminder-delivery 接入通道：calendar 模式抑制应用内通知，权限被拒或 web/Tauri 时回退应用内投递
+- NextAction / CalendarAction 新增 note 字段，贯通 core 类型、db schema 与查询、powersync schema/sync-config、服务端 schema-init，并在 Now 卡片与项目详情展示、点击行打开编辑器
+- 修复 datetime-picker 相邻月份补位日的无障碍标签重复（本月用「日 N」、补位用「M月D日」）
+- 同步规范：domain-model.md 记录 note 与日历投递通道契约，component-guidelines.md 记录提醒方式与日期格子标签约定
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d43cf84` | fix(mobile): 修复日期选择器相邻月份补位日的重复无障碍标签 |
+| `1c2fc74` | feat(mobile): 提醒支持系统日历投递通道并为行动增加备注 |
+| `19f6842` | docs(spec): 记录提醒日历通道与日期格子标签约定 |
+| `444749b` | chore(task): archive 10-21-reminder-calendar-channel-and-action-notes |
+
+### Testing
+
+- [OK] [OK] pnpm verify:web 全绿（lint / typecheck / core 248 / server 104 / db 332 / mobile 686 项测试 / build:web）
+- [OK] [OK] 浏览器实测证据在 .verify/10-21-reminder-calendar-channel-and-action-notes/（7 张截图 + capture.mjs + evidence.md）
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 在真机（iOS/Android）安装后确认系统日历事件与闹钟按时触发，以及划掉应用后仍能提醒
