@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/app/database-guidelines.md", "reason": "note 列需同步客户端 schema、服务端目录与 DDL"}
+{"file": ".trellis/spec/app/hook-guidelines.md", "reason": "use-reminder-delivery / use-calendar-sync 的副作用边界"}
