@@ -1907,3 +1907,44 @@ Session summary was not supplied.
 ### Next Steps
 
 - 在真机（iOS/Android）安装后确认系统日历事件与闹钟按时触发，以及划掉应用后仍能提醒
+
+
+## Session 62: 备注支持 Markdown 渲染
+<!-- trellis-session: v=2 fp=d637a9836911ca40 -->
+
+**Date**: 2026-10-23
+**Task**: 备注支持 Markdown 渲染
+**Branch**: `feat/note-markdown-rendering`
+
+### Summary
+
+行动备注在 Now 卡片、项目详情与编辑器预览中按 Markdown 渲染，日历事件描述剥离标记
+
+### Main Changes
+
+## 变更
+- `packages/core/src/lib/markdown.ts`：零依赖 Markdown 解析器（`packages/core` 不得引入运行时依赖）。契约是**不抛错、不丢字符**：子集之外的输入降级为字面文本，`snake_case` 不误判为斜体。
+- `packages/ui/src/components/markdown-note.tsx`：块级与行内两种形态。项目详情用块级；Now 卡片用行内（全部块压成一段），保住 `numberOfLines={2}` 截断。
+- 编辑弹层与项目详情内联表单：继续编辑原始 Markdown，新增「预览 / 编辑」切换，切换 action 时重置预览状态。
+- `reminder-plan.ts` / `reconcile.ts`：系统日历事件描述是纯文本字段，写入前过 `markdownToPlainText`，事件签名基于剥标记后的文本。
+- 规范：`component-guidelines.md` 增 `MarkdownNote` 约定；`domain-model.md` 记录 `note` 存原文、渲染在展示层。
+
+## 验证
+- `node scripts/verify-web.mjs --no-serve` → `EXIT=0`：lint、typecheck、build:web 全通过；测试 core 265 / server 104 / db 332 / mobile 696 全绿。
+- 新增测试：解析器 17 项、渲染组件 9 项、日历描述去标记回归断言。
+- 浏览器实测：`.verify/10-22-note-markdown-rendering/`（5 张截图 + `evidence.md`）。混用标题/列表/粗体/行内代码/链接/引用的备注在预览、项目详情、Now 三处均无残留标记，重新打开编辑器时 textarea 仍是原始 Markdown 全文。
+
+## 下一步
+- 真机（iOS/Android）观感未验证，需要设备或模拟器。
+- 提 PR 并发测试版。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `13f24bd` | chore(task): archive 10-22-note-markdown-rendering |
+
+### Status
+
+[OK] **Completed**

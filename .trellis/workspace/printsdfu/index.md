@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 61
-- **Last Active**: 2026-10-22
+- **Total Sessions**: 62
+- **Last Active**: 2026-10-23
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1909 | Active |
+| `journal-1.md` | ~1950 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 62 | 2026-10-23 | 备注支持 Markdown 渲染 | `13f24bd` | `feat/note-markdown-rendering` |
 | 61 | 2026-10-22 | 提醒接入系统日历通知通道并为行动增加备注 | `d43cf84`, `1c2fc74`, `19f6842`, `444749b` | `main` |
 | 60 | 2026-10-21 | 修复跟随系统主题被桌面端窗口外观锁死 | `c68aa33` | `main` |
 | 59 | 2026-10-21 | 修复移动端开屏图标、更新自动安装无响应与通知权限请求 | `8f685fe` | `fix/mobile-install-notification-splash` |
