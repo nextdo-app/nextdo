@@ -139,6 +139,11 @@ export function buildReminderCalendarPlan(input: ReminderCalendarPlanInput): Cal
  * suppressing the app's own notification in that state would deliver
  * nothing at all. The app keeps scheduling instead, and Settings explains
  * why the calendar did not take over.
+ *
+ * `tauri` is included: the macOS shell ships an EventKit bridge (task 10-23),
+ * so the calendar can own delivery there too — that is the only way a desktop
+ * reminder fires with the app closed. Windows/Linux shells have no bridge, so
+ * their calendar permission reads `denied` and the app keeps delivering.
  */
 export function calendarOwnsReminderDelivery(input: {
   platform: DeliveryPlatform;
@@ -146,7 +151,7 @@ export function calendarOwnsReminderDelivery(input: {
   permission: CalendarPermission | null;
 }): boolean {
   return (
-    input.platform === 'native' &&
+    (input.platform === 'native' || input.platform === 'tauri') &&
     input.channel === 'calendar' &&
     input.permission === 'granted'
   );

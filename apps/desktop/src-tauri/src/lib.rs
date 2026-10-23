@@ -25,6 +25,16 @@ use std::sync::{Arc, Mutex};
 use tauri::Manager;
 use tauri_plugin_notification::NotificationExt;
 
+// macOS calendar channel (task 10-23). EventKit only exists on macOS; the
+// other targets compile `calendar_stub.rs` under the same module name, so
+// `generate_handler!` below lists one set of paths on every platform and the
+// JS probe always gets an answer instead of "command not found".
+#[cfg(target_os = "macos")]
+mod calendar;
+#[cfg(not(target_os = "macos"))]
+#[path = "calendar_stub.rs"]
+mod calendar;
+
 /* ------------------------------------------------------------------ *
  * 应用内更新下载状态机
  *
@@ -924,7 +934,13 @@ pub fn run() {
             open_downloaded_file,
             install_update_and_restart,
             set_window_theme,
-            get_system_theme
+            get_system_theme,
+            calendar::calendar_supported,
+            calendar::calendar_permission,
+            calendar::calendar_request_permission,
+            calendar::calendar_upsert_event,
+            calendar::calendar_delete_event,
+            calendar::calendar_open_settings
         ])
         .build(tauri::generate_context!())
         .expect("error while building Nextdo desktop")

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Standard (non-MAS) entitlements for the Developer ID build.
+
+  EventKit's TCC prompt is refused at the kernel level when the calendar
+  entitlement is missing, so the user never even sees the dialog and
+  `calendar_permission` reports "denied" for a permission nobody declined.
+  The app is not sandboxed, so no container key is needed here — this one
+  grants the capability the prompt is gated on.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.personal-information.calendars</key>
+  <true/>
+</dict>
+</plist>

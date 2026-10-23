@@ -65,6 +65,16 @@ const flush = async (): Promise<void> => {
   await act(async () => {});
 };
 
+/**
+ * Delivery assertions count ONLY notify calls: the hook first asks the shell
+ * whether an EventKit bridge exists (`calendar_supported`) before deciding who
+ * owns delivery, and that probe travels the same IPC bridge.
+ */
+const notifyCalls = (): unknown[][] =>
+  (mockTauriInvoke.mock.calls as unknown[][]).filter(
+    ([command]) => command === 'plugin:notification|notify',
+  );
+
 /** The preference-store backend the delivery hook reads (issue #24 R2). */
 function memoryStoreWith(patch: Partial<NotificationSettings>): {
   getItem(key: string): Promise<string | null>;
@@ -132,7 +142,7 @@ describe('desktop (tauri) delivery wiring', () => {
     await flush();
 
     // The FIRST reconcile (mount) already crosses fires_at → fires now.
-    expect(mockTauriInvoke).toHaveBeenCalledTimes(1);
+    expect(notifyCalls()).toHaveLength(1);
     expect(mockTauriInvoke).toHaveBeenCalledWith('plugin:notification|notify', {
       options: {
         title: '稍后提醒',
@@ -145,7 +155,7 @@ describe('desktop (tauri) delivery wiring', () => {
       jest.advanceTimersByTime(60_000);
     });
     await flush();
-    expect(mockTauriInvoke).toHaveBeenCalledTimes(1);
+    expect(notifyCalls()).toHaveLength(1);
   });
 
   it('a failed send is retried by the next tick (not marked delivered)', async () => {
@@ -154,14 +164,14 @@ describe('desktop (tauri) delivery wiring', () => {
     renderHook(() => useReminderDelivery());
     await flush();
 
-    expect(mockTauriInvoke).toHaveBeenCalledTimes(1);
+    expect(notifyCalls()).toHaveLength(1);
 
     // The next tick: still inside the 5 min grace window → retry.
     act(() => {
       jest.advanceTimersByTime(30_000);
     });
     await flush();
-    expect(mockTauriInvoke).toHaveBeenCalledTimes(2);
+    expect(notifyCalls()).toHaveLength(2);
   });
 
   it('delivers nothing while the in-app master switch is off (issue #24 R2)', async () => {
@@ -173,14 +183,14 @@ describe('desktop (tauri) delivery wiring', () => {
     renderHook(() => useReminderDelivery());
     await flush();
     // The row is due — the app-level switch is the only thing stopping it.
-    expect(mockTauriInvoke).not.toHaveBeenCalled();
+    expect(notifyCalls()).toHaveLength(0);
 
     // …and the 30 s tick does not sneak one through either.
     act(() => {
       jest.advanceTimersByTime(60_000);
     });
     await flush();
-    expect(mockTauriInvoke).not.toHaveBeenCalled();
+    expect(notifyCalls()).toHaveLength(0);
   });
 
   it('delivers on the reconcile the switch-on poke triggers (即时生效)', async () => {
@@ -191,7 +201,7 @@ describe('desktop (tauri) delivery wiring', () => {
 
     renderHook(() => useReminderDelivery());
     await flush();
-    expect(mockTauriInvoke).not.toHaveBeenCalled();
+    expect(notifyCalls()).toHaveLength(0);
 
     // The Settings switch writes the preference; that poke is what re-runs the
     // reconcile — no polling, no restart.
@@ -200,6 +210,6 @@ describe('desktop (tauri) delivery wiring', () => {
     });
     await flush();
 
-    expect(mockTauriInvoke).toHaveBeenCalledTimes(1);
+    expect(notifyCalls()).toHaveLength(1);
   });
 });

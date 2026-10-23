@@ -4,7 +4,12 @@
  *
  * Deliberately NOT in PowerSync: an event id is device-specific, so sync
  * would hand one device another device's ids. Same platform matrix as
- * `notification-settings` (native file, web memory).
+ * `notification-settings`: native file, browser/Tauri `localStorage`.
+ *
+ * The desktop shell matters here: it runs the web bundle, and a mapping lost
+ * on restart would re-create every event on the next launch — the user would
+ * see the same reminder twice. `localStorage` survives a webview reload, so
+ * the web branch persists rather than degrading to memory.
  */
 import { Platform } from 'react-native';
 import { logger } from '@nextdo/core';
@@ -24,7 +29,16 @@ export interface CalendarSyncState {
 
 const FILE_NAME = 'nextdo-calendar-sync.json';
 
+/** Webview key — mirrors the file name the native branch uses. */
+const WEB_KEY = 'nextdo.calendar-sync';
+
 type FileSystemLegacy = typeof import('expo-file-system/legacy');
+
+interface WebStorageLike {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
 
 let cached: CalendarSyncState | null = null;
 let memoryRaw: string | null = null;
@@ -54,13 +68,28 @@ function getFileSystem(): FileSystemLegacy | null {
   return fileSystem;
 }
 
+/** Absent on Node/jest — the memory fallback then covers the case. */
+function getWebStorage(): WebStorageLike | null {
+  const host = globalThis as {
+    window?: { localStorage?: WebStorageLike };
+    localStorage?: WebStorageLike;
+  };
+  return host.window?.localStorage ?? host.localStorage ?? null;
+}
+
 function stateFileUri(fs: FileSystemLegacy): string {
   return `${fs.documentDirectory ?? ''}${FILE_NAME}`;
 }
 
 async function readRaw(): Promise<string | null> {
   const fs = getFileSystem();
-  if (fs === null || fs.documentDirectory === null) return memoryRaw;
+  if (fs === null || fs.documentDirectory === null) {
+    try {
+      return getWebStorage()?.getItem(WEB_KEY) ?? memoryRaw;
+    } catch {
+      return memoryRaw;
+    }
+  }
   const uri = stateFileUri(fs);
   try {
     const info = await fs.getInfoAsync(uri);
@@ -78,7 +107,18 @@ async function readRaw(): Promise<string | null> {
 async function writeRaw(raw: string | null): Promise<void> {
   memoryRaw = raw;
   const fs = getFileSystem();
-  if (fs === null || fs.documentDirectory === null) return;
+  if (fs === null || fs.documentDirectory === null) {
+    try {
+      const storage = getWebStorage();
+      if (storage === null) return;
+      if (raw === null) storage.removeItem(WEB_KEY);
+      else storage.setItem(WEB_KEY, raw);
+    } catch (error) {
+      // Private mode / quota: the in-memory copy still serves this session.
+      logger.warn('calendar sync state write failed', toError(error));
+    }
+    return;
+  }
   const uri = stateFileUri(fs);
   try {
     if (raw === null) {

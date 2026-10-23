@@ -26,18 +26,19 @@
  * permission simply leaves the mapping in place so a later grant can clean up.
  */
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Platform } from 'react-native';
 import { usePowerSync } from '@powersync/react';
 import { listCalendarActions, listScheduledReminders, wrapDb } from '@nextdo/db';
 import { logger } from '@nextdo/core';
-import type { ExpoCalendar } from 'expo-calendar';
+import type { CalendarTarget } from '@/lib/calendar-sync/target';
+import { calendarTargetId } from '@/lib/calendar-sync/target';
 import {
   createCalendarEvent,
   deleteCalendarEvent,
   ensureCalendar,
   getCalendarPermission,
+  isCalendarSupported,
   updateCalendarEvent,
-} from '@/lib/calendar-sync/device';
+} from '@/lib/calendar-sync';
 import {
   buildCalendarSyncPlan,
   type CalendarSyncMappings,
@@ -64,7 +65,7 @@ function toError(error: unknown): Error {
  * dropped so the next pass retries from scratch rather than forever.
  */
 async function applyPlan(
-  calendar: ExpoCalendar,
+  calendar: CalendarTarget,
   plan: CalendarSyncPlan,
   nextMappings: CalendarSyncMappings,
 ): Promise<void> {
@@ -121,7 +122,6 @@ export function useCalendarSync(): void {
 
         const permission = await getCalendarPermission();
         if (permission !== 'granted') return;
-
         const calendar = await ensureCalendar();
         if (calendar === null) return;
 
@@ -167,7 +167,7 @@ export function useCalendarSync(): void {
           Object.keys(nextMappings).length > 0 || Object.keys(nextReminderMappings).length > 0;
         if (!keepCalendar && state.calendarId === null) return;
         await saveCalendarSyncState({
-          calendarId: keepCalendar ? calendar.id : null,
+          calendarId: keepCalendar ? calendarTargetId(calendar) : null,
           mappings: nextMappings,
           reminderMappings: nextReminderMappings,
         });
@@ -178,55 +178,72 @@ export function useCalendarSync(): void {
       });
   }, [db]);
 
-  // Mount: prime the switches, run once, then follow changes + data edits.
+  // Mount: probe the host once (the desktop answer comes from the shell, not
+  // from `Platform.OS` — a Tauri webview also reports `web`), then prime the
+  // switches, run once, and follow changes + data edits.
   useEffect(() => {
-    if (Platform.OS !== 'ios' && Platform.OS !== 'android') return;
     let disposed = false;
-    void loadNotificationSettings()
-      .then((settings) => {
-        switchesRef.current = {
+    let teardown: (() => void) | null = null;
+
+    function start(): void {
+      void loadNotificationSettings()
+        .then((settings) => {
+          switchesRef.current = {
+            actions: settings.calendarEnabled,
+            reminders: settings.reminderChannel !== 'app',
+          };
+          if (!disposed) runSync();
+        })
+        .catch((error: unknown) => {
+          logger.warn('calendar sync settings read failed', toError(error));
+        });
+
+      const unsubscribe = subscribeToNotificationSettings((settings) => {
+        const previous = switchesRef.current;
+        const next = {
           actions: settings.calendarEnabled,
           reminders: settings.reminderChannel !== 'app',
         };
-        if (!disposed) runSync();
-      })
-      .catch((error: unknown) => {
-        logger.warn('calendar sync settings read failed', toError(error));
+        switchesRef.current = next;
+        if (
+          previous === null ||
+          previous.actions !== next.actions ||
+          previous.reminders !== next.reminders
+        ) {
+          runSync();
+        }
       });
-    const unsubscribe = subscribeToNotificationSettings((settings) => {
-      const previous = switchesRef.current;
-      const next = {
-        actions: settings.calendarEnabled,
-        reminders: settings.reminderChannel !== 'app',
-      };
-      switchesRef.current = next;
-      if (
-        previous === null ||
-        previous.actions !== next.actions ||
-        previous.reminders !== next.reminders
-      ) {
-        runSync();
-      }
-    });
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const dispose = powersync.onChange(
-      {
-        onChange: () => {
-          if (timer !== null) clearTimeout(timer);
-          timer = setTimeout(() => {
-            runSync();
-          }, ON_CHANGE_DEBOUNCE_MS);
+
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const dispose = powersync.onChange(
+        {
+          onChange: () => {
+            if (timer !== null) clearTimeout(timer);
+            timer = setTimeout(() => {
+              runSync();
+            }, ON_CHANGE_DEBOUNCE_MS);
+          },
         },
-      },
-      // `reminders` drives the reminder channel; the action tables carry the
-      // title / note / time a reminder event displays.
-      { tables: ['calendar_actions', 'next_actions', 'reminders'] },
-    );
+        // `reminders` drives the reminder channel; the action tables carry the
+        // title / note / time a reminder event displays.
+        { tables: ['calendar_actions', 'next_actions', 'reminders'] },
+      );
+
+      teardown = () => {
+        if (timer !== null) clearTimeout(timer);
+        unsubscribe();
+        dispose();
+      };
+    }
+
+    void isCalendarSupported().then((supported) => {
+      if (disposed || !supported) return;
+      start();
+    });
+
     return () => {
       disposed = true;
-      if (timer !== null) clearTimeout(timer);
-      unsubscribe();
-      dispose();
+      teardown?.();
     };
   }, [powersync, runSync]);
 }

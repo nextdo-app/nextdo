@@ -13,6 +13,7 @@
  * `*Async` functions are never used here.
  */
 import { logger } from '@nextdo/core';
+import { Linking } from 'react-native';
 import type { Alarm, ExpoCalendar, ExpoCalendarEvent } from 'expo-calendar';
 import {
   calendarEventSignature,
@@ -173,5 +174,19 @@ export async function deleteCalendarEvent(eventId: string): Promise<boolean> {
   } catch (error) {
     logger.warn(`deleting the calendar event ${eventId} failed`, toError(error));
     return false;
+  }
+}
+
+/**
+ * Open this app's entry in the OS settings, where calendar access is granted.
+ *
+ * On iOS the calendar toggle lives in the app's own settings page, which is
+ * what `openSettings()` opens; Android lands on the app detail screen.
+ */
+export async function openCalendarSettings(): Promise<void> {
+  try {
+    await Linking.openSettings();
+  } catch (error) {
+    logger.warn('opening the app settings failed', toError(error));
   }
 }

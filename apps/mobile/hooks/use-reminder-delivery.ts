@@ -38,7 +38,7 @@ import { listScheduledReminders, wrapDb } from '@nextdo/db';
 import { logger } from '@nextdo/core';
 import { getDeliveryAdapter, type ReminderPermissionState } from '@/lib/reminders/adapters';
 import { postDebugLog } from '@/lib/reminders/debug-log';
-import { getCalendarPermission } from '@/lib/calendar-sync/device';
+import { getCalendarPermission } from '@/lib/calendar-sync';
 import { calendarOwnsReminderDelivery } from '@/lib/calendar-sync/reminder-plan';
 import { computeReconcile } from '@/lib/reminders/reminder-scheduler';
 import {

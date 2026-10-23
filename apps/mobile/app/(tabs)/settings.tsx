@@ -1020,7 +1020,7 @@ export default function SettingsScreen() {
             ) : null}
           </View>
 
-          {/* 5) 系统日历同步（issue #54）：仅原生平台提供；web 明确说明。 */}
+          {/* 5) 系统日历同步（issue #54）：原生与 macOS 桌面提供；其余平台明确说明。 */}
           <View className="border-t border-border/40 pt-3 dark:border-border-dark/40">
             {calendarPermission.supported ? (
               <>

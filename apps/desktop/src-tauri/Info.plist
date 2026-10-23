@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Extra Info.plist keys merged into the bundle by Tauri
+  (`bundle.macOS.infoPlist`). The usage description is what macOS shows in the
+  calendar permission dialog — without it the request is killed by the system
+  instead of prompting.
+-->
+<plist version="1.0">
+<dict>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>Nextdo 需要访问日历，才能把提醒写入系统日历并在应用关闭后按时提醒你。</string>
+</dict>
+</plist>

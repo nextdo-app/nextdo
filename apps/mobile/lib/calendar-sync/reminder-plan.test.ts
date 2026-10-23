@@ -170,7 +170,7 @@ describe('calendarOwnsReminderDelivery', () => {
     ).toBe(false);
   });
 
-  it('never hands over on the app-only channel or on web / tauri', () => {
+  it('never hands over on the app-only channel or on plain web', () => {
     expect(
       calendarOwnsReminderDelivery({ platform: 'native', channel: 'app', permission: 'granted' }),
     ).toBe(false);
@@ -178,7 +178,24 @@ describe('calendarOwnsReminderDelivery', () => {
       calendarOwnsReminderDelivery({ platform: 'web', channel: 'calendar', permission: 'granted' }),
     ).toBe(false);
     expect(
+      calendarOwnsReminderDelivery({ platform: 'tauri', channel: 'app', permission: 'granted' }),
+    ).toBe(false);
+  });
+
+  it('hands delivery to the calendar on the macOS shell, which has an EventKit bridge', () => {
+    expect(
       calendarOwnsReminderDelivery({ platform: 'tauri', channel: 'calendar', permission: 'granted' }),
+    ).toBe(true);
+  });
+
+  it('keeps the desktop app in charge when the calendar permission is missing', () => {
+    // A Windows/Linux shell has no EventKit bridge, so its permission reads
+    // `denied` — the app must keep delivering rather than silence the reminder.
+    expect(
+      calendarOwnsReminderDelivery({ platform: 'tauri', channel: 'calendar', permission: 'denied' }),
+    ).toBe(false);
+    expect(
+      calendarOwnsReminderDelivery({ platform: 'tauri', channel: 'calendar', permission: null }),
     ).toBe(false);
   });
 });

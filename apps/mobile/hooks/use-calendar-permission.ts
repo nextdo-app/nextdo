@@ -4,15 +4,17 @@
  * (not the sync engine) so the OS dialog always follows a user action.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { Linking, Platform } from 'react-native';
 import {
   getCalendarPermission,
+  isCalendarSupported,
+  openCalendarSettings,
   requestCalendarPermission,
   type CalendarPermission,
-} from '@/lib/calendar-sync/device';
+} from '@/lib/calendar-sync';
 
 export interface UseCalendarPermissionResult {
-  /** The OS can write to a calendar at all on this platform. */
+  /** The OS can write to a calendar at all on this host (false until the
+   *  platform probe resolves — the desktop answer comes from the shell). */
   supported: boolean;
   /** null until the first read resolves. */
   permission: CalendarPermission | null;
@@ -21,19 +23,23 @@ export interface UseCalendarPermissionResult {
 }
 
 export function useCalendarPermission(): UseCalendarPermissionResult {
-  const supported = Platform.OS === 'ios' || Platform.OS === 'android';
+  const [supported, setSupported] = useState(false);
   const [permission, setPermission] = useState<CalendarPermission | null>(null);
 
   useEffect(() => {
-    if (!supported) return;
     let disposed = false;
-    void getCalendarPermission().then((state) => {
-      if (!disposed) setPermission(state);
+    void isCalendarSupported().then((available) => {
+      if (disposed) return;
+      setSupported(available);
+      if (!available) return;
+      void getCalendarPermission().then((state) => {
+        if (!disposed) setPermission(state);
+      });
     });
     return () => {
       disposed = true;
     };
-  }, [supported]);
+  }, []);
 
   const requestAccess = useCallback(async (): Promise<CalendarPermission> => {
     const next = await requestCalendarPermission();
@@ -42,7 +48,7 @@ export function useCalendarPermission(): UseCalendarPermissionResult {
   }, []);
 
   const openSystemSettings = useCallback(async (): Promise<void> => {
-    await Linking.openSettings();
+    await openCalendarSettings();
   }, []);
 
   return { supported, permission, requestAccess, openSystemSettings };
