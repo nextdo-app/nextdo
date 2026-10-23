@@ -88,6 +88,16 @@ describe('compareVersions', () => {
     ['0.1.3-beta.1', '0.1.3', -1],
     ['0.1.4-beta.2', '0.1.4-beta.1', 1],
     ['0.1.4-beta.1', '0.1.4-beta.1', 0],
+    // Prerelease numbers are numbers, not text. String order puts `beta.10`
+    // BEFORE `beta.9` ('1' < '9'), which made a freshly published .10 report
+    // itself as older than .9 — only visible once the counter reaches two digits.
+    ['0.1.9-beta.10', '0.1.9-beta.9', 1],
+    ['0.1.9-beta.9', '0.1.9-beta.10', -1],
+    ['0.1.9-beta.10', '0.1.9-beta.10', 0],
+    // semver: fewer identifiers ranks lower (`beta` < `beta.1`).
+    ['0.1.4-beta', '0.1.4-beta.1', -1],
+    // semver: numeric identifiers rank below alphanumeric ones.
+    ['0.1.4-beta.2', '0.1.4-beta.beta', -1],
   ])('compareVersions(%s, %s) = %i', (a, b, expected) => {
     expect(compareVersions(a, b)).toBe(expected);
   });
