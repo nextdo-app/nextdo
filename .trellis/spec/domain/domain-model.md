@@ -317,7 +317,12 @@ A rule generating a recurring action (Proposal §7).
   | Platform | Delivery | In-notification actions |
   |----------|----------|-------------------------|
   | Mobile (iOS/Android) | expo-notifications (local, OS-persisted — survives force-kill; the reminder row ID is the OS notification `identifier`, reconciled on launch/foreground/row change) | none in v1: tap deep-links to the Now tab (完成 / 推迟 / 跳过 from the notification is post-MVP) |
-  | Desktop (Tauri) | tauri-plugin-notification 2.4.0 — **no native future scheduling on any desktop OS** (verified in the plugin source): a 30s in-app tick fires due rows while the app runs; nothing fires while the app is closed (v1 limitation) | none: click only focuses the app (the plugin has no desktop click callback) |
+  | Desktop (Tauri) | app channel: tauri-plugin-notification 2.4.0 — the **plugin** has no native future scheduling on any desktop OS (verified in the plugin source), so a 30s in-app tick fires due rows while the app runs. Calendar channel (macOS only, task 10-23): EventKit writes one event per scheduled row, so it fires with the app closed — see below | none: click only focuses the app (the plugin has no desktop click callback) |
+  Two distinct facts, easy to conflate: the notification PLUGIN cannot
+  schedule on desktop (that is a plugin limitation, unchanged), while the
+  DESKTOP BUILD can still deliver on time — on macOS through the calendar
+  channel. Windows/Linux shells have no calendar bridge, so their only
+  channel is the in-app tick and nothing fires while the app is closed.
   Every device delivers its own scheduled rows (no cross-device arbitration —
   one reminder may fire on each online device). Missed delivery on any
   platform: the `Reminder` row stays the source of truth and the item
@@ -337,11 +342,16 @@ A rule generating a recurring action (Proposal §7).
   past creates no event (no back-fill); an orphan row (action gone) is skipped.
   The events are tracked in their own `reminderMappings` map keyed by
   `reminders.id`, so toggling the calendar-action sync switch never deletes them.
-  The app channel keeps delivering whenever the calendar cannot: on web/Tauri
-  (`useCalendarSync` mounts only on iOS/Android) and whenever the calendar
-  permission is not `granted` — `calendarOwnsReminderDelivery()` in the plan
-  module is the one place that decides. `calendar`/`both` is therefore never
-  silent.
+  The app channel keeps delivering whenever the calendar cannot: on web, on
+  Windows/Linux shells, and whenever the calendar permission is not `granted` —
+  `calendarOwnsReminderDelivery()` in the plan module is the one place that
+  decides. `calendar`/`both` is therefore never silent.
+  The calendar channel is **platform-selected** (`lib/calendar-sync/index.ts`):
+  iOS/Android use expo-calendar, the macOS shell uses EventKit through the Tauri
+  shell's `calendar_*` commands (task 10-23), and everything else has no
+  calendar. The branch is PROBED (`calendar_supported()`), never inferred from
+  `Platform.OS`: the Tauri webview reports `web`, exactly like a browser. A
+  Windows/Linux shell simply rejects the probe and stays on the app channel.
 
 ### FocusSession (Proposal §9)
 - `actionId`, `actionKind`, `mode: "preset" | "free"`,
