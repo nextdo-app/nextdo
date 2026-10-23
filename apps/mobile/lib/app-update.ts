@@ -102,12 +102,43 @@ function parseVersion(value: string): ParsedVersion {
 }
 
 /**
+ * 比较两段预发布后缀（调用方已确认两侧都非空），按 semver 的标识符规则逐段比。
+ *
+ * 不能整串比字符串：`'beta.10' < 'beta.9'` 在字典序下成立（`'1' < '9'`），
+ * 于是刚发的 `.10` 会被判成比 `.9` 旧 —— 这个缺陷只在预发布序号进位到两位
+ * 数时才出现，恰好是最需要它正确的时候（发版后第一次检查更新）。
+ *
+ * 规则：点号分段逐段比较；纯数字段按数值比，非数字段按字典序比；数字段低于
+ * 非数字段；段数少的一方更低（`beta` < `beta.1`）。
+ */
+function comparePrerelease(left: string, right: string): number {
+  const leftParts = left.split('.');
+  const rightParts = right.split('.');
+  const length = Math.max(leftParts.length, rightParts.length);
+  for (let i = 0; i < length; i += 1) {
+    const leftPart = leftParts[i];
+    const rightPart = rightParts[i];
+    if (leftPart === undefined) return -1;
+    if (rightPart === undefined) return 1;
+    if (leftPart === rightPart) continue;
+    const leftIsNumeric = /^\d+$/.test(leftPart);
+    const rightIsNumeric = /^\d+$/.test(rightPart);
+    if (leftIsNumeric && rightIsNumeric) {
+      return Number(leftPart) > Number(rightPart) ? 1 : -1;
+    }
+    if (leftIsNumeric !== rightIsNumeric) return leftIsNumeric ? -1 : 1;
+    return leftPart > rightPart ? 1 : -1;
+  }
+  return 0;
+}
+
+/**
  * 比较两个版本号：`-1` 左小、`0` 相等、`1` 左边新。
  *
  * 数字段逐位比较（缺失位按 0 补齐，所以 `0.2` == `0.2.0`）；数字段全等时
- * 正式版高于预发布版（`0.1.4` > `0.1.4-beta.1`），两个预发布版按字符串比。
- * 预发布版低于同号正式版这条正是本应用的日常场景：本地跑的是
- * `0.1.3-beta.1`，仓库最新 release 是 `v0.1.3`。
+ * 正式版高于预发布版（`0.1.4` > `0.1.4-beta.1`），两个预发布版按
+ * `comparePrerelease` 逐段比。预发布版低于同号正式版这条正是本应用的日常
+ * 场景：本地跑的是 `0.1.3-beta.1`，仓库最新 release 是 `v0.1.3`。
  */
 export function compareVersions(a: string, b: string): number {
   const left = parseVersion(a);
@@ -122,7 +153,7 @@ export function compareVersions(a: string, b: string): number {
   // 无预发布后缀 = 正式版，排在其余预发布版之后。
   if (left.prerelease === null) return 1;
   if (right.prerelease === null) return -1;
-  return left.prerelease > right.prerelease ? 1 : -1;
+  return comparePrerelease(left.prerelease, right.prerelease);
 }
 
 /* ------------------------------------------------------------------ *
