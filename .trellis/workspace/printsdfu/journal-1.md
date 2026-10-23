@@ -1948,3 +1948,43 @@ Session summary was not supplied.
 ### Status
 
 [OK] **Completed**
+
+
+## Session 63: 桌面端 macOS 日历通道：提醒写入系统日历
+<!-- trellis-session: v=2 fp=1a6e9552d7cdaeb4 -->
+
+**Date**: 2026-10-23
+**Task**: 桌面端 macOS 日历通道：提醒写入系统日历
+**Branch**: `main`
+
+### Summary
+
+桌面端新增 macOS EventKit 桥，把待触发提醒写成带闹钟的系统日历事件，补上应用关闭后不投递的缺口
+
+### Main Changes
+
+- Rust 侧新增 calendar.rs（EventKit 完全访问：权限查询/请求、upsert、删除、隐私面板深链），非 macOS 目标用 calendar_stub.rs 顶替同名模块
+- TS 侧 lib/calendar-sync/index.ts 成为平台门面，desktop.ts 与 device.ts 同接口；平台判定改为探测 calendar_supported() 而非 Platform.OS
+- 放宽 use-calendar-sync 挂载门禁与 calendarOwnsReminderDelivery，桌面日历可接管投递
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `17d4f10` | feat(desktop): macOS EventKit calendar channel for reminders |
+| `11357ca` | docs(spec): desktop delivery matrix distinguishes plugin from platform |
+| `17b0481` | chore(task): archive 10-23-macos-calendar-channel |
+
+### Testing
+
+- [OK] node scripts/verify-web.mjs --no-serve → EXIT=0（49 suites / 704 tests，lint、typecheck、build:web 全绿）
+- [OK] cargo test --lib → 3 passed；cargo check 在 macOS 与桩分支下均通过；plutil -lint 两个 plist OK
+- [OK] 浏览器实测：web 端不误显示桌面开关、不出现系统日历档位、无 Tauri 桥，截图存 .verify/10-23-macos-calendar-channel/
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- macOS 真机验证授权弹窗、事件落库、更新与删除、撤权降级四项（需用户在场）

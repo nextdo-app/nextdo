@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 62
+- **Total Sessions**: 63
 - **Last Active**: 2026-10-23
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1950 | Active |
+| `journal-1.md` | ~1990 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 63 | 2026-10-23 | 桌面端 macOS 日历通道：提醒写入系统日历 | `17d4f10`, `11357ca`, `17b0481` | `main` |
 | 62 | 2026-10-23 | 备注支持 Markdown 渲染 | `13f24bd` | `feat/note-markdown-rendering` |
 | 61 | 2026-10-22 | 提醒接入系统日历通知通道并为行动增加备注 | `d43cf84`, `1c2fc74`, `19f6842`, `444749b` | `main` |
 | 60 | 2026-10-21 | 修复跟随系统主题被桌面端窗口外观锁死 | `c68aa33` | `main` |
