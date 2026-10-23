@@ -24,6 +24,7 @@
  * switch off must never withdraw the events the reminder channel owns.
  */
 import type { ScheduledReminderRow } from '@nextdo/db';
+import { markdownToPlainText } from '@nextdo/core';
 import type { DeliveryPlatform } from '@/lib/reminders/adapters/types';
 import type { ReminderDeliveryChannel } from '@/lib/notification-settings';
 import type { CalendarPermission } from './device';
@@ -48,12 +49,17 @@ export function reminderEventSpec(row: ScheduledReminderRow): CalendarSyncEventS
     (row.estMinutes !== null && row.estMinutes > 0 ? row.estMinutes : DEFAULT_EVENT_MINUTES) *
       MIN_EVENT_MS,
   );
+  // The note is authored as Markdown (task 10-22), but a calendar event
+  // description is a plain-text field — the system calendar renders no
+  // emphasis, so `**重要**` would show up with its asterisks. Strip the
+  // markers instead of shipping them to another app.
+  const plainNote = row.note === null ? '' : markdownToPlainText(row.note).trim();
   return {
     actionId: row.id,
     title: row.title,
     startsAt: new Date(firesAtMs).toISOString(),
     endsAt: new Date(firesAtMs + durationMs).toISOString(),
-    notes: row.note === null || row.note.trim() === '' ? undefined : row.note,
+    notes: plainNote === '' ? undefined : plainNote,
   };
 }
 

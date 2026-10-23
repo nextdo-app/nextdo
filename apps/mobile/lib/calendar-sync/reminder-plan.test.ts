@@ -63,6 +63,12 @@ describe('reminderEventSpec', () => {
     expect(reminderEventSpec(row({ id: 'r-1', note: '   ' }))?.notes).toBeUndefined();
   });
 
+  it('strips Markdown markers from the description (a calendar has no emphasis)', () => {
+    expect(reminderEventSpec(row({ id: 'r-1', note: '**带合同**，见 [文档](https://a.test)' }))?.notes).toBe(
+      '带合同，见 文档',
+    );
+  });
+
   it('returns null for an orphan or untitled action', () => {
     expect(reminderEventSpec(row({ id: 'r-1', title: null }))).toBeNull();
     expect(reminderEventSpec(row({ id: 'r-1', title: '  ' }))).toBeNull();

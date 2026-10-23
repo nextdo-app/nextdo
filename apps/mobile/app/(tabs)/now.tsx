@@ -19,7 +19,7 @@ import { Animated, Pressable, ScrollView, Text, TextInput, View } from 'react-na
 import { useAppInsets } from '@/lib/use-app-insets';
 import { router, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Button, Card, Tag, colors, cn } from '@nextdo/ui';
+import { Button, Card, MarkdownNote, Tag, colors, cn } from '@nextdo/ui';
 import { formatDeadline, toIso, type CandidateKind, type NextAction, type NextCandidate } from '@nextdo/core';
 import { useNow, shouldOfferReclarify, type NowEligible } from '@/hooks/use-now';
 import { useAppClock } from '@/hooks/use-app-clock';
@@ -380,13 +380,14 @@ const ActionRow = memo(function ActionRow({
             </View>
             {action.kind === 'next' && (action as NextCandidate).note !== undefined ? (
               // The note rides along on the candidate (issue #63) so the list
-              // shows the detail without opening the editor.
-              <Text
+              // shows the detail without opening the editor. Rendered as ONE
+              // truncated run (task 10-22): the note is Markdown, but a list
+              // row must not grow to the size of the document behind it.
+              <MarkdownNote
+                mode="inline"
                 numberOfLines={2}
-                className="font-sans text-sm leading-snug text-muted dark:text-muted-dark"
-              >
-                {(action as NextCandidate).note}
-              </Text>
+                value={(action as NextCandidate).note ?? ''}
+              />
             ) : null}
             <View className="flex-row flex-wrap items-center gap-1.5">
               {projectName !== undefined ? <Tag label={projectName} tone="neutral" /> : null}

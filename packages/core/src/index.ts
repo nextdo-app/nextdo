@@ -32,6 +32,13 @@ export {
   toIso,
 } from './lib/time';
 export type { Hhmm, SnoozePreset } from './lib/time';
+export {
+  markdownInlineSummary,
+  markdownToPlainText,
+  parseMarkdown,
+  parseMarkdownInline,
+} from './lib/markdown';
+export type { MarkdownBlock, MarkdownInline } from './lib/markdown';
 
 // domain
 export type {

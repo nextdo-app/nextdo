@@ -11,7 +11,7 @@
  * The plan is deliberately absolute — it never reads a clock beyond the
  * `now` it is handed (hook-guidelines Rule 4).
  */
-import type { CalendarAction } from '@nextdo/core';
+import { markdownToPlainText, type CalendarAction } from '@nextdo/core';
 
 export interface CalendarSyncEventSpec {
   actionId: string;
@@ -102,7 +102,13 @@ export function buildCalendarSyncPlan(input: CalendarSyncPlanInput): CalendarSyn
       title: action.title,
       startsAt: new Date(startsAtMs).toISOString(),
       endsAt: new Date(endsAtMs).toISOString(),
-      notes: action.note === undefined || action.note === '' ? undefined : action.note,
+      // Task 10-22: the note is Markdown in the app; a calendar description
+      // is plain text, so ship the markers stripped rather than showing
+      // `**重要**` verbatim in another app's UI.
+      notes:
+        action.note === undefined || action.note === ''
+          ? undefined
+          : markdownToPlainText(action.note).trim() || undefined,
     });
   }
 

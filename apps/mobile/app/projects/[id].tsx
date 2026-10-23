@@ -20,7 +20,7 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput,
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Button, Card, EmptyState, Tag, ValueChips, cn, colors, type TagTone } from '@nextdo/ui';
+import { Button, Card, EmptyState, MarkdownNote, Tag, ValueChips, cn, colors, type TagTone } from '@nextdo/ui';
 import { DateTimePicker } from '@/components/datetime-picker';
 import { FormField } from '@/components/form-field';
 import { PickerField } from '@/components/picker-field';
@@ -316,6 +316,8 @@ function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; 
   const [customEst, setCustomEst] = useState('');
   /** Issue #63: the long-form note travels with the row and into the calendar event. */
   const [note, setNote] = useState(action.note ?? '');
+  /** Task 10-22: raw Markdown in the box, rendered preview on demand. */
+  const [notePreview, setNotePreview] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const canSubmit = title.trim() !== '' && estMinutes !== null && !submitting;
@@ -396,16 +398,34 @@ function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; 
         />
       </FormField>
       <FormField label="备注">
-        <TextInput
-          className={`${INPUT_CLASS} min-h-[88px]`}
-          style={{ minHeight: 88, textAlignVertical: 'top' }}
-          placeholder="记下关键信息：链接、编号、对方说了什么……"
-          value={note}
-          onChangeText={setNote}
-          multiline
-          accessibilityLabel="备注输入框"
-          accessibilityHint="这里写的内容会一并写入系统日历事件"
-        />
+        {note.trim() !== '' ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={notePreview ? '返回编辑备注' : '预览备注'}
+            onPress={() => setNotePreview((previous) => !previous)}
+            className="self-start px-1 py-0.5"
+          >
+            <Text className="font-sans text-xs font-semibold text-accent dark:text-accent-dark">
+              {notePreview ? '编辑' : '预览'}
+            </Text>
+          </Pressable>
+        ) : null}
+        {notePreview ? (
+          <View className="rounded-xl border border-border/80 bg-surface-container/40 px-3.5 py-3 dark:border-border-dark dark:bg-surface-container-dark/40">
+            <MarkdownNote value={note} />
+          </View>
+        ) : (
+          <TextInput
+            className={`${INPUT_CLASS} min-h-[88px]`}
+            style={{ minHeight: 88, textAlignVertical: 'top' }}
+            placeholder="记下关键信息：链接、编号、对方说了什么……（支持 **粗体**、列表、`代码`）"
+            value={note}
+            onChangeText={setNote}
+            multiline
+            accessibilityLabel="备注输入框"
+            accessibilityHint="支持 Markdown，写的内容会一并写入系统日历事件"
+          />
+        )}
       </FormField>
       {showPicker ? (
         <DateTimePicker
@@ -907,6 +927,12 @@ export default function ProjectDetailScreen() {
                   ) : (
                     <>
                       <Text className="text-base text-ink dark:text-ink-dark">{action.title}</Text>
+                      {action.note !== undefined && action.note !== null ? (
+                        // Task 10-22: the note is Markdown — full block layout
+                        // here, where the row IS the content (the Now list uses
+                        // the truncated inline form instead).
+                        <MarkdownNote value={action.note} />
+                      ) : null}
                       <View className="flex-row flex-wrap items-center gap-2">
                         <Tag label={`${action.estMinutes} 分钟`} />
                         <Tag label={`价值 ${action.value}`} />
