@@ -138,6 +138,13 @@ A single concrete step (Proposal §5.3: "运行 baseline A", never "完成论文
   Now card and editable in the action form, and carried as the calendar event's
   description when the reminder is delivered through the system calendar; it
   never feeds the engine).
+  **The stored value is the user's raw Markdown** (task 10-22): rendering happens
+  at the display layer (`MarkdownNote`), never in the DB, and the column keeps the
+  original text so a round-trip through the editor is lossless. The calendar
+  description is a PLAIN-TEXT field in another app — every writer (`reminder-plan`,
+  `reconcile`) passes the note through `markdownToPlainText` before it reaches
+  `notes`, and the event signature is computed from that stripped text, so a
+  marker-only edit never churns the calendar event.
 - **Invariant:** one sitting, no sub-list. Enforced softly by Clarify questions 2–2c
   (an item either joins a project as one action or becomes a new project); the
   engine never splits actions itself.
