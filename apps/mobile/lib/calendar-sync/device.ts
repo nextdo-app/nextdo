@@ -122,7 +122,10 @@ function eventDetails(spec: CalendarSyncEventSpec): CreateEventDetails {
     title: spec.title,
     startDate: new Date(spec.startsAt),
     endDate: new Date(spec.endsAt),
-    notes: EVENT_NOTE,
+    // The action's own note wins: for a reminder-delivered event it is the
+    // context the user would otherwise have to dig out of the original
+    // message or file.
+    notes: spec.notes ?? EVENT_NOTE,
     alarms,
   };
 }

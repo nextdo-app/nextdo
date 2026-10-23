@@ -38,6 +38,8 @@ import { listScheduledReminders, wrapDb } from '@nextdo/db';
 import { logger } from '@nextdo/core';
 import { getDeliveryAdapter, type ReminderPermissionState } from '@/lib/reminders/adapters';
 import { postDebugLog } from '@/lib/reminders/debug-log';
+import { getCalendarPermission } from '@/lib/calendar-sync/device';
+import { calendarOwnsReminderDelivery } from '@/lib/calendar-sync/reminder-plan';
 import { computeReconcile } from '@/lib/reminders/reminder-scheduler';
 import {
   DEFAULT_NOTIFICATION_SETTINGS,
@@ -87,6 +89,9 @@ export function useReminderDelivery(): UseReminderDeliveryResult {
   // The in-app master switch (issue #24 R2). Held in a ref so a reconcile
   // queued by a poke reads the value AT RUN TIME, not the render-time closure.
   const masterEnabledRef = useRef(DEFAULT_NOTIFICATION_SETTINGS.masterEnabled);
+  // Issue #63: `calendar` means the system calendar is the notifier — the
+  // app must then hold NO pending notification, or the user is told twice.
+  const reminderChannelRef = useRef(DEFAULT_NOTIFICATION_SETTINGS.reminderChannel);
 
   const runReconcile = useCallback((): Promise<unknown> => {
     const mode = adapter.platform === 'web' ? null : adapter.platform;
@@ -96,9 +101,20 @@ export function useReminderDelivery(): UseReminderDeliveryResult {
         const rows = await listScheduledReminders(db);
         const pendingIds = await adapter.listPendingIds();
         const tauriContext = adapter.tauriContext?.();
+        // The calendar channel only exists on iOS/Android (`useCalendarSync`
+        // is mounted there alone), so on any other platform the app keeps
+        // delivering even with `reminderChannel: 'calendar'`. A denied or
+        // unasked-for calendar permission also keeps the app in charge —
+        // otherwise picking the calendar channel with no access would silence
+        // reminders entirely.
+        const calendarOwnsDelivery = calendarOwnsReminderDelivery({
+          platform: adapter.platform,
+          channel: reminderChannelRef.current,
+          permission: await getCalendarPermission(),
+        });
         const output = computeReconcile({
           mode,
-          enabled: masterEnabledRef.current,
+          enabled: masterEnabledRef.current && !calendarOwnsDelivery,
           // A FRESH clock per reconcile (see the module doc — the
           // sanctioned exception to Rule 4).
           now: new Date(),
@@ -162,6 +178,7 @@ export function useReminderDelivery(): UseReminderDeliveryResult {
         const settings = await loadNotificationSettings();
         if (disposed) return;
         masterEnabledRef.current = settings.masterEnabled;
+        reminderChannelRef.current = settings.reminderChannel;
         // Issue #54: the adapter needs the sound preferences before it arms
         // anything (the silent channel / `sound: false` live there).
         await adapter.setSoundPreferences?.({
@@ -244,6 +261,7 @@ export function useReminderDelivery(): UseReminderDeliveryResult {
   useEffect(() => {
     return subscribeToNotificationSettings((settings) => {
       masterEnabledRef.current = settings.masterEnabled;
+      reminderChannelRef.current = settings.reminderChannel;
       void Promise.resolve(
         adapter.setSoundPreferences?.({
           enabled: settings.reminderSoundEnabled,

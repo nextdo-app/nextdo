@@ -220,6 +220,17 @@
   reads the stored value BEFORE its first reconcile (otherwise it would
   schedule and immediately withdraw) and re-reconciles on every preference
   poke — that poke is the "即时生效" path, not a poll.
+- **Reminder delivery channel (issue #63):** the 「提醒方式」 picker
+  (`reminderChannel`) chooses WHO notifies: `app` (default) / `calendar` /
+  `both`. `calendar`/`both` write one alarm-backed calendar event per
+  scheduled reminder through `use-calendar-sync.ts` +
+  `lib/calendar-sync/reminder-plan.ts`; `calendar` additionally suppresses the
+  app's notification, otherwise the same reminder rings twice. Suppression is
+  permission-aware: `calendarOwnsReminderDelivery()` returns false on web/Tauri
+  and when the calendar permission is not `granted`, so the app keeps
+  delivering and Settings explains why the calendar did not take over. The
+  reminder events have their own mapping map, independent of the 「写入系统日历」
+  action-sync switch; native-only is a hard platform rule, not a UI preference.
 - The one-shot first-run guide (`components/notification-optin-dialog.tsx`,
   mounted in the root layout beside `IosInstallPrompt` / `AutoUpdateNotifier`)
   shows only while the OS state is `undetermined` AND the user has never been
@@ -264,6 +275,32 @@
 
 - **DateTimePicker 模态弹窗与滚动体布局（Issue #50）**：
   在未设显式固定 `height` 的弹窗容器中（仅有 `max-height`），内部主体 `ScrollView` 严禁使用 `flex-1`（即 `flexGrow: 1, flexShrink: 1, flexBasis: 0`）。在 React Native Yoga 布局引擎下，未确定主轴高度的容器无法向 `flexBasis: 0` 的子项分配剩余空间，会导致滚动区域固有尺寸测量为 0、整个中间时间转盘坍塌消失。应使用 `className="shrink"` / `style={{ flexGrow: 0, flexShrink: 1 }}`，让 `ScrollView` 自适应由内容撑开，并在内容总高超过容器 `max-height` 约束时触发弹性收缩和内部滚动。
+- **DateTimePicker 日历格子的无障碍标签**：日期网格会补齐整周，相邻月份的日子出现在首尾（如 10 月 1 日与 11 月 1 日同屏）。本月格子用 `日 N`，补位格子必须用 `M月D日` —— 否则两个无障碍名称相同的按钮既无法被屏幕阅读器区分，也让 `getByLabelText` 在测试里抛 "multiple elements"。
+
+## MarkdownNote (packages/ui)
+
+- `MarkdownNote` (`packages/ui/src/components/markdown-note.tsx`) is the ONE renderer
+  for user-authored Markdown (today: the action `note`). It parses through
+  `parseMarkdown` in `packages/core/src/lib/markdown.ts` — never add a second
+  parser, and never introduce a Markdown runtime dependency (`packages/core`
+  is dependency-free by rule).
+- Two modes, chosen by where the text sits: `mode="block"` (default) keeps one
+  `<Text>` per block and is for places where the note IS the content (project
+  detail); `mode="inline"` flattens every block into one paragraph with ` · `
+  separators and is required wherever a `numberOfLines` truncation must keep
+  working (the Now card uses `numberOfLines={2}`). An inline note that grows
+  into a document must not push the row taller.
+- The parser NEVER throws and never drops characters: anything outside the
+  supported subset (unpaired `**`, `[x](y`, lone backticks) renders literally.
+  Do not "clean up" such input before rendering — a note is free text, and
+  swallowing a character is worse than showing a stray asterisk.
+- Links open only in `block` mode AND only when the caller passes
+  `onLinkPress` (`Linking` is a platform concern; `packages/ui` must not
+  import it). Inline mode renders link text without a handler on purpose.
+- The editor always holds the RAW Markdown. The 「预览 / 编辑」 toggle is a
+  read-only view of the same string — never write the rendered output back
+  into the field, and reset the preview flag whenever the edited entity
+  changes so reopening the form never lands on a stale preview.
 
 ## App update (Settings 「应用更新」 card + startup 「发现新版本」 dialog)
 

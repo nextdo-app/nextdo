@@ -53,7 +53,8 @@ CREATE TABLE IF NOT EXISTS next_actions (
   last_skipped_at TEXT,
   status TEXT,
   source_inbox_id TEXT,
-  replaces_action_id TEXT
+  replaces_action_id TEXT,
+  note TEXT
 );
 CREATE INDEX IF NOT EXISTS next_actions_status_idx ON next_actions (status);
 CREATE INDEX IF NOT EXISTS next_actions_project_id_idx ON next_actions (project_id);
@@ -87,7 +88,8 @@ CREATE TABLE IF NOT EXISTS calendar_actions (
   last_skipped_at TEXT,
   status TEXT,
   source_inbox_id TEXT,
-  replaces_action_id TEXT
+  replaces_action_id TEXT,
+  note TEXT
 );
 CREATE INDEX IF NOT EXISTS calendar_actions_starts_at_idx ON calendar_actions (starts_at);
 
@@ -206,6 +208,15 @@ CREATE TABLE IF NOT EXISTS completion_records (
 /** Ensure all tables, indexes, and PowerSync replication publication exist. */
 export async function initDatabaseSchema(pool: DbPool): Promise<void> {
   await pool.query(SCHEMA_SQL);
+  // `CREATE TABLE IF NOT EXISTS` above never touches a table that already
+  // exists, so columns added after a database was first created need their
+  // own idempotent ALTER. `note` (issue #63) is one: a client that starts
+  // uploading it against an older database would otherwise fail the whole
+  // upload batch with "column note does not exist".
+  await pool.query(`
+    ALTER TABLE next_actions ADD COLUMN IF NOT EXISTS note TEXT;
+    ALTER TABLE calendar_actions ADD COLUMN IF NOT EXISTS note TEXT;
+  `);
 
   // Try to create the PowerSync publication if it does not already exist
   try {

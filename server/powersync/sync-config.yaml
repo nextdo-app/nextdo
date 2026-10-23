@@ -22,9 +22,9 @@ streams:
     queries:
       - SELECT id, created_at, updated_at, deleted_at, title, captured_at FROM inbox_items WHERE deleted_at IS NULL
       - SELECT id, created_at, updated_at, deleted_at, title, outcome, value, status, deadline FROM projects WHERE deleted_at IS NULL
-      - SELECT id, created_at, updated_at, deleted_at, title, project_id, context_ids, est_minutes, value, category, due_date, deadline, depends_on_id, window_start, window_end, window_days, snoozed_until, last_snoozed_at, consecutive_skips, last_skipped_at, status, source_inbox_id, replaces_action_id FROM next_actions WHERE deleted_at IS NULL
+      - SELECT id, created_at, updated_at, deleted_at, title, project_id, context_ids, est_minutes, value, category, due_date, deadline, depends_on_id, window_start, window_end, window_days, snoozed_until, last_snoozed_at, consecutive_skips, last_skipped_at, status, source_inbox_id, replaces_action_id, note FROM next_actions WHERE deleted_at IS NULL
       - SELECT id, created_at, updated_at, deleted_at, title, waiting_on, expected_by, follow_up_at FROM waiting_for_items WHERE deleted_at IS NULL
-      - SELECT id, created_at, updated_at, deleted_at, title, starts_at, context_ids, est_minutes, value, category, deadline, snoozed_until, last_snoozed_at, consecutive_skips, last_skipped_at, status, source_inbox_id, replaces_action_id FROM calendar_actions WHERE deleted_at IS NULL
+      - SELECT id, created_at, updated_at, deleted_at, title, starts_at, context_ids, est_minutes, value, category, deadline, snoozed_until, last_snoozed_at, consecutive_skips, last_skipped_at, status, source_inbox_id, replaces_action_id, note FROM calendar_actions WHERE deleted_at IS NULL
       - SELECT id, created_at, updated_at, deleted_at, title, note FROM someday_maybe_items WHERE deleted_at IS NULL
       - SELECT id, created_at, updated_at, deleted_at, title, url, note FROM reference_items WHERE deleted_at IS NULL
       - SELECT id, created_at, updated_at, deleted_at, name FROM contexts WHERE deleted_at IS NULL

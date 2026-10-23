@@ -72,6 +72,8 @@ describe('listScheduledReminders', () => {
         firesAt: toIso(new Date(FIXTURE_NOW.getTime() + 15 * 60_000)),
         intensity: 'important',
         title: '组会汇报', // the CalendarAction's title
+        note: null,
+        estMinutes: 30,
       });
       expect(rows[1]).toEqual({
         id: R.snooze,
@@ -80,6 +82,8 @@ describe('listScheduledReminders', () => {
         firesAt: toIso(new Date(FIXTURE_NOW.getTime() + 60 * 60_000)),
         intensity: 'normal',
         title: '取快递', // the NextAction's title
+        note: null,
+        estMinutes: 15,
       });
     } finally {
       await close();

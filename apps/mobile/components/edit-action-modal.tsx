@@ -15,7 +15,7 @@ import {
   View,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Button, ValueChips, cn, colors } from '@nextdo/ui';
+import { Button, MarkdownNote, ValueChips, cn, colors } from '@nextdo/ui';
 import {
   type NextAction,
   type Value,
@@ -91,6 +91,13 @@ export const EditActionModal = memo(function EditActionModal({
   const [estMinutes, setEstMinutes] = useState<number | null>(null);
   const [value, setValue] = useState<Value>(3);
   const [deadline, setDeadline] = useState('');
+  /** Issue #63: free-form note — the detail the user would otherwise have to
+   *  dig out of the original message or file. */
+  const [note, setNote] = useState('');
+  /** Task 10-22: the note box edits RAW Markdown; this toggles the read-only
+   *  rendered view. Reset with the rest of the form when another action loads,
+   *  so reopening the modal never lands on a stale preview. */
+  const [notePreview, setNotePreview] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [showReminderPicker, setShowReminderPicker] = useState(false);
   const [customEst, setCustomEst] = useState('');
@@ -114,6 +121,8 @@ export const EditActionModal = memo(function EditActionModal({
           : localDateTimeKey(action.deadline),
       );
       setCustomEst('');
+      setNote(action.note ?? '');
+      setNotePreview(false);
     }
   }, [action]);
 
@@ -138,6 +147,9 @@ export const EditActionModal = memo(function EditActionModal({
         estMinutes,
         value,
         deadline: deadlineIso,
+        // An emptied note is `''`, not `undefined`: the patch is a full-row
+        // write, so `undefined` would leave the old text in place.
+        note: note.trim(),
         ...(reminder.write !== undefined ? { reminderAt: reminder.write } : {}),
       },
     });
@@ -276,6 +288,47 @@ export const EditActionModal = memo(function EditActionModal({
                 onPress={() => setShowReminderPicker(true)}
                 onClear={() => reminder.setValue('')}
               />
+            </View>
+
+            {/* Field 7: Note (issue #63) — kept last: it is the long-form
+                field, and putting it above the pickers would push them off a
+                small screen. Task 10-22: the value stays RAW Markdown; the
+                预览 toggle renders it through the same parser the lists use,
+                so what the user checks here is what they will see. */}
+            <View className="gap-1.5">
+              <View className="flex-row items-center justify-between">
+                <Text className="font-sans text-xs font-semibold text-muted dark:text-muted-dark">
+                  备注
+                </Text>
+                {note.trim() !== '' ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={notePreview ? '返回编辑备注' : '预览备注'}
+                    onPress={() => setNotePreview((previous) => !previous)}
+                    className="px-1 py-0.5"
+                  >
+                    <Text className="font-sans text-xs font-semibold text-accent dark:text-accent-dark">
+                      {notePreview ? '编辑' : '预览'}
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
+              {notePreview ? (
+                <View className="rounded-xl border border-border/80 bg-surface-container/40 px-3.5 py-3 dark:border-border-dark dark:bg-surface-container-dark/40">
+                  <MarkdownNote value={note} />
+                </View>
+              ) : (
+                <TextInput
+                  className={`${INPUT_CLASS} min-h-[88px]`}
+                  style={{ minHeight: 88, textAlignVertical: 'top' }}
+                  placeholder="记下关键信息：链接、编号、对方说了什么……（支持 **粗体**、列表、`代码`）"
+                  value={note}
+                  onChangeText={setNote}
+                  multiline
+                  accessibilityLabel="备注输入框"
+                  accessibilityHint="支持 Markdown，写的内容会一并写入系统日历事件"
+                />
+              )}
             </View>
 
             {error !== null ? (

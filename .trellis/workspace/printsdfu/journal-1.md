@@ -1864,3 +1864,87 @@ Session summary was not supplied.
 ### Next Steps
 
 - 重建/安装 macOS 应用后人工切换系统外观做最终确认
+
+
+## Session 61: 提醒接入系统日历通知通道并为行动增加备注
+<!-- trellis-session: v=2 fp=fa463a47fdbc25c0 -->
+
+**Date**: 2026-10-22
+**Task**: 提醒接入系统日历通知通道并为行动增加备注
+**Branch**: `main`
+
+### Summary
+
+新增 reminderChannel（app/calendar/both）让系统日历接管提醒投递：reminder-plan.ts 纯函数把每条待触发提醒映射为带闹钟的日历事件（标题=行动标题、start=firesAt、end=firesAt+estMinutes、描述=行动备注、闹钟偏移 0），映射独立存放于 reminderMappings；权限未授予或非原生平台时 calendarOwnsReminderDelivery() 返回 false，应用内通知继续投递，避免静默。同时给 NextAction/CalendarAction 增加 note 备注字段（跨 core/db/schema/powersync/UI），Now 卡片与项目详情展示、点击行打开编辑器，并修复日期选择器相邻月份补位日的重复无障碍标签。
+
+### Main Changes
+
+- 新增 reminderChannel 设置（app 默认 / calendar / both）与设置页「提醒方式」三选一，日历通道需先申请系统日历权限
+- 新增 lib/calendar-sync/reminder-plan.ts 纯函数与 reminder-plan.test.ts：提醒→日历事件计划、reminderMappings 独立映射，与行动日历同步开关互不影响
+- use-calendar-sync / use-reminder-delivery 接入通道：calendar 模式抑制应用内通知，权限被拒或 web/Tauri 时回退应用内投递
+- NextAction / CalendarAction 新增 note 字段，贯通 core 类型、db schema 与查询、powersync schema/sync-config、服务端 schema-init，并在 Now 卡片与项目详情展示、点击行打开编辑器
+- 修复 datetime-picker 相邻月份补位日的无障碍标签重复（本月用「日 N」、补位用「M月D日」）
+- 同步规范：domain-model.md 记录 note 与日历投递通道契约，component-guidelines.md 记录提醒方式与日期格子标签约定
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d43cf84` | fix(mobile): 修复日期选择器相邻月份补位日的重复无障碍标签 |
+| `1c2fc74` | feat(mobile): 提醒支持系统日历投递通道并为行动增加备注 |
+| `19f6842` | docs(spec): 记录提醒日历通道与日期格子标签约定 |
+| `444749b` | chore(task): archive 10-21-reminder-calendar-channel-and-action-notes |
+
+### Testing
+
+- [OK] [OK] pnpm verify:web 全绿（lint / typecheck / core 248 / server 104 / db 332 / mobile 686 项测试 / build:web）
+- [OK] [OK] 浏览器实测证据在 .verify/10-21-reminder-calendar-channel-and-action-notes/（7 张截图 + capture.mjs + evidence.md）
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 在真机（iOS/Android）安装后确认系统日历事件与闹钟按时触发，以及划掉应用后仍能提醒
+
+
+## Session 62: 备注支持 Markdown 渲染
+<!-- trellis-session: v=2 fp=d637a9836911ca40 -->
+
+**Date**: 2026-10-23
+**Task**: 备注支持 Markdown 渲染
+**Branch**: `feat/note-markdown-rendering`
+
+### Summary
+
+行动备注在 Now 卡片、项目详情与编辑器预览中按 Markdown 渲染，日历事件描述剥离标记
+
+### Main Changes
+
+## 变更
+- `packages/core/src/lib/markdown.ts`：零依赖 Markdown 解析器（`packages/core` 不得引入运行时依赖）。契约是**不抛错、不丢字符**：子集之外的输入降级为字面文本，`snake_case` 不误判为斜体。
+- `packages/ui/src/components/markdown-note.tsx`：块级与行内两种形态。项目详情用块级；Now 卡片用行内（全部块压成一段），保住 `numberOfLines={2}` 截断。
+- 编辑弹层与项目详情内联表单：继续编辑原始 Markdown，新增「预览 / 编辑」切换，切换 action 时重置预览状态。
+- `reminder-plan.ts` / `reconcile.ts`：系统日历事件描述是纯文本字段，写入前过 `markdownToPlainText`，事件签名基于剥标记后的文本。
+- 规范：`component-guidelines.md` 增 `MarkdownNote` 约定；`domain-model.md` 记录 `note` 存原文、渲染在展示层。
+
+## 验证
+- `node scripts/verify-web.mjs --no-serve` → `EXIT=0`：lint、typecheck、build:web 全通过；测试 core 265 / server 104 / db 332 / mobile 696 全绿。
+- 新增测试：解析器 17 项、渲染组件 9 项、日历描述去标记回归断言。
+- 浏览器实测：`.verify/10-22-note-markdown-rendering/`（5 张截图 + `evidence.md`）。混用标题/列表/粗体/行内代码/链接/引用的备注在预览、项目详情、Now 三处均无残留标记，重新打开编辑器时 textarea 仍是原始 Markdown 全文。
+
+## 下一步
+- 真机（iOS/Android）观感未验证，需要设备或模拟器。
+- 提 PR 并发测试版。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `13f24bd` | chore(task): archive 10-22-note-markdown-rendering |
+
+### Status
+
+[OK] **Completed**

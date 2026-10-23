@@ -11,7 +11,7 @@
  * The plan is deliberately absolute — it never reads a clock beyond the
  * `now` it is handed (hook-guidelines Rule 4).
  */
-import type { CalendarAction } from '@nextdo/core';
+import { markdownToPlainText, type CalendarAction } from '@nextdo/core';
 
 export interface CalendarSyncEventSpec {
   actionId: string;
@@ -20,6 +20,9 @@ export interface CalendarSyncEventSpec {
   startsAt: string;
   /** ISO-8601 — start + `estMinutes` (min 1 minute). */
   endsAt: string;
+  /** Event description. For a reminder event this carries the action's
+   *  note (issue #63), so the information survives outside the app. */
+  notes?: string;
 }
 
 /** What we persisted for one action after creating/updating its event. */
@@ -55,7 +58,7 @@ export interface CalendarSyncPlan {
 
 /** The persisted fingerprint of one event's user-visible content. */
 export function calendarEventSignature(spec: CalendarSyncEventSpec): string {
-  return [spec.title, spec.startsAt, spec.endsAt].join('\u0000');
+  return [spec.title, spec.startsAt, spec.endsAt, spec.notes ?? ''].join('\u0000');
 }
 
 export interface CalendarSyncPlanInput {
@@ -99,6 +102,13 @@ export function buildCalendarSyncPlan(input: CalendarSyncPlanInput): CalendarSyn
       title: action.title,
       startsAt: new Date(startsAtMs).toISOString(),
       endsAt: new Date(endsAtMs).toISOString(),
+      // Task 10-22: the note is Markdown in the app; a calendar description
+      // is plain text, so ship the markers stripped rather than showing
+      // `**重要**` verbatim in another app's UI.
+      notes:
+        action.note === undefined || action.note === ''
+          ? undefined
+          : markdownToPlainText(action.note).trim() || undefined,
     });
   }
 

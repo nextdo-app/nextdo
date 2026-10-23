@@ -379,6 +379,7 @@ const EXPECTED_CLIENT_SCHEMA: Record<string, readonly string[]> = {
     'status',
     'source_inbox_id',
     'replaces_action_id',
+    'note',
   ],
   waiting_for_items: [
     'created_at',
@@ -407,6 +408,7 @@ const EXPECTED_CLIENT_SCHEMA: Record<string, readonly string[]> = {
     'status',
     'source_inbox_id',
     'replaces_action_id',
+    'note',
   ],
   someday_maybe_items: ['created_at', 'updated_at', 'deleted_at', 'title', 'note'],
   reference_items: ['created_at', 'updated_at', 'deleted_at', 'title', 'url', 'note'],

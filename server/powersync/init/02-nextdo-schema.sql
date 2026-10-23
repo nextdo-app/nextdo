@@ -59,7 +59,8 @@ CREATE TABLE next_actions (
   last_skipped_at TEXT,
   status TEXT,
   source_inbox_id TEXT,
-  replaces_action_id TEXT
+  replaces_action_id TEXT,
+  note TEXT
 );
 CREATE INDEX next_actions_status_idx ON next_actions (status);
 CREATE INDEX next_actions_project_id_idx ON next_actions (project_id);
@@ -93,7 +94,8 @@ CREATE TABLE calendar_actions (
   last_skipped_at TEXT,
   status TEXT,
   source_inbox_id TEXT,
-  replaces_action_id TEXT
+  replaces_action_id TEXT,
+  note TEXT
 );
 CREATE INDEX calendar_actions_starts_at_idx ON calendar_actions (starts_at);
 

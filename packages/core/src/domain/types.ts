@@ -73,6 +73,12 @@ export type NextAction = EntityBase & {
   status: ActionStatus;
   sourceInboxId?: string;
   replacesActionId?: string;
+  /**
+   * Free-form notes the user keeps on the action itself (issue: click a row
+   * to edit). The point is not having to hunt down the original message or
+   * file — the context lives where the action lives.
+   */
+  note?: string;
 };
 
 /** Delegated or blocked on someone/something else. Never enters the engine pool. */
@@ -103,6 +109,9 @@ export type CalendarAction = EntityBase & {
   status: ActionStatus;
   sourceInboxId?: string;
   replacesActionId?: string;
+  /** Same free-form note as `NextAction.note` — synced into the calendar
+   *  event's description so the information travels with the event. */
+  note?: string;
 };
 
 export type SomedayMaybeItem = EntityBase & {

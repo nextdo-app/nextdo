@@ -64,6 +64,7 @@ export const MUTABLE_TABLES: Readonly<Record<string, readonly string[]>> = {
     'status',
     'source_inbox_id',
     'replaces_action_id',
+    'note',
   ],
   waiting_for_items: [
     'created_at',
@@ -92,6 +93,7 @@ export const MUTABLE_TABLES: Readonly<Record<string, readonly string[]>> = {
     'status',
     'source_inbox_id',
     'replaces_action_id',
+    'note',
   ],
   someday_maybe_items: ['created_at', 'updated_at', 'deleted_at', 'title', 'note'],
   reference_items: ['created_at', 'updated_at', 'deleted_at', 'title', 'url', 'note'],

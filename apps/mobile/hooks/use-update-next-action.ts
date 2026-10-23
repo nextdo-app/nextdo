@@ -26,6 +26,11 @@ export interface UpdateNextActionPatch {
   reminderAt?: string | null;
   /** Context ids assigned to this action. */
   contextIds?: string[];
+  /**
+   * Free-form note (issue #63). `''` clears it — stored as NULL, so an
+   * emptied field never leaves a blank line in the calendar event.
+   */
+  note?: string;
 }
 
 export interface UpdateNextActionArgs {

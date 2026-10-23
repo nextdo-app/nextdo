@@ -182,6 +182,36 @@ describe('addNextAction', () => {
 });
 
 describe('updateNextAction', () => {
+  // Issue #63: the note column is additive and optional — a row without a
+  // note must stay note-less, never carry an empty string that then reads
+  // back as a blank line on the Now card.
+  it('stores an emptied or blank note as NULL', async () => {
+    const { db, close } = await open();
+    try {
+      const action = makeAction({ note: '等对方回电话' });
+      await addNextAction(db, action);
+      const readNote = async () =>
+        (
+          await db
+            .selectFrom('next_actions')
+            .select('note')
+            .where('id', '=', action.id)
+            .executeTakeFirstOrThrow()
+        ).note;
+      expect(await readNote()).toBe('等对方回电话');
+
+      await updateNextAction(db, { ...action, note: '', updatedAt: toIso(FIXTURE_NOW) });
+      expect(await readNote()).toBeNull();
+      const [reloaded] = await listNextActions(db);
+      expect(reloaded?.note).toBeUndefined();
+
+      await updateNextAction(db, { ...action, note: '   ', updatedAt: toIso(FIXTURE_NOW) });
+      expect(await readNote()).toBeNull();
+    } finally {
+      await close();
+    }
+  });
+
   it('redefining (title change) resets consecutiveSkips and lastSkippedAt', async () => {
     const { db, close } = await open(true);
     try {

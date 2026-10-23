@@ -24,6 +24,8 @@ export { ProgressBar } from './components/progress-bar';
 export type { ProgressBarProps } from './components/progress-bar';
 export { ValueChips } from './components/value-chips';
 export type { ValueChipsProps } from './components/value-chips';
+export { MarkdownNote } from './components/markdown-note';
+export type { MarkdownNoteProps } from './components/markdown-note';
 export { colors, radii, spacing, typography } from './tokens';
 export type {
   ColorToken,

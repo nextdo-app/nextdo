@@ -55,6 +55,10 @@ import { useSyncStatus } from '@/hooks/use-sync-status';
 import { useNotificationSettings } from '@/hooks/use-notification-settings';
 import { useCalendarPermission } from '@/hooks/use-calendar-permission';
 import type { NotificationSoundTone } from '@/lib/notification-settings';
+import {
+  REMINDER_DELIVERY_CHANNELS,
+  type ReminderDeliveryChannel,
+} from '@/lib/notification-settings';
 import { playNotificationTone } from '@/lib/notification-sound';
 import { useReminderPermission } from '@/hooks/use-reminder-permission';
 import type { ReminderPermissionState } from '@/lib/reminders/adapters';
@@ -138,6 +142,23 @@ const SOUND_TONE_ICONS: Record<NotificationSoundTone, IoniconsName> = {
 };
 
 const SOUND_TONES = Object.keys(SOUND_TONE_LABELS) as NotificationSoundTone[];
+
+/** Issue #63 — the three delivery channels, in the order the picker shows them. */
+const REMINDER_CHANNEL_LABELS: Record<ReminderDeliveryChannel, string> = {
+  app: '应用内通知',
+  calendar: '系统日历',
+  both: '两者都发',
+};
+const REMINDER_CHANNEL_HINTS: Record<ReminderDeliveryChannel, string> = {
+  app: '由 Nextdo 自己发出的通知提醒',
+  calendar: '把提醒写成带闹钟的日历事件，由系统日历通知',
+  both: '应用内通知和系统日历事件都发，宁可多响一次',
+};
+const REMINDER_CHANNEL_ICONS: Record<ReminderDeliveryChannel, IoniconsName> = {
+  app: 'notifications-outline',
+  calendar: 'calendar-outline',
+  both: 'layers-outline',
+};
 
 const THEME_OPTIONS: Array<{
   value: ThemePreference;
@@ -923,7 +944,83 @@ export default function SettingsScreen() {
             </View>
           </View>
 
-          {/* 4) 系统日历同步（issue #54）：仅原生平台提供；web 明确说明。 */}
+          {/* 4) 提醒方式（issue #63）：决定提醒由谁发出。 */}
+          <View className="border-t border-border/40 pt-3 dark:border-border-dark/40">
+            <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+              提醒方式
+            </Text>
+            <Text className="mt-0.5 font-sans text-[11px] leading-tight text-muted dark:text-muted-dark">
+              {calendarPermission.supported
+                ? '系统日历会把提醒写成带闹钟的日历事件，应用被划掉也能响；应用内通知依赖后台调度。'
+                : '当前平台不支持系统日历，提醒由应用内通知发出。'}
+            </Text>
+            <View className="mt-2 flex-row gap-2">
+              {REMINDER_DELIVERY_CHANNELS.filter(
+                (channel) => channel !== 'calendar' || calendarPermission.supported,
+              ).map((channel) => (
+                <Pressable
+                  key={channel}
+                  accessibilityRole="button"
+                  accessibilityLabel={`提醒方式：${REMINDER_CHANNEL_LABELS[channel]}`}
+                  accessibilityHint={REMINDER_CHANNEL_HINTS[channel]}
+                  accessibilityState={{ selected: (notificationSettings?.reminderChannel ?? 'app') === channel }}
+                  onPress={() => {
+                    // The calendar channels need the OS permission first —
+                    // the same request path the sync switch below uses, so
+                    // the user sees one intent prompt, not two.
+                    if (channel === 'app') {
+                      void updateSettings({ reminderChannel: channel });
+                      return;
+                    }
+                    void calendarPermission.requestAccess().then((next) => {
+                      if (next === 'granted') {
+                        void updateSettings({ reminderChannel: channel });
+                      }
+                    });
+                  }}
+                  className={cn(
+                    'flex-1 items-center gap-1 rounded-xl border px-2 py-2.5',
+                    (notificationSettings?.reminderChannel ?? 'app') === channel
+                      ? 'border-accent bg-accent/10'
+                      : 'border-border/60 dark:border-border-dark/60',
+                  )}
+                >
+                  <Ionicons
+                    name={REMINDER_CHANNEL_ICONS[channel]}
+                    size={18}
+                    color={
+                      (notificationSettings?.reminderChannel ?? 'app') === channel
+                        ? isDark
+                          ? colors.accentDark
+                          : colors.accent
+                        : isDark
+                          ? colors.mutedDark
+                          : colors.muted
+                    }
+                  />
+                  <Text
+                    className={cn(
+                      'font-sans text-xs font-semibold',
+                      (notificationSettings?.reminderChannel ?? 'app') === channel
+                        ? 'text-accent dark:text-accent-dark'
+                        : 'text-ink dark:text-ink-dark',
+                    )}
+                  >
+                    {REMINDER_CHANNEL_LABELS[channel]}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            {notificationSettings?.reminderChannel !== undefined &&
+            notificationSettings.reminderChannel !== 'app' &&
+            calendarPermission.permission === 'denied' ? (
+              <Text className="mt-2 font-sans text-[11px] leading-relaxed text-danger dark:text-danger-dark">
+                日历权限已被拒绝，提醒会退回应用内通知。请允许 Nextdo 访问日历后重新选择。
+              </Text>
+            ) : null}
+          </View>
+
+          {/* 5) 系统日历同步（issue #54）：仅原生平台提供；web 明确说明。 */}
           <View className="border-t border-border/40 pt-3 dark:border-border-dark/40">
             {calendarPermission.supported ? (
               <>

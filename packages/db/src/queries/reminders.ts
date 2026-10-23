@@ -26,6 +26,13 @@ export interface ScheduledReminderRow {
    *  resolution as `use-action-title`). null = orphan (the action row is
    *  soft-deleted or missing). */
   title: string | null;
+  /** The action's free-form note — carried into the calendar event's
+   *  description when the reminder is delivered through the system calendar,
+   *  so the context survives outside the app. null = no note / orphan. */
+  note: string | null;
+  /** The action's estimate in minutes — the reminder channel's calendar event
+   *  spans this long (habit reminders have no estimate: null). */
+  estMinutes: number | null;
 }
 
 /**
@@ -81,6 +88,24 @@ export async function listScheduledReminders(db: NextdoDb): Promise<ScheduledRem
         .else(null)
         .end()
         .as('title'),
+      eb
+        .case()
+        .when(eb('reminders.action_kind', '=', 'next'))
+        .thenRef('next_actions.note')
+        .when(eb('reminders.action_kind', '=', 'calendar'))
+        .thenRef('calendar_actions.note')
+        .else(null)
+        .end()
+        .as('note'),
+      eb
+        .case()
+        .when(eb('reminders.action_kind', '=', 'next'))
+        .thenRef('next_actions.est_minutes')
+        .when(eb('reminders.action_kind', '=', 'calendar'))
+        .thenRef('calendar_actions.est_minutes')
+        .else(null)
+        .end()
+        .as('est_minutes'),
     ])
     .where('reminders.state', '=', 'scheduled')
     .where('reminders.deleted_at', 'is', null)
@@ -94,6 +119,8 @@ export async function listScheduledReminders(db: NextdoDb): Promise<ScheduledRem
     firesAt: row.fires_at ?? '',
     intensity: row.intensity as ReminderIntensity,
     title: row.title,
+    note: row.note,
+    estMinutes: row.est_minutes,
   }));
 }
 

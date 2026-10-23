@@ -132,7 +132,19 @@ A single concrete step (Proposal §5.3: "运行 baseline A", never "完成论文
 - `status: "open" | "done"` (**`done → open` is legal** — the user-initiated restore of
   a mis-completed action, issue 27; it is NOT a general un-complete and it never deletes
   history),
-- `sourceInboxId?`, `replacesActionId?` (Clarify/re-clarify traceability).
+- `sourceInboxId?`, `replacesActionId?` (Clarify/re-clarify traceability),
+- `note?` (free text — the user's own note on the action; trimmed-empty is stored
+  as NULL, never `''` (`normalizeNote`, `packages/db/src/schema.ts`); shown on the
+  Now card and editable in the action form, and carried as the calendar event's
+  description when the reminder is delivered through the system calendar; it
+  never feeds the engine).
+  **The stored value is the user's raw Markdown** (task 10-22): rendering happens
+  at the display layer (`MarkdownNote`), never in the DB, and the column keeps the
+  original text so a round-trip through the editor is lossless. The calendar
+  description is a PLAIN-TEXT field in another app — every writer (`reminder-plan`,
+  `reconcile`) passes the note through `markdownToPlainText` before it reaches
+  `notes`, and the event signature is computed from that stripped text, so a
+  marker-only edit never churns the calendar event.
 - **Invariant:** one sitting, no sub-list. Enforced softly by Clarify questions 2–2c
   (an item either joins a project as one action or becomes a new project); the
   engine never splits actions itself.
@@ -145,7 +157,7 @@ Delegated or blocked on someone/something else (Proposal §5.2).
 
 ### CalendarAction
 Time-bound action (Proposal §5.2). `title`, `startsAt` (ISO datetime) + the shared
-action fields (contextIds, estMinutes, value, category, deadline optional). Carries
+action fields (contextIds, estMinutes, value, category, deadline / note optional). Carries
 the same execution columns as NextAction (`snoozedUntil`, `lastSnoozedAt`,
 `consecutiveSkips`, `lastSkippedAt`) — **snooze/skip transactions target all three
 action kinds**. A
@@ -312,6 +324,24 @@ A rule generating a recurring action (Proposal §7).
   surfaces as "due" on the Now screen. The delivery layer never writes
   `state = "fired"` (the OS fires while the app is terminated); rows stay
   `scheduled` until a business transaction cancels them.
+- **Reminder delivery channel (task 10-21-reminder-calendar-channel-and-action-notes).**
+  `reminderChannel: "app" | "calendar" | "both"` in
+  `apps/mobile/lib/notification-settings.ts` (default `"app"`; an unknown stored
+  value reads as `"app"`) picks the notifier: the app's own notification, the
+  system calendar, or both. It is a per-device SETTING, never a row-level state —
+  the `Reminder` row and its transactions are identical on every channel.
+  `calendar`/`both` build one OS calendar event per scheduled row
+  (`apps/mobile/lib/calendar-sync/reminder-plan.ts`): title = action title,
+  start = `firesAt`, end = `firesAt` + `estMinutes` (floor 1 min, default 15),
+  description = the action's `note`, alarm offset 0. A `firesAt` already in the
+  past creates no event (no back-fill); an orphan row (action gone) is skipped.
+  The events are tracked in their own `reminderMappings` map keyed by
+  `reminders.id`, so toggling the calendar-action sync switch never deletes them.
+  The app channel keeps delivering whenever the calendar cannot: on web/Tauri
+  (`useCalendarSync` mounts only on iOS/Android) and whenever the calendar
+  permission is not `granted` — `calendarOwnsReminderDelivery()` in the plan
+  module is the one place that decides. `calendar`/`both` is therefore never
+  silent.
 
 ### FocusSession (Proposal §9)
 - `actionId`, `actionKind`, `mode: "preset" | "free"`,
