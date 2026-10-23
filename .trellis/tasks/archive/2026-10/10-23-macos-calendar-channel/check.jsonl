@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/domain/domain-model.md", "reason": "验收核对：平台能力矩阵已修正且通道不变量未破坏"}
+{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "质量门禁与提交规范"}
+{"file": ".trellis/spec/app/testing-guidelines.md", "reason": "测试与实测证据要求"}
