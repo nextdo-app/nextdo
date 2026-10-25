@@ -166,6 +166,17 @@ CREATE TABLE IF NOT EXISTS reminders (
   state TEXT
 );
 
+CREATE TABLE IF NOT EXISTS reminder_deliveries (
+  id TEXT PRIMARY KEY,
+  reminder_id TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  status TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  delivered_at TEXT,
+  last_error TEXT,
+  UNIQUE (reminder_id, channel)
+);
+
 CREATE TABLE IF NOT EXISTS focus_sessions (
   id TEXT PRIMARY KEY,
   created_at TEXT,
