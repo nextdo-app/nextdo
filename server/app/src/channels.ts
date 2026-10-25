@@ -16,6 +16,10 @@
  *     EMPTY and the HMAC key is `<timestamp>\n<secret>`.
  *   - Server 酱 Turbo: POST https://sctapi.ftqq.com/<SendKey>.send,
  *     form-encoded `title` + `desp`.
+ *   - PushPlus: POST https://www.pushplus.plus/send, JSON `token` + `title` +
+ *     `content` + `template`. It answers HTTP 200 even for a rejected push and
+ *     reports the real outcome in the body's `code` (200 = accepted), which is
+ *     why adapters may carry their own `verify`.
  */
 export interface DueReminder {
   id: string;
@@ -34,14 +38,21 @@ export interface ChannelRequest {
 }
 
 export interface ReminderChannel {
-  readonly kind: 'feishu' | 'serverchan';
+  readonly kind: 'feishu' | 'serverchan' | 'pushplus';
   buildRequest(reminder: DueReminder, now: Date): Promise<ChannelRequest>;
+  /**
+   * Optional extra acceptance check for vendors that report failure inside a
+   * 2xx body. Return an error message to mark the delivery failed, or null to
+   * accept it. The dispatcher owns retry and recording either way.
+   */
+  verify?(response: Response): Promise<string | null>;
 }
 
 export interface ChannelEnv {
   NEXTDO_FEISHU_WEBHOOK?: string;
   NEXTDO_FEISHU_SECRET?: string;
   NEXTDO_SERVERCHAN_SENDKEY?: string;
+  NEXTDO_PUSHPLUS_TOKEN?: string;
   NEXTDO_TIME_ZONE?: string;
 }
 
@@ -61,16 +72,23 @@ export function renderReminder(
 }
 
 /**
- * Format an ISO instant in `timeZone`; falls back to UTC when the zone is
- * missing or not a valid IANA name (a bad configuration value must not
- * break delivery).
+ * Time zone used when `NEXTDO_TIME_ZONE` is unset. Nextdo is built for a
+ * zh-CN audience, so a deployment that forgets the variable still renders
+ * reminder times in Beijing time instead of silently showing UTC.
+ */
+export const DEFAULT_TIME_ZONE = 'Asia/Shanghai';
+
+/**
+ * Format an ISO instant in `timeZone`; falls back to the default zone when
+ * the configured one is missing or not a valid IANA name (a bad configuration
+ * value must not break delivery).
  */
 function formatLocalTime(iso: string, timeZone: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) {
     return iso;
   }
-  for (const zone of [timeZone, 'UTC']) {
+  for (const zone of [timeZone, DEFAULT_TIME_ZONE, 'UTC']) {
     try {
       return new Intl.DateTimeFormat('zh-CN', {
         timeZone: zone,
@@ -165,12 +183,53 @@ function createServerChanChannel(sendKey: string, timeZone: string): ReminderCha
 }
 
 /**
+ * PushPlus channel — the personal-WeChat relay with a larger free quota than
+ * Server 酱 (200 WeChat pushes/day for a verified free account, 5 requests per
+ * minute). `template: 'txt'` keeps the reminder text verbatim instead of
+ * letting the default HTML template reflow it.
+ *
+ * PushPlus accepts `token` either in the JSON body or as a path segment; the
+ * body form is used here so the credential never lands in a URL that a proxy
+ * log might record.
+ */
+function createPushPlusChannel(token: string, timeZone: string): ReminderChannel {
+  return {
+    kind: 'pushplus',
+    async buildRequest(reminder) {
+      const rendered = renderReminder(reminder, timeZone);
+
+      return {
+        url: 'https://www.pushplus.plus/send',
+        init: {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            token,
+            title: rendered.title.slice(0, 100),
+            content: rendered.body,
+            template: 'txt',
+          }),
+        },
+      };
+    },
+    async verify(response) {
+      // HTTP 200 only means "request received"; the real outcome is `code`.
+      const payload = (await response.json().catch(() => null)) as { code?: unknown } | null;
+      if (payload?.code === 200) {
+        return null;
+      }
+      return `pushplus rejected the message (code=${String(payload?.code ?? 'unreadable')})`;
+    },
+  };
+}
+
+/**
  * Build the channel list for this deployment. A channel whose credential is
  * unset is omitted entirely, so "no external reminders configured" and
  * "configured but mis-spelled" stay distinguishable in the cron logs.
  */
 export function createChannels(env: ChannelEnv): ReminderChannel[] {
-  const timeZone = env.NEXTDO_TIME_ZONE?.trim() || 'UTC';
+  const timeZone = env.NEXTDO_TIME_ZONE?.trim() || DEFAULT_TIME_ZONE;
   const channels: ReminderChannel[] = [];
 
   const feishuWebhook = env.NEXTDO_FEISHU_WEBHOOK?.trim();
@@ -182,6 +241,11 @@ export function createChannels(env: ChannelEnv): ReminderChannel[] {
   const sendKey = env.NEXTDO_SERVERCHAN_SENDKEY?.trim();
   if (sendKey) {
     channels.push(createServerChanChannel(sendKey, timeZone));
+  }
+
+  const pushPlusToken = env.NEXTDO_PUSHPLUS_TOKEN?.trim();
+  if (pushPlusToken) {
+    channels.push(createPushPlusChannel(pushPlusToken, timeZone));
   }
 
   return channels;

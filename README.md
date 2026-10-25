@@ -155,6 +155,8 @@ Nextdo 专为个人设计了极简的多端同步方案，既可零成本免维�
 > 📖 **完整图文教程**：
 > - 📄 **[飞书云文档：Nextdo 零成本私有云同步搭建指南（推荐 · 纯网页全流程）](https://my.feishu.cn/wiki/FDWJwoCHsiBgltk0sW4cKs47nKb?from=from_copylink)**
 > - 📝 [仓库 Markdown 文档：零成本免费云同步完整部署指南](./server/deploy/FREE_CLOUD_DEPLOY.md)
+>
+> 🔔 **想要飞书 / 微信提醒？** 有 DDL 的任务除 app 与日历提醒外，还可额外推到飞书自定义机器人或个人微信（经 PushPlus 中转，免费版每天 200 条）。配置入口在部署完成后的 Worker 控制台：**Settings → Triggers → Cron Triggers** 建一个 `* * * * *`，再在 **Variables and Secrets** 里填通道密钥。详见 [部署指南「可选：开启外部提醒通道」](./server/deploy/FREE_CLOUD_DEPLOY.md#可选开启外部提醒通道飞书--个人微信)。
 
 ### 方案 B：私有 VPS 单机一键 Docker 部署
 如果你拥有一台 Linux VPS，可使用单机版 Docker Compose 一键拉起完整后端服务：

@@ -117,7 +117,7 @@ streams:
 
 ### 第三步：部署 Cloudflare Workers 后端（2 分钟）
 
-Cloudflare Workers 负责接收客户端写入的数据，并在首次启动时**全自动在数据库中建齐 14 张数据表**。
+Cloudflare Workers 负责接收客户端写入的数据，并在首次启动时**全自动在数据库中建齐 14 张核心业务表**（另有 `system_settings`、`reminder_deliveries` 两张服务端内部表）。
 
 1. 登录 [Cloudflare 控制台 (dash.cloudflare.com)](https://dash.cloudflare.com/)。
 2. 左侧菜单进入 **Compute (Workers) -> Workers & Pages**，点击 **Create application -> Create Worker**。
@@ -141,7 +141,41 @@ Cloudflare Workers 负责接收客户端写入的数据，并在首次启动时*
 
 6. **查看专属服务看板**：
    - 部署完成后，在浏览器中直接打开你的 Workers 网址（形如 `https://nextdo-server.yourname.workers.dev`）；
-   - 网页将自动初始化数据库（14 张表自动就绪），并显示 **Nextdo 云同步服务就绪看板**！
+   - 网页将自动初始化数据库（14 张核心业务表自动就绪），并显示 **Nextdo 云同步服务就绪看板**！
+
+### 可选：开通外部提醒通道（飞书 / 个人微信）
+
+> 这一步与云同步无关，不配也能正常同步。配上之后，有 DDL 的任务在到点时除了 app / 日历提醒，还会额外推一条到飞书或个人微信（与原有提醒**叠加**，不会替代它们）。
+
+**① 建 Cron 触发器（最容易漏）**
+
+Cron 触发器不在代码里，是 Cloudflare 上的独立配置，所以**在控制台粘贴代码不会自动创建它**——不建就永远收不到外部提醒：
+
+1. 进入你的 Worker（**Compute (Workers)** → **Workers & Pages** → 点你的 Worker）；
+2. 选择 **Settings** → **Triggers** → **Cron Triggers** → **Add Cron Trigger**；
+3. 表达式填 `* * * * *`（每分钟一次），保存。
+
+触发器按 **UTC** 执行；新建或修改后最长需要 15 分钟才会生效。
+
+**② 配置通道密钥**
+
+仍在 **Settings** → **Variables and Secrets** 里点 **Add**，按需添加（不加某个通道，就等于不启用它）：
+
+| 变量名称 | 变量类型 | 内容来源 |
+| :--- | :--- | :--- |
+| `NEXTDO_FEISHU_WEBHOOK` | **Secret** | 飞书群里「添加机器人」→「自定义机器人」给出的 webhook，形如 `https://open.feishu.cn/open-apis/bot/v2/hook/<hook-token>`，**整条**粘贴 |
+| `NEXTDO_FEISHU_SECRET` | **Secret** | **选填**。仅当机器人安全设置选了「签名校验」时填它；选「自定义关键词」或「IP 白名单」则不用填 |
+| `NEXTDO_PUSHPLUS_TOKEN` | **Secret** | 个人微信（推荐）：到 [pushplus.plus](https://www.pushplus.plus) 微信扫码登录，在「一对一消息」页复制 **token**；需在微信关注它的服务号。免费实名账号微信渠道**每天 200 条** |
+| `NEXTDO_SERVERCHAN_SENDKEY` | **Secret** | **选填**，与上一项二选一。个人微信的另一条中转：到 [sct.ftqq.com](https://sct.ftqq.com) 微信扫码注册，复制 SendKey（免费版每天最多 5 条） |
+| `NEXTDO_TIME_ZONE` | **Text** | **选填**。消息里显示时间的时区，**默认 `Asia/Shanghai`**（北京时间）；如需其他时区填 IANA 名称 |
+
+**③ 验证**
+
+改完变量后 Worker 会自动重载（Cron 触发器本身改完需等最长 15 分钟）。等到下一条提醒到点（最多晚 1 分钟），检查飞书群 / 微信是否收到以「⏰ 」开头的消息，正文是「到点时间：…」。若没收到，按顺序查：Cron 触发器的表达式是不是 `* * * * *`；Worker 日志里有没有 `reminder-dispatcher: due=… sent=…` 这行（有 `due=` 但 `sent=0` 说明是通道失败，看紧邻的 `reminder delivery failed (<channel>)`）；一条都没有则说明提醒本身未到点或该任务没设提醒。
+
+> 同一条提醒不会重复推送：每条「提醒 × 通道」在数据库 `reminder_deliveries` 里成功占位一次后就不再发。推送失败会重试（上限 3 次），最终失败会记录在表的 `status` / `last_error` 并写日志，不会静默丢弃。
+>
+> PushPlus 拒收时同样返回 HTTP 200，真实结果在响应体的 `code`（200 才算受理），Worker 会读这个字段，所以 token 填错或超额都会如实记为失败。
 
 ---
 

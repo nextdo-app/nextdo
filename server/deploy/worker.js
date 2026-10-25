@@ -9225,12 +9225,13 @@ function renderReminder(reminder, timeZone) {
   };
 }
 __name(renderReminder, "renderReminder");
+var DEFAULT_TIME_ZONE = "Asia/Shanghai";
 function formatLocalTime(iso, timeZone) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) {
     return iso;
   }
-  for (const zone of [timeZone, "UTC"]) {
+  for (const zone of [timeZone, DEFAULT_TIME_ZONE, "UTC"]) {
     try {
       return new Intl.DateTimeFormat("zh-CN", {
         timeZone: zone,
@@ -9304,8 +9305,37 @@ function createServerChanChannel(sendKey, timeZone) {
   };
 }
 __name(createServerChanChannel, "createServerChanChannel");
+function createPushPlusChannel(token, timeZone) {
+  return {
+    kind: "pushplus",
+    async buildRequest(reminder) {
+      const rendered = renderReminder(reminder, timeZone);
+      return {
+        url: "https://www.pushplus.plus/send",
+        init: {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            token,
+            title: rendered.title.slice(0, 100),
+            content: rendered.body,
+            template: "txt"
+          })
+        }
+      };
+    },
+    async verify(response) {
+      const payload = await response.json().catch(() => null);
+      if (payload?.code === 200) {
+        return null;
+      }
+      return `pushplus rejected the message (code=${String(payload?.code ?? "unreadable")})`;
+    }
+  };
+}
+__name(createPushPlusChannel, "createPushPlusChannel");
 function createChannels(env) {
-  const timeZone = env.NEXTDO_TIME_ZONE?.trim() || "UTC";
+  const timeZone = env.NEXTDO_TIME_ZONE?.trim() || DEFAULT_TIME_ZONE;
   const channels = [];
   const feishuWebhook = env.NEXTDO_FEISHU_WEBHOOK?.trim();
   if (feishuWebhook) {
@@ -9315,6 +9345,10 @@ function createChannels(env) {
   const sendKey = env.NEXTDO_SERVERCHAN_SENDKEY?.trim();
   if (sendKey) {
     channels.push(createServerChanChannel(sendKey, timeZone));
+  }
+  const pushPlusToken = env.NEXTDO_PUSHPLUS_TOKEN?.trim();
+  if (pushPlusToken) {
+    channels.push(createPushPlusChannel(pushPlusToken, timeZone));
   }
   return channels;
 }
@@ -9483,6 +9517,10 @@ async function dispatchDueReminders(deps) {
           const response = await fetchFn(request.url, request.init);
           if (!response.ok) {
             throw new Error(`${channel.kind} responded ${response.status}`);
+          }
+          const rejected = await channel.verify?.(response);
+          if (rejected) {
+            throw new Error(rejected);
           }
           lastError = null;
           break;

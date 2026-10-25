@@ -6,7 +6,7 @@
 
 > **✨ 极简设计核心优势**：
 > 1. **无需下载源代码**：全程在 Neon、PowerSync 和 Cloudflare 的网页控制台中点选操作，不碰本地终端。
-> 2. **数据库全自动建表**：无需打开 SQL Editor 复制执行任何 SQL，后端服务首次被访问时会自动创建所有 14 张数据表与索引。
+> 2. **数据库全自动建表**：无需打开 SQL Editor 复制执行任何 SQL，后端服务首次被访问时会自动创建所有 14 张核心业务表、2 张服务端内部表与全部索引。
 > 3. **客户端只需填写 Workers 网址**：首台设备**只需填写 Workers 网址**，无需手动配置 PowerSync 地址，无需寻找 Token，自动免密认领绑定！
 > 4. **多端秒级配对**：第二台设备直接扫码或粘贴连接串即可一键加入同步。
 
@@ -53,7 +53,7 @@
 3. 复制连接字符串，形如：
    `postgresql://user:password@ep-xyz.aws.neon.tech/neondb?sslmode=require`。
 
-> 💡 **无需手动建表**：Nextdo 后端会在后续步骤被访问时**全自动创建全部 14 张表及所有索引**，你完全不需要打开 SQL Editor。
+> 💡 **无需手动建表**：Nextdo 后端会在后续步骤被访问时**全自动创建全部 14 张核心业务表及所有索引**（另加 `system_settings` 与 `reminder_deliveries` 两张服务端内部表），你完全不需要打开 SQL Editor。
 
 ---
 
@@ -120,7 +120,7 @@
 5. 复制你部署好的 Worker 网址，例如：
    `https://nextdo-server.<your-subdomain>.workers.dev`
 
-> 💡 **自检与自动建表确认**：在浏览器中直接打开该网址，页面将显示漂亮的 Nextdo 就绪面板并提示：“服务正常运行 · 数据库已自动就绪（14张表已创建）”！
+> 💡 **自检与自动建表确认**：在浏览器中直接打开该网址，页面将显示漂亮的 Nextdo 就绪面板并提示：「服务正常运行 · 数据库已自动就绪」！
 
 ---
 
@@ -141,28 +141,58 @@ npx wrangler secret put NEXTDO_SYNC_ENDPOINT
 pnpm deploy:worker
 ```
 
-> ⚠️ **外部提醒通道需要从源码部署（方式 B）**：方式 A 使用的 `server/deploy/worker.js` 是发布时从源码打包的产物，只有包含 Cron 调度代码的版本才会投递外部提醒。
+> ⚠️ **外部提醒通道对方式 A / B 都可用**，差别只在 Cron 触发器怎么建（见下方「第 0 步」）。方式 A 粘贴的 `server/deploy/worker.js` 必须取自包含 Cron 调度代码的版本——旧版本没有 `scheduled` handler，触发器建了也不会投递。
 
 ---
 
 ### 可选：开启外部提醒通道（飞书 / 个人微信）
 
-有 DDL 的任务除了 app / 日历提醒之外，还可以额外推送到飞书或个人微信。这条通道由 Worker 的 **Cron 触发器**（`wrangler.jsonc` 的 `triggers.crons`，每分钟一次）驱动：它扫描到点的提醒并推送到下面配置的通道，与既有提醒方式**叠加**（原有行为不变）。
+有 DDL 的任务除了 app / 日历提醒之外，还可以额外推送到飞书或个人微信。这条通道由 Worker 的 **Cron 触发器**（每分钟一次）驱动：它扫描到点的提醒并推送到下面配置的通道，与既有提醒方式**叠加**（原有行为不变）。
+
+**0. 先建 Cron 触发器（漏了这步就永远收不到外部提醒）**
+
+Cron 触发器是 Cloudflare 侧的独立配置，**不写在代码里**，所以方式 A 粘贴代码不会自动带上它：
+
+- **方式 A（控制台部署）**：进入你的 Worker → **Settings** → **Triggers** → **Cron Triggers** → **Add Cron Trigger**，填写 `* * * * *`（每分钟一次）并保存。触发器按 **UTC** 执行；新建或修改后最长需 15 分钟才会同步到全球网络。
+- **方式 B（`pnpm deploy:worker`）**：`wrangler.jsonc` 的 `triggers.crons` 已是 `* * * * *`，部署时自动创建，无需手动操作。
+
+> 📍 **下面这些 `wrangler` 命令必须在 `server/app` 目录里执行**（`wrangler.jsonc` 在那里，Worker 名 `nextdo-server` 也写在那里）。在仓库根目录直接跑会报 `Required Worker name missing`。
+>
+> ```bash
+> cd server/app
+> ```
+>
+> 不想 `cd` 也可以给每条命令加 `--name nextdo-server`，例如 `npx wrangler secret put NEXTDO_PUSHPLUS_TOKEN --name nextdo-server`。
 
 **1. 飞书自定义机器人**
 
 在飞书群里添加「自定义机器人」，拿到 webhook 地址（形如 `https://open.feishu.cn/open-apis/bot/v2/hook/<hook-token>`）：
 
 ```bash
+cd server/app   # 已在此目录可跳过
 npx wrangler secret put NEXTDO_FEISHU_WEBHOOK   # 粘贴上面整条 webhook 地址
 npx wrangler secret put NEXTDO_FEISHU_SECRET    # 仅当机器人安全设置为「签名校验」时需要
 ```
 
-**2. 个人微信（经 Server 酱 Turbo 中转）**
+**2. 个人微信（经 PushPlus 中转，推荐）**
 
-个人微信没有官方自助推送 API，需要第三方中转。到 <https://sct.ftqq.com> 用微信扫码注册，拿到 SendKey：
+个人微信没有官方自助推送 API，需要第三方中转。PushPlus 免费实名账号的微信渠道是**每天 200 条**（请求频率每分钟 5 次），比 Server 酱 Turbo 的每天 5 条宽裕得多：
+
+1. 打开 <https://www.pushplus.plus>，用微信扫码登录；
+2. 进入「一对一消息」页面，复制页面上的 **token**；
+3. 在微信里关注它的服务号（否则收不到推送）。
 
 ```bash
+cd server/app   # 已在此目录可跳过
+npx wrangler secret put NEXTDO_PUSHPLUS_TOKEN   # 粘贴上面复制的 token
+```
+
+**2b.（可选）个人微信（经 Server 酱 Turbo 中转）**
+
+Server 酱仍可用，但与 PushPlus 二选一即可——两个都配会让同一条提醒发两次：
+
+```bash
+cd server/app   # 已在此目录可跳过
 npx wrangler secret put NEXTDO_SERVERCHAN_SENDKEY
 ```
 
@@ -171,12 +201,17 @@ npx wrangler secret put NEXTDO_SERVERCHAN_SENDKEY
 **3.（可选）时间显示时区**
 
 ```bash
-npx wrangler secret put NEXTDO_TIME_ZONE   # 例如 Asia/Shanghai，默认 UTC
+cd server/app   # 已在此目录可跳过
+npx wrangler secret put NEXTDO_TIME_ZONE   # 例如 Asia/Shanghai；不设则默认 Asia/Shanghai
 ```
 
-配置完成后重新部署一次（`pnpm deploy:worker`）。**一个通道都没配置时，Cron 触发器直接跳过，不产生任何投递。**
+> 方式 A（控制台）没有终端，直接在 **Settings** → **Variables and Secrets** 里 **Add** 同名变量即可，类型选 Secret（`NEXTDO_TIME_ZONE` 选 Text）。
+
+配置完成后：方式 A 在控制台保存变量即生效；方式 B 重新部署一次（`pnpm deploy:worker`）。**一个通道都没配置时，Cron 触发器直接跳过，不产生任何投递。**
 
 **去重与失败**：每条 (提醒, 通道) 只在 `reminder_deliveries` 里成功占位一次，因此同一条提醒不会重复推送；推送失败会在一次调度内重试（上限 3 次），仍然失败则记录状态并打日志，不会静默丢弃。
+
+> PushPlus 即使拒收也返回 HTTP 200，真实结果在响应体的 `code`（200 才算受理）。Worker 会读这个字段，所以 token 填错、超额度等情况会如实记为 `failed`，不会被当成发送成功。
 
 ---
 

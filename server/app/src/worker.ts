@@ -39,7 +39,11 @@ export interface WorkerEnv {
   /** Server 酱 Turbo SendKey (the personal-WeChat relay). Unset disables the
    *  channel. */
   NEXTDO_SERVERCHAN_SENDKEY?: string;
-  /** IANA time zone used to render reminder times; defaults to UTC. */
+  /** PushPlus token (another personal-WeChat relay; a larger free quota than
+   *  Server 酱). Unset disables the channel. */
+  NEXTDO_PUSHPLUS_TOKEN?: string;
+  /** IANA time zone used to render reminder times; defaults to
+   *  `Asia/Shanghai`. */
   NEXTDO_TIME_ZONE?: string;
 }
 

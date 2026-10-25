@@ -75,7 +75,7 @@ function createLogger() {
 }
 
 function fakeChannel(
-  kind: 'feishu' | 'serverchan',
+  kind: 'feishu' | 'serverchan' | 'pushplus',
   buildRequest: ReminderChannel['buildRequest'],
 ): ReminderChannel {
   return { kind, buildRequest };
@@ -90,9 +90,17 @@ describe('renderReminder', () => {
     expect(rendered.body).toContain('19:59');
   });
 
-  it('falls back to UTC for an invalid time zone', () => {
+  it('renders in Beijing time when no zone is configured', () => {
+    const [channel] = createChannels({ NEXTDO_PUSHPLUS_TOKEN: 'pp-token' });
+    const request = channel!.buildRequest(REMINDER, NOW);
+    return expect(request).resolves.toMatchObject({
+      init: expect.objectContaining({ body: expect.stringContaining('19:59') }),
+    });
+  });
+
+  it('falls back to the default zone for an invalid time zone', () => {
     const rendered = renderReminder(REMINDER, 'Not/AZone');
-    expect(rendered.body).toContain('11:59');
+    expect(rendered.body).toContain('19:59');
   });
 });
 
@@ -105,8 +113,18 @@ describe('createChannels', () => {
     const channels = createChannels({
       NEXTDO_FEISHU_WEBHOOK: 'https://open.feishu.cn/open-apis/bot/v2/hook/abc',
       NEXTDO_SERVERCHAN_SENDKEY: 'SCT123',
+      NEXTDO_PUSHPLUS_TOKEN: 'pp-token',
     });
-    expect(channels.map((c) => c.kind)).toEqual(['feishu', 'serverchan']);
+    expect(channels.map((c) => c.kind)).toEqual(['feishu', 'serverchan', 'pushplus']);
+  });
+
+  it('treats PushPlus and Server 酱 as independent channels', () => {
+    expect(createChannels({ NEXTDO_PUSHPLUS_TOKEN: 'pp-token' }).map((c) => c.kind)).toEqual([
+      'pushplus',
+    ]);
+    expect(createChannels({ NEXTDO_SERVERCHAN_SENDKEY: 'SCT123' }).map((c) => c.kind)).toEqual([
+      'serverchan',
+    ]);
   });
 });
 
@@ -158,6 +176,54 @@ describe('serverchan channel', () => {
     const body = new URLSearchParams(String(request.init.body));
     expect(body.get('title')).toContain('写周报');
     expect(body.get('desp')).toContain('到点时间：');
+  });
+});
+
+describe('pushplus channel', () => {
+  it('posts JSON token + title + content with the plain-text template', async () => {
+    const [channel] = createChannels({
+      NEXTDO_PUSHPLUS_TOKEN: 'pp-token',
+      NEXTDO_TIME_ZONE: 'Asia/Shanghai',
+    });
+    const request = await channel!.buildRequest(REMINDER, NOW);
+
+    expect(request.url).toBe('https://www.pushplus.plus/send');
+    expect(request.init.method).toBe('POST');
+    expect(request.init.headers).toEqual({ 'content-type': 'application/json' });
+    const body = JSON.parse(String(request.init.body)) as Record<string, string>;
+    expect(body).toEqual({
+      token: 'pp-token',
+      title: '⏰ 写周报',
+      content: '到点时间：2026年9月21日 19:59',
+      template: 'txt',
+    });
+    // The credential must not travel in the URL (proxy logs record those).
+    expect(request.url).not.toContain('pp-token');
+  });
+
+  it('accepts a body whose code is 200', async () => {
+    const [channel] = createChannels({ NEXTDO_PUSHPLUS_TOKEN: 'pp-token' });
+    const verdict = await channel!.verify!(
+      new Response(JSON.stringify({ code: 200, data: 'short-code' }), { status: 200 }),
+    );
+    expect(verdict).toBeNull();
+  });
+
+  it('rejects a 2xx body that reports a vendor error code', async () => {
+    // PushPlus answers HTTP 200 even when it refuses the push — measured
+    // against the live endpoint with an invalid token (`code: 903`).
+    const [channel] = createChannels({ NEXTDO_PUSHPLUS_TOKEN: 'pp-token' });
+    const verdict = await channel!.verify!(
+      new Response(JSON.stringify({ code: 903, msg: '用户令牌不正确' }), { status: 200 }),
+    );
+    expect(verdict).toContain('903');
+  });
+
+  it('rejects an unreadable body instead of assuming success', async () => {
+    const [channel] = createChannels({ NEXTDO_PUSHPLUS_TOKEN: 'pp-token' });
+    expect(await channel!.verify!(new Response('<html>oops</html>', { status: 200 }))).toContain(
+      'unreadable',
+    );
   });
 });
 
@@ -284,6 +350,33 @@ describe('dispatchDueReminders', () => {
     expect(update?.values?.[2]).toBe('failed');
     expect(update?.values?.[3]).toBe(2);
     expect(String(update?.values?.[5])).toContain('500');
+  });
+
+  it('marks a delivery failed when the vendor reports an error in a 2xx body', async () => {
+    const { pool, queries } = createFakePool({ selectRows: [dueRow] });
+    const { logger, error } = createLogger();
+    let calls = 0;
+    const fetchFn = (async () => {
+      calls += 1;
+      // HTTP 200, business code says the token is invalid.
+      return new Response(JSON.stringify({ code: 903 }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const summary = await dispatchDueReminders({
+      pool,
+      channels: createChannels({ NEXTDO_PUSHPLUS_TOKEN: 'pp-token' }),
+      now: NOW,
+      logger,
+      fetchFn,
+      maxAttempts: 2,
+    });
+
+    expect(calls).toBe(2);
+    expect(summary).toEqual({ due: 1, sent: 0, failed: 1, skipped: 0 });
+    expect(error).toHaveLength(1);
+    const update = queries.find((q) => q.text.includes('UPDATE reminder_deliveries'));
+    expect(update?.values?.[2]).toBe('failed');
+    expect(String(update?.values?.[5])).toContain('903');
   });
 
   /**

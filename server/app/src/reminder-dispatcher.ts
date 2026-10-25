@@ -192,6 +192,11 @@ export async function dispatchDueReminders(deps: DispatchDeps): Promise<Dispatch
           if (!response.ok) {
             throw new Error(`${channel.kind} responded ${response.status}`);
           }
+          // Some vendors answer 2xx and report the real outcome in the body.
+          const rejected = await channel.verify?.(response);
+          if (rejected) {
+            throw new Error(rejected);
+          }
           lastError = null;
           break;
         } catch (error) {
