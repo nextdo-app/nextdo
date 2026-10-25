@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "校验是否满足交付门禁与代码质量要求"}
+{"file": ".trellis/spec/app/testing-guidelines.md", "reason": "校验单测覆盖签名、渲染与去重逻辑"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "校验 reminders → deliveries 跨层一致性"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "校验是否复用既有投递层与渲染逻辑而非重复实现"}

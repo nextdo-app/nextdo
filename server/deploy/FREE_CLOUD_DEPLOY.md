@@ -141,6 +141,43 @@ npx wrangler secret put NEXTDO_SYNC_ENDPOINT
 pnpm deploy:worker
 ```
 
+> ⚠️ **外部提醒通道需要从源码部署（方式 B）**：方式 A 使用的 `server/deploy/worker.js` 是发布时从源码打包的产物，只有包含 Cron 调度代码的版本才会投递外部提醒。
+
+---
+
+### 可选：开启外部提醒通道（飞书 / 个人微信）
+
+有 DDL 的任务除了 app / 日历提醒之外，还可以额外推送到飞书或个人微信。这条通道由 Worker 的 **Cron 触发器**（`wrangler.jsonc` 的 `triggers.crons`，每分钟一次）驱动：它扫描到点的提醒并推送到下面配置的通道，与既有提醒方式**叠加**（原有行为不变）。
+
+**1. 飞书自定义机器人**
+
+在飞书群里添加「自定义机器人」，拿到 webhook 地址（形如 `https://open.feishu.cn/open-apis/bot/v2/hook/<hook-token>`）：
+
+```bash
+npx wrangler secret put NEXTDO_FEISHU_WEBHOOK   # 粘贴上面整条 webhook 地址
+npx wrangler secret put NEXTDO_FEISHU_SECRET    # 仅当机器人安全设置为「签名校验」时需要
+```
+
+**2. 个人微信（经 Server 酱 Turbo 中转）**
+
+个人微信没有官方自助推送 API，需要第三方中转。到 <https://sct.ftqq.com> 用微信扫码注册，拿到 SendKey：
+
+```bash
+npx wrangler secret put NEXTDO_SERVERCHAN_SENDKEY
+```
+
+> 免费会员每天最多 5 条；超出后推送失败，失败会记录在 `reminder_deliveries`（`status='failed'` 与 `last_error`）并写进 Worker 日志。
+
+**3.（可选）时间显示时区**
+
+```bash
+npx wrangler secret put NEXTDO_TIME_ZONE   # 例如 Asia/Shanghai，默认 UTC
+```
+
+配置完成后重新部署一次（`pnpm deploy:worker`）。**一个通道都没配置时，Cron 触发器直接跳过，不产生任何投递。**
+
+**去重与失败**：每条 (提醒, 通道) 只在 `reminder_deliveries` 里成功占位一次，因此同一条提醒不会重复推送；推送失败会在一次调度内重试（上限 3 次），仍然失败则记录状态并打日志，不会静默丢弃。
+
 ---
 
 ## 步骤四：在客户端开启同步（仅需填写 Workers 网址！）

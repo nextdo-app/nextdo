@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/domain/domain-model.md", "reason": "提醒投递的平台能力矩阵与领域模型，外部通道需与其对齐"}
+{"file": ".trellis/spec/app/database-guidelines.md", "reason": "新增 reminder_deliveries 表与迁移需遵循 schema/迁移约定"}
+{"file": ".trellis/spec/app/testing-guidelines.md", "reason": "通道适配器纯函数需按项目测试约定写单测"}
+{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "交付门禁与质量要求"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "客户端写 reminders → Worker 读表投递是跨层数据流"}

@@ -8574,7 +8574,8 @@ var MUTABLE_TABLES = {
     "last_skipped_at",
     "status",
     "source_inbox_id",
-    "replaces_action_id"
+    "replaces_action_id",
+    "note"
   ],
   waiting_for_items: [
     "created_at",
@@ -8602,7 +8603,8 @@ var MUTABLE_TABLES = {
     "last_skipped_at",
     "status",
     "source_inbox_id",
-    "replaces_action_id"
+    "replaces_action_id",
+    "note"
   ],
   someday_maybe_items: ["created_at", "updated_at", "deleted_at", "title", "note"],
   reference_items: ["created_at", "updated_at", "deleted_at", "title", "url", "note"],
@@ -9215,6 +9217,109 @@ function createApp(config) {
 }
 __name(createApp, "createApp");
 
+// src/channels.ts
+function renderReminder(reminder, timeZone) {
+  return {
+    title: `\u23F0 ${reminder.title}`,
+    body: `\u5230\u70B9\u65F6\u95F4\uFF1A${formatLocalTime(reminder.firesAt, timeZone)}`
+  };
+}
+__name(renderReminder, "renderReminder");
+function formatLocalTime(iso, timeZone) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+  for (const zone of [timeZone, "UTC"]) {
+    try {
+      return new Intl.DateTimeFormat("zh-CN", {
+        timeZone: zone,
+        dateStyle: "medium",
+        timeStyle: "short"
+      }).format(date);
+    } catch {
+    }
+  }
+  return iso;
+}
+__name(formatLocalTime, "formatLocalTime");
+async function feishuSignature(timestamp, secret) {
+  const encoder2 = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder2.encode(`${timestamp}
+${secret}`),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, new Uint8Array(0));
+  return Buffer.from(signature).toString("base64");
+}
+__name(feishuSignature, "feishuSignature");
+function createFeishuChannel(webhookUrl, secret, timeZone) {
+  return {
+    kind: "feishu",
+    async buildRequest(reminder, now) {
+      const rendered = renderReminder(reminder, timeZone);
+      const payload = {
+        msg_type: "text",
+        content: { text: `${rendered.title}
+${rendered.body}` }
+      };
+      if (secret !== null) {
+        const timestamp = Math.floor(now.getTime() / 1e3);
+        payload.timestamp = String(timestamp);
+        payload.sign = await feishuSignature(timestamp, secret);
+      }
+      return {
+        url: webhookUrl,
+        init: {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload)
+        }
+      };
+    }
+  };
+}
+__name(createFeishuChannel, "createFeishuChannel");
+function createServerChanChannel(sendKey, timeZone) {
+  return {
+    kind: "serverchan",
+    async buildRequest(reminder) {
+      const rendered = renderReminder(reminder, timeZone);
+      const body = new URLSearchParams();
+      body.set("title", rendered.title.slice(0, 32));
+      body.set("desp", rendered.body);
+      return {
+        url: `https://sctapi.ftqq.com/${encodeURIComponent(sendKey)}.send`,
+        init: {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: body.toString()
+        }
+      };
+    }
+  };
+}
+__name(createServerChanChannel, "createServerChanChannel");
+function createChannels(env) {
+  const timeZone = env.NEXTDO_TIME_ZONE?.trim() || "UTC";
+  const channels = [];
+  const feishuWebhook = env.NEXTDO_FEISHU_WEBHOOK?.trim();
+  if (feishuWebhook) {
+    const secret = env.NEXTDO_FEISHU_SECRET?.trim() || null;
+    channels.push(createFeishuChannel(feishuWebhook, secret, timeZone));
+  }
+  const sendKey = env.NEXTDO_SERVERCHAN_SENDKEY?.trim();
+  if (sendKey) {
+    channels.push(createServerChanChannel(sendKey, timeZone));
+  }
+  return channels;
+}
+__name(createChannels, "createChannels");
+
 // src/claim.ts
 import { randomBytes } from "node:crypto";
 var OWNER_TOKEN_KEY = "owner_token";
@@ -9288,6 +9393,126 @@ var ServerClaimManager = class {
   }
 };
 
+// src/reminder-dispatcher.ts
+var DEFAULT_MAX_ATTEMPTS = 3;
+var DEFAULT_LIMIT = 50;
+async function listDueReminders(pool, now, limit) {
+  const result = await pool.query(
+    `SELECT r.id,
+            r.action_kind,
+            r.action_id,
+            r.fires_at,
+            r.intensity,
+            COALESCE(na.title, ca.title, h.title) AS title
+       FROM reminders r
+       LEFT JOIN next_actions na
+              ON na.id = r.action_id
+             AND r.action_kind = 'next'
+             AND na.deleted_at IS NULL
+       LEFT JOIN calendar_actions ca
+              ON ca.id = r.action_id
+             AND r.action_kind = 'calendar'
+             AND ca.deleted_at IS NULL
+       LEFT JOIN habit_days hd
+              ON hd.id = r.action_id
+             AND r.action_kind = 'habit'
+             AND hd.deleted_at IS NULL
+       LEFT JOIN habits h
+              ON h.id = hd.habit_id
+             AND h.deleted_at IS NULL
+      WHERE r.state = 'scheduled'
+        AND r.deleted_at IS NULL
+        AND r.fires_at IS NOT NULL
+        AND r.fires_at <= $1
+      ORDER BY r.fires_at ASC
+      LIMIT $2`,
+    [now.toISOString(), limit]
+  );
+  return result.rows.filter(
+    (row) => typeof row.id === "string" && typeof row.title === "string" && row.title.trim() !== ""
+  ).map((row) => ({
+    id: row.id,
+    actionKind: row.action_kind ?? "",
+    actionId: row.action_id ?? "",
+    firesAt: row.fires_at ?? "",
+    intensity: row.intensity ?? "",
+    title: row.title
+  }));
+}
+__name(listDueReminders, "listDueReminders");
+async function claimDelivery(pool, reminderId, channel, nowIso) {
+  const result = await pool.query(
+    `INSERT INTO reminder_deliveries (id, reminder_id, channel, status, attempts, delivered_at)
+     VALUES ($1, $2, $3, 'pending', 0, $4)
+     ON CONFLICT (reminder_id, channel) DO NOTHING
+     RETURNING id`,
+    [crypto.randomUUID(), reminderId, channel, nowIso]
+  );
+  return result.rows.length > 0;
+}
+__name(claimDelivery, "claimDelivery");
+async function recordOutcome(pool, reminderId, channel, status, attempts, nowIso, lastError) {
+  await pool.query(
+    `UPDATE reminder_deliveries
+        SET status = $3, attempts = $4, delivered_at = $5, last_error = $6
+      WHERE reminder_id = $1 AND channel = $2`,
+    [reminderId, channel, status, attempts, nowIso, lastError]
+  );
+}
+__name(recordOutcome, "recordOutcome");
+async function dispatchDueReminders(deps) {
+  const fetchFn = deps.fetchFn ?? fetch;
+  const maxAttempts = deps.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
+  const limit = deps.limit ?? DEFAULT_LIMIT;
+  const nowIso = deps.now.toISOString();
+  const summary = { due: 0, sent: 0, failed: 0, skipped: 0 };
+  const due = await listDueReminders(deps.pool, deps.now, limit);
+  summary.due = due.length;
+  for (const reminder of due) {
+    for (const channel of deps.channels) {
+      const claimed = await claimDelivery(deps.pool, reminder.id, channel.kind, nowIso);
+      if (!claimed) {
+        summary.skipped += 1;
+        continue;
+      }
+      let lastError = null;
+      let attempt = 0;
+      for (; attempt < maxAttempts; attempt += 1) {
+        try {
+          const request = await channel.buildRequest(reminder, deps.now);
+          const response = await fetchFn(request.url, request.init);
+          if (!response.ok) {
+            throw new Error(`${channel.kind} responded ${response.status}`);
+          }
+          lastError = null;
+          break;
+        } catch (error) {
+          lastError = error instanceof Error ? error.message : String(error);
+        }
+      }
+      const ok = lastError === null;
+      await recordOutcome(
+        deps.pool,
+        reminder.id,
+        channel.kind,
+        ok ? "sent" : "failed",
+        ok ? attempt + 1 : attempt,
+        nowIso,
+        lastError
+      );
+      if (ok) {
+        summary.sent += 1;
+        deps.logger.info(`reminder delivered (${channel.kind})`);
+      } else {
+        summary.failed += 1;
+        deps.logger.error(`reminder delivery failed (${channel.kind})`, lastError);
+      }
+    }
+  }
+  return summary;
+}
+__name(dispatchDueReminders, "dispatchDueReminders");
+
 // src/schema-init.ts
 var SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS inbox_items (
@@ -9334,7 +9559,8 @@ CREATE TABLE IF NOT EXISTS next_actions (
   last_skipped_at TEXT,
   status TEXT,
   source_inbox_id TEXT,
-  replaces_action_id TEXT
+  replaces_action_id TEXT,
+  note TEXT
 );
 CREATE INDEX IF NOT EXISTS next_actions_status_idx ON next_actions (status);
 CREATE INDEX IF NOT EXISTS next_actions_project_id_idx ON next_actions (project_id);
@@ -9368,7 +9594,8 @@ CREATE TABLE IF NOT EXISTS calendar_actions (
   last_skipped_at TEXT,
   status TEXT,
   source_inbox_id TEXT,
-  replaces_action_id TEXT
+  replaces_action_id TEXT,
+  note TEXT
 );
 CREATE INDEX IF NOT EXISTS calendar_actions_starts_at_idx ON calendar_actions (starts_at);
 
@@ -9445,6 +9672,17 @@ CREATE TABLE IF NOT EXISTS reminders (
   state TEXT
 );
 
+CREATE TABLE IF NOT EXISTS reminder_deliveries (
+  id TEXT PRIMARY KEY,
+  reminder_id TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  status TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  delivered_at TEXT,
+  last_error TEXT,
+  UNIQUE (reminder_id, channel)
+);
+
 CREATE TABLE IF NOT EXISTS focus_sessions (
   id TEXT PRIMARY KEY,
   created_at TEXT,
@@ -9485,6 +9723,10 @@ CREATE TABLE IF NOT EXISTS completion_records (
 `;
 async function initDatabaseSchema(pool) {
   await pool.query(SCHEMA_SQL);
+  await pool.query(`
+    ALTER TABLE next_actions ADD COLUMN IF NOT EXISTS note TEXT;
+    ALTER TABLE calendar_actions ADD COLUMN IF NOT EXISTS note TEXT;
+  `);
   try {
     await pool.query("CREATE PUBLICATION powersync FOR ALL TABLES;");
   } catch (error) {
@@ -9630,6 +9872,22 @@ function getApp(env) {
   return initPromise;
 }
 __name(getApp, "getApp");
+var cronPool = null;
+var cronPoolConnectionString = null;
+var cronSchemaReady = false;
+async function getCronPool(env) {
+  const connectionString = env.HYPERDRIVE?.connectionString ?? env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error("DATABASE_URL is not set (and no HYPERDRIVE binding found)");
+  }
+  if (cronPool && cronPoolConnectionString === connectionString) {
+    return cronPool;
+  }
+  cronPool = createPool(connectionString);
+  cronPoolConnectionString = connectionString;
+  return cronPool;
+}
+__name(getCronPool, "getCronPool");
 var worker_default = {
   async fetch(request, env, ctx) {
     try {
@@ -9647,6 +9905,40 @@ var worker_default = {
           headers: { "content-type": "application/json" }
         }
       );
+    }
+  },
+  /**
+   * Cron entry point (wrangler.jsonc `triggers.crons`).
+   *
+   * Reads due reminders and pushes them to the configured external
+   * channels. Failures are logged and recorded, never thrown — a throw
+   * here only marks the cron invocation failed, which cannot help the
+   * reminder.
+   */
+  async scheduled(controller, env) {
+    try {
+      const pool = await getCronPool(env);
+      if (!cronSchemaReady) {
+        await initDatabaseSchema(pool);
+        cronSchemaReady = true;
+      }
+      const channels = createChannels(env);
+      if (channels.length === 0) {
+        return;
+      }
+      const summary = await dispatchDueReminders({
+        pool,
+        channels,
+        now: new Date(controller.scheduledTime),
+        logger
+      });
+      if (summary.due > 0) {
+        logger.info(
+          `reminder-dispatcher: due=${summary.due} sent=${summary.sent} failed=${summary.failed} skipped=${summary.skipped}`
+        );
+      }
+    } catch (error) {
+      logger.error("reminder-dispatcher: tick failed", error);
     }
   }
 };
