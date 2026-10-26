@@ -26,6 +26,7 @@ import {
   assertValidReminder,
   calendarActionReminderSpec,
   deadlineReminderSpec,
+  deadlineReminderSpecs,
   habitWindowReminderSpec,
   snoozeReminderSpec,
 } from './invariants';
@@ -396,5 +397,39 @@ describe('reminder creation rules', () => {
   it('deadline reminder in the past (or right now) → no reminder', () => {
     expect(deadlineReminderSpec(new Date('2026-09-21T08:59:59.000Z'), NOW_DATE)).toBeNull();
     expect(deadlineReminderSpec(NOW_DATE, NOW_DATE)).toBeNull();
+  });
+
+  it('multi-select reminders → one spec per future moment, chronological', () => {
+    expect(
+      deadlineReminderSpecs(
+        [
+          new Date('2026-09-21T12:00:00.000Z'),
+          new Date('2026-09-21T10:00:00.000Z'),
+        ],
+        NOW_DATE,
+      ),
+    ).toEqual([
+      { firesAt: '2026-09-21T10:00:00.000Z', intensity: 'normal' },
+      { firesAt: '2026-09-21T12:00:00.000Z', intensity: 'normal' },
+    ]);
+  });
+
+  it('multi-select reminders drop past moments and same-minute duplicates', () => {
+    expect(
+      deadlineReminderSpecs(
+        [
+          new Date('2026-09-21T08:00:00.000Z'),
+          new Date('2026-09-21T10:00:00.000Z'),
+          // Same minute, different seconds — the picker has minute resolution.
+          new Date('2026-09-21T10:00:40.000Z'),
+        ],
+        NOW_DATE,
+      ),
+    ).toEqual([{ firesAt: '2026-09-21T10:00:00.000Z', intensity: 'normal' }]);
+  });
+
+  it('multi-select reminders with nothing in the future → empty', () => {
+    expect(deadlineReminderSpecs([], NOW_DATE)).toEqual([]);
+    expect(deadlineReminderSpecs([NOW_DATE], NOW_DATE)).toEqual([]);
   });
 });

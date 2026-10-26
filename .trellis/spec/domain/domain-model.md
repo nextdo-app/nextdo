@@ -265,21 +265,33 @@ A rule generating a recurring action (Proposal §7).
   | Snooze (any) | = the snooze target time | `normal` |
   | CalendarAction with `startsAt` within 60 min | `startsAt − 15 min` | `important` |
   | Habit window closing | `windowEnd − 30 min` (if before window end) | `normal` |
-  | Deadline reminder (task 10-17 — the action form's 「提醒时间」) | = the moment the user picked; a past moment creates nothing | `normal` |
+  | Deadline reminder (task 10-17, multi-select since 10-26 — the action form's 「提醒时间」) | = each moment the user picked; past moments create nothing | `normal` |
   | Repeated skips / "do nothing" nagging | **never** — forbidden by Proposal §6.4 | — |
-- **The deadline reminder (task 10-17)** is the one creator driven by a FORM
-  rather than a transaction rule: the action forms carry an optional
-  「提醒时间」 (`apps/mobile/hooks/use-action-reminder.ts` +
+- **The deadline reminder (task 10-17, multi-select since task 10-26)** is the
+  one creator driven by a FORM rather than a transaction rule: the action forms
+  carry an optional 「提醒时间」 (`apps/mobile/hooks/use-action-reminder.ts` +
   `apps/mobile/lib/datetime-field.ts`), pre-filled from the deadline — the same
   moment when it has a time, that day at 10:00
   (`DEFAULT_DATE_ONLY_REMINDER_HHMM`) when it is date-only, nothing when that
-  prefilled moment already passed — and the save reconciles the row in the SAME
-  transaction as the action write: cancel the action's scheduled rows, arm the
-  new one (`reconcileReminder` in `packages/db/src/queries/actions.ts`).
-  `addNextAction` / `updateNextAction` take an optional `reminderAt` for this;
-  a caller that passes nothing (a rename, a re-clarify) leaves the row alone, so
-  a snooze reminder survives edits that have nothing to do with it. One action
-  therefore has at most one pending reminder.
+  prefilled moment already passed — and the save reconciles the rows in the SAME
+  transaction as the action write (`reconcileReminder` in
+  `packages/db/src/queries/actions.ts`).
+  `addNextAction` / `updateNextAction` take an optional `reminderAt` **list** for
+  this; a caller that passes nothing (a rename, a re-clarify) leaves the rows
+  alone, so a snooze reminder survives edits that have nothing to do with it.
+- **An action may hold several pending reminders** (task 10-26): the form field
+  is multi-select, one chip per picked moment, and `deadlineReminderSpecs`
+  (core) turns the picks into specs — chronological, deduplicated at minute
+  granularity, past moments dropped by the same rule the single value used.
+  `reconcileReminder` therefore matches the action's scheduled rows to the
+  wanted moment set instead of cancelling everything: a moment that is still
+  wanted KEEPS its row id, because that id is the join key for the app's
+  pending notifications and for the system-calendar mappings — re-creating it
+  would cancel and re-create every notification on an unrelated edit. Only
+  dropped moments are cancelled (`state='cancelled'`) and only new moments are
+  inserted. Snooze stays single-point: `snoozeAction` reconciles to the one
+  snooze target, so a snooze REPLACES the multi-select set (the user asked to be
+  reminded at that moment instead).
 - **Project reminders do not exist** — `actionKind` is
   `next | habit | calendar`, and adding `project` is deliberately deferred: an
   unknown kind written into the synced `reminders` table is read by OLDER

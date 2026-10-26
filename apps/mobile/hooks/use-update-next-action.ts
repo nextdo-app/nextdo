@@ -19,11 +19,12 @@ export interface UpdateNextActionPatch {
   /** ISO datetime; an explicit `undefined` clears a stored deadline. */
   deadline?: string;
   /**
-   * Task 10-17: the deadline reminder (ISO datetime). ABSENT = leave the
-   * stored reminder alone — a rename must not disarm a snooze reminder;
-   * `null` = clear it (see `ActionReminderInput` in packages/db).
+   * Task 10-17, multi-select since 10-26: the deadline reminders (ISO
+   * datetimes). ABSENT = leave the stored reminders alone — a rename must
+   * not disarm a snooze reminder; `[]`/`null` = clear them all (see
+   * `ActionReminderInput` in packages/db).
    */
-  reminderAt?: string | null;
+  reminderAt?: readonly string[] | null;
   /** Context ids assigned to this action. */
   contextIds?: string[];
   /**

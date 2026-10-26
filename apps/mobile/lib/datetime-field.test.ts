@@ -5,7 +5,12 @@
  */
 import { DEFAULT_DATE_ONLY_REMINDER_HHMM } from '@nextdo/core';
 
-import { formatDateTimeValue, prefillReminderValue, reminderWriteIfChanged } from './datetime-field';
+import {
+  formatDateTimeValue,
+  prefillReminderValue,
+  prefillReminderValues,
+  reminderWriteIfChanged,
+} from './datetime-field';
 
 /** Local-wall-clock ISO for a Date (mirrors what the picker values mean). */
 function isoLocal(year: number, month: number, day: number, hour: number, minute: number): string {
@@ -57,30 +62,50 @@ describe('prefillReminderValue', () => {
 describe('reminderWriteIfChanged', () => {
   const stored = isoLocal(2026, 10, 20, 18, 0);
 
-  it('does not touch the stored reminder when the field matches it', () => {
-    expect(reminderWriteIfChanged('2026-10-20T18:00', stored)).toBeUndefined();
+  it('does not touch the stored reminders when the field matches them', () => {
+    expect(reminderWriteIfChanged(['2026-10-20T18:00'], [stored])).toBeUndefined();
     // Stored with seconds, rendered to the minute → still "unchanged".
-    expect(reminderWriteIfChanged('2026-10-20T18:00', isoLocal(2026, 10, 20, 18, 0))).toBeUndefined();
+    expect(reminderWriteIfChanged(['2026-10-20T18:00'], [isoLocal(2026, 10, 20, 18, 0)])).toBeUndefined();
+  });
+
+  it('ignores the order of the picked moments', () => {
+    const later = isoLocal(2026, 10, 20, 20, 0);
+    expect(reminderWriteIfChanged(['2026-10-20T20:00', '2026-10-20T18:00'], [stored, later])).toBeUndefined();
   });
 
   it('arms the picked moment when the action had none', () => {
-    expect(reminderWriteIfChanged('2026-10-20T18:00', null)).toBe(
-      isoLocal(2026, 10, 20, 18, 0),
-    );
+    expect(reminderWriteIfChanged(['2026-10-20T18:00'], [])).toEqual([stored]);
   });
 
-  it('re-arms when the user moved the moment', () => {
-    expect(reminderWriteIfChanged('2026-10-20T17:00', stored)).toBe(
+  it('arms every picked moment, sorted', () => {
+    expect(reminderWriteIfChanged(['2026-10-20T20:00', '2026-10-20T18:00'], [])).toEqual([
+      stored,
+      isoLocal(2026, 10, 20, 20, 0),
+    ]);
+  });
+
+  it('re-arms when the user moved one moment', () => {
+    expect(reminderWriteIfChanged(['2026-10-20T17:00'], [stored])).toEqual([
       isoLocal(2026, 10, 20, 17, 0),
-    );
+    ]);
   });
 
   it('clears only when there was something to clear', () => {
-    expect(reminderWriteIfChanged('', stored)).toBeNull();
-    expect(reminderWriteIfChanged('', null)).toBeUndefined();
+    expect(reminderWriteIfChanged([], [stored])).toBeNull();
+    expect(reminderWriteIfChanged([], [])).toBeUndefined();
   });
 
   it('never turns malformed input into a silent clear', () => {
-    expect(reminderWriteIfChanged('2026-13-40', stored)).toBeUndefined();
+    expect(reminderWriteIfChanged(['2026-13-40'], [stored])).toBeUndefined();
+  });
+});
+
+describe('prefillReminderValues', () => {
+  it('wraps the single pre-filled moment as a one-element list', () => {
+    expect(prefillReminderValues('2026-10-20T18:00', NOW)).toEqual(['2026-10-20T18:00']);
+  });
+
+  it('is empty without a deadline', () => {
+    expect(prefillReminderValues('', NOW)).toEqual([]);
   });
 });

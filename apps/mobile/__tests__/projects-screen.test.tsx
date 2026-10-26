@@ -590,8 +590,9 @@ describe('Project detail', () => {
       expect(mockedAddNextAction).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ title: '整理实验数据', estMinutes: 30, projectId: 'p-1', value: 3 }),
-        // Task 10-17: the reminder input travels next to the row.
-        expect.objectContaining({ reminderAt: null }),
+        // Task 10-17, multi-select since 10-26: the reminder input travels
+        // next to the row as the list of moments to arm.
+        expect.objectContaining({ reminderAt: [] }),
       ),
     );
   });

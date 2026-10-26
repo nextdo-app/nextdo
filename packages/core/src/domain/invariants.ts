@@ -459,5 +459,27 @@ export function deadlineReminderSpec(firesAt: Date, now: Date): ReminderSpec | n
   return { firesAt: toIso(firesAt), intensity: 'normal' };
 }
 
+/**
+ * Deadline reminders for a MULTI-select form field: one spec per picked
+ * moment, in chronological order, deduplicated at minute granularity (the
+ * picker's own resolution, so two picks of the same minute never arm two
+ * rows). Past moments are dropped by the same rule
+ * `deadlineReminderSpec` applies — a reminder can never be armed for a time
+ * that already passed (PRD AC-5).
+ */
+export function deadlineReminderSpecs(firesAtList: readonly Date[], now: Date): ReminderSpec[] {
+  const seen = new Set<string>();
+  const specs: ReminderSpec[] = [];
+  for (const at of firesAtList) {
+    const spec = deadlineReminderSpec(at, now);
+    if (spec === null) continue;
+    const minuteKey = spec.firesAt.slice(0, 16);
+    if (seen.has(minuteKey)) continue;
+    seen.add(minuteKey);
+    specs.push(spec);
+  }
+  return specs.sort((a, b) => a.firesAt.localeCompare(b.firesAt));
+}
+
 // Repeated skips / "do nothing" nagging NEVER create reminders
 // (forbidden by Proposal §6.4) — there is deliberately no function here.
