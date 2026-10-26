@@ -86,3 +86,26 @@
 
 - 未在真机验证多提醒的实际通知投递与日历事件生成
 - 如需保留多选集合，推迟语义需产品确认
+
+
+## Session 66: 多选提醒时间与 Google / iCloud 日历目标选择
+<!-- trellis-session: v=2 fp=21a43f6b76fc4f05 -->
+
+**Date**: 2026-10-26
+**Task**: 多选提醒时间与 Google / iCloud 日历目标选择
+**Branch**: `main`
+
+### Summary
+
+行动提醒时间改为可多选（core 的 deadlineReminderSpecs、db 的 reconcileReminder 集合对齐、新增 reminder-times-field 组件、编辑/添加表单接入），snooze 保持单点语义（重新选一个时间提醒即可，已在 PR 与 spec 中确认）。新增系统日历目标选择：device 层 listCalendars / findCalendar、store 增加设备本地的 preferredCalendarId、新增 use-calendar-target hook 与设置页「写入哪个日历」选择器；修复选择器被权限条件挡住导致入口不可见的问题，未授权时直接给「授权并读取日历列表」按钮。两个 PR 已合并（#72、#73），发布 0.1.9-beta.14 / .15 / .16。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c2be7f5` | feat(reminder): 行动提醒时间支持多选，按时刻集合对齐待发提醒 |
+| `a495f27` | fix(calendar): 日历选择器不再被权限挡住，未授权时直接给授权入口 |
+
+### Status
+
+[OK] **Completed**
