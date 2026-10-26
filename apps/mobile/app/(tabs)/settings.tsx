@@ -54,6 +54,7 @@ import { useCloudSync } from '@/hooks/use-cloud-sync';
 import { useSyncStatus } from '@/hooks/use-sync-status';
 import { useNotificationSettings } from '@/hooks/use-notification-settings';
 import { useCalendarPermission } from '@/hooks/use-calendar-permission';
+import { useCalendarTarget } from '@/hooks/use-calendar-target';
 import type { NotificationSoundTone } from '@/lib/notification-settings';
 import {
   REMINDER_DELIVERY_CHANNELS,
@@ -421,6 +422,7 @@ export default function SettingsScreen() {
     setMasterEnabled,
   } = useNotificationSettings();
   const calendarPermission = useCalendarPermission();
+  const calendarTarget = useCalendarTarget();
   // 有效状态（issue #45 R5）：开关 ∧ 系统授权 —— 两个纯函数决定文案与平台动作。
   const notificationState = describeNotificationState(masterEnabled, notificationPermission);
   const notificationAction = notificationActionFor(notificationPermission);
@@ -1066,6 +1068,76 @@ export default function SettingsScreen() {
                       variant="secondary"
                       onPress={() => void calendarPermission.openSystemSettings()}
                     />
+                  </View>
+                ) : null}
+
+                {/*
+                  * 写入哪个日历（Google / iCloud / 本地）：系统日历数据库里
+                  * 已经有用户登录的账号，让他指定目标就能把提醒写进自己真正
+                  * 会看的那份日历，而不是 Nextdo 自建、日视图里看不到的那份。
+                  */}
+                {calendarPermission.permission === 'granted' &&
+                calendarTarget.calendars.length > 0 ? (
+                  <View className="mt-3 gap-1.5 border-t border-border/40 pt-3 dark:border-border-dark/40">
+                    <Text className="font-sans text-xs font-medium text-ink dark:text-ink-dark">
+                      写入哪个日历
+                    </Text>
+                    <Text className="font-sans text-[11px] leading-tight text-muted dark:text-muted-dark">
+                      列表来自系统日历，包含已登录的 Google、iCloud 与本地日历。
+                    </Text>
+                    <View className="mt-1 gap-1.5">
+                      {[{ id: null, title: 'Nextdo 默认日历', source: null }, ...calendarTarget.calendars].map(
+                        (option) => {
+                          const active = (calendarTarget.preferredCalendarId ?? null) === option.id;
+                          return (
+                            <Pressable
+                              key={option.id ?? 'default'}
+                              accessibilityRole="button"
+                              accessibilityState={{ selected: active }}
+                              accessibilityLabel={`写入日历：${option.title}${
+                                option.source === null ? '' : `（${option.source}）`
+                              }`}
+                              onPress={() => void calendarTarget.selectCalendar(option.id)}
+                              className={cn(
+                                'flex-row items-center justify-between gap-2 rounded-xl border px-3 py-2.5',
+                                active
+                                  ? 'border-accent bg-accent/10'
+                                  : 'border-border/60 dark:border-border-dark/60',
+                              )}
+                            >
+                              <View className="flex-1 min-w-0">
+                                <Text
+                                  numberOfLines={1}
+                                  className={cn(
+                                    'font-sans text-xs font-semibold',
+                                    active
+                                      ? 'text-accent dark:text-accent-dark'
+                                      : 'text-ink dark:text-ink-dark',
+                                  )}
+                                >
+                                  {option.title}
+                                </Text>
+                                {option.source === null ? null : (
+                                  <Text className="mt-0.5 font-sans text-[10px] text-muted dark:text-muted-dark">
+                                    {option.source}
+                                  </Text>
+                                )}
+                              </View>
+                              {active ? (
+                                <Ionicons
+                                  name="checkmark"
+                                  size={16}
+                                  color={isDark ? colors.accentDark : colors.accent}
+                                />
+                              ) : null}
+                            </Pressable>
+                          );
+                        },
+                      )}
+                    </View>
+                    <Text className="mt-1 font-sans text-[10px] leading-relaxed text-muted dark:text-muted-dark">
+                      换日历后，已写入旧日历的事件会在下一次同步时清理并重建。
+                    </Text>
                   </View>
                 ) : null}
               </>

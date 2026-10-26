@@ -19,6 +19,7 @@
  */
 import { Platform } from 'react-native';
 import * as device from './device';
+import type { WritableCalendar } from './device';
 import * as desktop from './desktop';
 import type { CalendarTarget } from './target';
 import type {
@@ -29,6 +30,8 @@ import type {
 
 export type { CalendarTarget } from './target';
 export type CalendarPermission = device.CalendarPermission;
+/** One calendar the settings picker can offer (Google / iCloud / local). */
+export type { WritableCalendar };
 
 /** `'native' | 'desktop' | null` — null means "no calendar on this host". */
 type CalendarBackend = 'native' | 'desktop' | null;
@@ -85,14 +88,17 @@ export async function requestCalendarPermission(): Promise<CalendarPermission> {
 /**
  * The calendar to write into, or null when there is none.
  *
- * Both implementations fall back to a writable calendar when the Nextdo one
- * cannot be created (a read-only account, a shared calendar) — a reminder on
- * the user's default calendar still beats no reminder at all.
+ * `preferredCalendarId` is the user's choice from settings — that is what
+ * makes a reminder land in their Google or iCloud calendar instead of the
+ * Nextdo-only one the system never shows in their day view. Both
+ * implementations fall back to a writable calendar when the chosen one is
+ * gone or when nothing was chosen (a read-only account, a shared calendar) —
+ * a reminder on the user's default calendar still beats no reminder at all.
  */
-export async function ensureCalendar(): Promise<CalendarTarget | null> {
+export async function ensureCalendar(preferredCalendarId?: string | null): Promise<CalendarTarget | null> {
   const backend = await resolveCalendarBackend();
   if (backend === 'native') {
-    const calendar = await device.ensureCalendar();
+    const calendar = await device.ensureCalendar(preferredCalendarId);
     return calendar === null ? null : { kind: 'native', calendar };
   }
   if (backend === 'desktop') {
@@ -100,6 +106,19 @@ export async function ensureCalendar(): Promise<CalendarTarget | null> {
     return target === null ? null : { kind: 'desktop', id: target.id };
   }
   return null;
+}
+
+/**
+ * The calendars the user can point the sync at, for the settings picker.
+ *
+ * Native only for now: the macOS desktop bridge resolves its own calendar in
+ * Rust and exposes no list, so the desktop picker stays hidden rather than
+ * offering a choice that cannot be honoured.
+ */
+export async function listCalendars(): Promise<WritableCalendar[]> {
+  const backend = await resolveCalendarBackend();
+  if (backend !== 'native') return [];
+  return device.listCalendars();
 }
 
 /** Create one event; null = a logged failure (retried on the next pass). */

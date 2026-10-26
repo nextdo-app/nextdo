@@ -89,15 +89,97 @@ function pickWritable(calendars: readonly ExpoCalendar[]): ExpoCalendar | null {
 }
 
 /**
- * The calendar we write into: the Nextdo one when present, else a newly
- * created one, else any existing writable calendar (a device whose account
- * refuses third-party calendars must still get reminders).
+ * A calendar the user may point the sync at, as the settings picker sees it.
+ *
+ * `source` is the account the OS attributes the calendar to — 'iCloud',
+ * 'Gmail', 'Google', 'Outlook', a local store. It is what lets the user tell
+ * two same-titled calendars apart, and it is the only way to name Google /
+ * iCloud in the UI: the account is already in the system database, Nextdo
+ * only writes into it.
  */
-export async function ensureCalendar(): Promise<ExpoCalendar | null> {
+export interface WritableCalendar {
+  id: string;
+  title: string;
+  source: string | null;
+  /** False for read-only (subscribed / holiday) calendars — not offered. */
+  allowsModifications: boolean;
+}
+
+function describeCalendar(calendar: ExpoCalendar): WritableCalendar {
+  const owner = (calendar as { ownerAccount?: unknown }).ownerAccount;
+  const sourceName =
+    typeof owner === 'object' && owner !== null
+      ? (owner as { name?: unknown }).name
+      : (calendar as { source?: unknown }).source;
+  return {
+    id: calendar.id,
+    title: calendar.title,
+    source: typeof sourceName === 'string' && sourceName.length > 0 ? sourceName : null,
+    allowsModifications: calendar.allowsModifications !== false,
+  };
+}
+
+/**
+ * Every calendar the OS exposes, for the settings picker.
+ *
+ * Read-only calendars are returned too — the picker filters them out, but the
+ * caller may want to explain why a Google calendar is missing (a subscribed
+ * holiday calendar cannot take writes).
+ */
+export async function listCalendars(): Promise<WritableCalendar[]> {
+  const module = getCalendarModule();
+  if (module === null) return [];
+  try {
+    const calendars = await module.getCalendars();
+    return calendars.map(describeCalendar);
+  } catch (error) {
+    logger.warn('listing calendars failed', toError(error));
+    return [];
+  }
+}
+
+/**
+ * Resolve one calendar by id; null when it no longer exists.
+ *
+ * The id comes from the user's choice, persisted in the device-local sync
+ * state. A calendar can vanish (account signed out, calendar deleted), which
+ * is a normal answer here — the caller falls back to the default target.
+ */
+export async function findCalendar(calendarId: string): Promise<ExpoCalendar | null> {
   const module = getCalendarModule();
   if (module === null) return null;
   try {
     const calendars = await module.getCalendars();
+    return calendars.find((calendar) => calendar.id === calendarId) ?? null;
+  } catch (error) {
+    logger.warn('listing calendars failed', toError(error));
+    return null;
+  }
+}
+
+/**
+ * The calendar we write into.
+ *
+ * A user-picked calendar wins (`preferredCalendarId`): that is how a reminder
+ * lands in the Google or iCloud calendar the user actually looks at, instead
+ * of a Nextdo-only calendar the system never surfaces in their day view.
+ * Without a pick: the Nextdo one when present, else a newly created one, else
+ * any existing writable calendar (a device whose account refuses third-party
+ * calendars must still get reminders).
+ */
+export async function ensureCalendar(preferredCalendarId?: string | null): Promise<ExpoCalendar | null> {
+  const module = getCalendarModule();
+  if (module === null) return null;
+  try {
+    const calendars = await module.getCalendars();
+    if (preferredCalendarId !== undefined && preferredCalendarId !== null) {
+      const preferred = calendars.find((calendar) => calendar.id === preferredCalendarId);
+      if (preferred !== undefined && preferred.allowsModifications !== false) return preferred;
+      logger.warn(
+        `the chosen calendar ${preferredCalendarId} is gone or read-only — falling back`,
+        new Error('calendar target unavailable'),
+      );
+    }
     const existing = calendars.find((calendar) => calendar.title === CALENDAR_TITLE);
     if (existing !== undefined) return existing;
     try {
