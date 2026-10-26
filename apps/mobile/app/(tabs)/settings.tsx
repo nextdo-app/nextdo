@@ -1047,6 +1047,9 @@ export default function SettingsScreen() {
                         void calendarPermission.requestAccess().then((next) => {
                           if (next === 'granted') {
                             void updateSettings({ calendarEnabled: true });
+                            // Access just became readable — load the list so
+                            // the Google / iCloud options appear right away.
+                            void calendarTarget.refresh();
                           }
                         });
                       }}
@@ -1075,19 +1078,50 @@ export default function SettingsScreen() {
                   * 写入哪个日历（Google / iCloud / 本地）：系统日历数据库里
                   * 已经有用户登录的账号，让他指定目标就能把提醒写进自己真正
                   * 会看的那份日历，而不是 Nextdo 自建、日视图里看不到的那份。
+                  *
+                  * 这一块不跟着开关隐藏：没有授权时正是用户需要看到入口、
+                  * 知道要授权的地方，藏起来就变成找不到功能。
                   */}
-                {calendarPermission.permission === 'granted' &&
-                calendarTarget.calendars.length > 0 ? (
-                  <View className="mt-3 gap-1.5 border-t border-border/40 pt-3 dark:border-border-dark/40">
-                    <Text className="font-sans text-xs font-medium text-ink dark:text-ink-dark">
-                      写入哪个日历
+                <View className="mt-3 gap-1.5 border-t border-border/40 pt-3 dark:border-border-dark/40">
+                  <Text className="font-sans text-xs font-medium text-ink dark:text-ink-dark">
+                    写入哪个日历
+                  </Text>
+
+                  {calendarTarget.permission !== 'granted' ? (
+                    <>
+                      <Text className="font-sans text-[11px] leading-relaxed text-muted dark:text-muted-dark">
+                        授权日历访问后，这里会列出你已登录的 Google、iCloud
+                        与本地日历，可以直接选一个作为写入目标。
+                      </Text>
+                      <Button
+                        label="授权并读取日历列表"
+                        variant="secondary"
+                        onPress={() => {
+                          void calendarPermission.requestAccess().then((next) => {
+                            if (next === 'granted') void calendarTarget.refresh();
+                          });
+                        }}
+                      />
+                    </>
+                  ) : !calendarTarget.loaded ? (
+                    <Text className="font-sans text-[11px] leading-relaxed text-muted dark:text-muted-dark">
+                      正在读取系统日历…
                     </Text>
-                    <Text className="font-sans text-[11px] leading-tight text-muted dark:text-muted-dark">
-                      列表来自系统日历，包含已登录的 Google、iCloud 与本地日历。
+                  ) : calendarTarget.calendars.length === 0 ? (
+                    <Text className="font-sans text-[11px] leading-relaxed text-muted dark:text-muted-dark">
+                      系统里没有可写入的日历。请在系统的「日历」应用里添加
+                      Google 或 iCloud 账号，然后重新打开本页。
                     </Text>
-                    <View className="mt-1 gap-1.5">
-                      {[{ id: null, title: 'Nextdo 默认日历', source: null }, ...calendarTarget.calendars].map(
-                        (option) => {
+                  ) : (
+                    <>
+                      <Text className="font-sans text-[11px] leading-tight text-muted dark:text-muted-dark">
+                        列表来自系统日历，包含已登录的 Google、iCloud 与本地日历。
+                      </Text>
+                      <View className="mt-1 gap-1.5">
+                        {[
+                          { id: null, title: 'Nextdo 默认日历', source: null },
+                          ...calendarTarget.calendars,
+                        ].map((option) => {
                           const active = (calendarTarget.preferredCalendarId ?? null) === option.id;
                           return (
                             <Pressable
@@ -1132,14 +1166,14 @@ export default function SettingsScreen() {
                               ) : null}
                             </Pressable>
                           );
-                        },
-                      )}
-                    </View>
-                    <Text className="mt-1 font-sans text-[10px] leading-relaxed text-muted dark:text-muted-dark">
-                      换日历后，已写入旧日历的事件会在下一次同步时清理并重建。
-                    </Text>
-                  </View>
-                ) : null}
+                        })}
+                      </View>
+                      <Text className="mt-1 font-sans text-[10px] leading-relaxed text-muted dark:text-muted-dark">
+                        换日历后，已写入旧日历的事件会在下一次同步时清理并重建。
+                      </Text>
+                    </>
+                  )}
+                </View>
               </>
             ) : (
               <View className="flex-row items-start gap-3">

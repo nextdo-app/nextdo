@@ -12,11 +12,12 @@
  * names a row in THIS device's system database, so syncing it would point
  * another device at an id that means nothing there.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   getCalendarPermission,
   isCalendarSupported,
   listCalendars,
+  type CalendarPermission,
   type WritableCalendar,
 } from '@/lib/calendar-sync';
 import { loadCalendarSyncState, saveCalendarSyncState } from '@/lib/calendar-sync/store';
@@ -27,46 +28,60 @@ export interface UseCalendarTargetResult {
   calendars: WritableCalendar[];
   /** The picked calendar id, or null for "Nextdo default". */
   preferredCalendarId: string | null;
+  /** The OS access state — the list is only readable once granted. */
+  permission: CalendarPermission;
   /** True once the list has been read at least once. */
   loaded: boolean;
   /** Persist a choice; null restores the Nextdo default. */
   selectCalendar: (calendarId: string | null) => Promise<void>;
+  /** Re-read access + the calendar list (after the user grants access). */
+  refresh: () => Promise<void>;
 }
 
 export function useCalendarTarget(): UseCalendarTargetResult {
   const [calendars, setCalendars] = useState<WritableCalendar[]>([]);
   const [preferredCalendarId, setPreferredCalendarId] = useState<string | null>(null);
+  const [permission, setPermission] = useState<CalendarPermission>('undetermined');
   const [loaded, setLoaded] = useState(false);
+  const disposedRef = useRef(false);
+
+  // Reading the list needs calendar access, and access is granted from the
+  // Settings switch — so this must be callable again, not just an effect.
+  const refresh = useCallback(async (): Promise<void> => {
+    if (!(await isCalendarSupported())) {
+      if (disposedRef.current) return;
+      setPermission('denied');
+      setLoaded(true);
+      return;
+    }
+    const state = await getCalendarPermission();
+    if (disposedRef.current) return;
+    setPermission(state);
+    if (state !== 'granted') {
+      // An unread list is a normal answer here (the user never granted
+      // access), not an error to surface.
+      setLoaded(true);
+      return;
+    }
+    const available = await listCalendars();
+    if (disposedRef.current) return;
+    setCalendars(available.filter((calendar) => calendar.allowsModifications));
+    setLoaded(true);
+  }, []);
 
   useEffect(() => {
-    let disposed = false;
-    void (async () => {
-      const state = await loadCalendarSyncState();
-      if (!disposed) setPreferredCalendarId(state.preferredCalendarId);
-      // Listing needs the permission: an unread list is a normal answer (the
-      // user never granted it), not an error to surface.
-      const supported = await isCalendarSupported();
-      if (!supported) {
-        if (!disposed) setLoaded(true);
-        return;
-      }
-      const permission = await getCalendarPermission();
-      if (permission !== 'granted') {
-        if (!disposed) setLoaded(true);
-        return;
-      }
-      const available = await listCalendars();
-      if (disposed) return;
-      setCalendars(available.filter((calendar) => calendar.allowsModifications));
-      setLoaded(true);
-    })().catch((error: unknown) => {
+    disposedRef.current = false;
+    void loadCalendarSyncState().then((state) => {
+      if (!disposedRef.current) setPreferredCalendarId(state.preferredCalendarId);
+    });
+    void refresh().catch((error: unknown) => {
       logger.warn('reading the calendar list failed', toError(error));
-      if (!disposed) setLoaded(true);
+      if (!disposedRef.current) setLoaded(true);
     });
     return () => {
-      disposed = true;
+      disposedRef.current = true;
     };
-  }, []);
+  }, [refresh]);
 
   const selectCalendar = useCallback(async (calendarId: string | null): Promise<void> => {
     const state = await loadCalendarSyncState();
@@ -74,7 +89,14 @@ export function useCalendarTarget(): UseCalendarTargetResult {
     setPreferredCalendarId(calendarId);
   }, []);
 
-  return { calendars, preferredCalendarId, loaded, selectCalendar };
+  return {
+    calendars,
+    preferredCalendarId,
+    permission,
+    loaded,
+    selectCalendar,
+    refresh,
+  };
 }
 
 function toError(error: unknown): Error {
