@@ -1,6 +1,6 @@
 {
   "name": "nextdo",
-  "version": "0.1.9-beta.14",
+  "version": "0.1.9-beta.15",
   "private": true,
   "description": "Nextdo - GTD next-action assistant (monorepo root)",
   "packageManager": "pnpm@12.5.1",
