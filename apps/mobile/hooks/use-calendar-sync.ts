@@ -122,7 +122,9 @@ export function useCalendarSync(): void {
 
         const permission = await getCalendarPermission();
         if (permission !== 'granted') return;
-        const calendar = await ensureCalendar();
+        // The user's picked calendar wins (a Google / iCloud calendar the
+        // system already holds); null means "Nextdo default".
+        const calendar = await ensureCalendar(state.preferredCalendarId);
         if (calendar === null) return;
 
         const nextMappings: CalendarSyncMappings = {};
@@ -168,6 +170,7 @@ export function useCalendarSync(): void {
         if (!keepCalendar && state.calendarId === null) return;
         await saveCalendarSyncState({
           calendarId: keepCalendar ? calendarTargetId(calendar) : null,
+          preferredCalendarId: state.preferredCalendarId,
           mappings: nextMappings,
           reminderMappings: nextReminderMappings,
         });

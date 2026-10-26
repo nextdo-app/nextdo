@@ -18,6 +18,14 @@ import type { CalendarSyncMappings } from './reconcile';
 export interface CalendarSyncState {
   /** The OS calendar we created/reused for Nextdo events. */
   calendarId: string | null;
+  /**
+   * The calendar the user picked in settings, or null for "Nextdo default".
+   *
+   * Device-local like the ids below: a calendar id names a row in this
+   * device's system database, so syncing it would hand another device an id
+   * that means nothing (or something else) there.
+   */
+  preferredCalendarId: string | null;
   mappings: CalendarSyncMappings;
   /**
    * Issue #63: reminderId → event. Kept apart from `mappings` because the
@@ -132,7 +140,7 @@ async function writeRaw(raw: string | null): Promise<void> {
 }
 
 function emptyState(): CalendarSyncState {
-  return { calendarId: null, mappings: {}, reminderMappings: {} };
+  return { calendarId: null, preferredCalendarId: null, mappings: {}, reminderMappings: {} };
 }
 
 function parseState(raw: string | null): CalendarSyncState {
@@ -142,6 +150,8 @@ function parseState(raw: string | null): CalendarSyncState {
     if (typeof parsed !== 'object' || parsed === null) return emptyState();
     const record = parsed as Record<string, unknown>;
     const calendarId = typeof record.calendarId === 'string' ? record.calendarId : null;
+    const preferredCalendarId =
+      typeof record.preferredCalendarId === 'string' ? record.preferredCalendarId : null;
     const mappings: CalendarSyncMappings = {};
     const rawMappings = record.mappings;
     if (typeof rawMappings === 'object' && rawMappings !== null) {
@@ -164,7 +174,7 @@ function parseState(raw: string | null): CalendarSyncState {
         reminderMappings[reminderId] = { eventId: entry.eventId, signature: entry.signature };
       }
     }
-    return { calendarId, mappings, reminderMappings };
+    return { calendarId, preferredCalendarId, mappings, reminderMappings };
   } catch {
     return emptyState();
   }
@@ -180,8 +190,9 @@ export async function saveCalendarSyncState(state: CalendarSyncState): Promise<v
   cached = state;
   await writeRaw(
     JSON.stringify({
-      version: 2,
+      version: 3,
       calendarId: state.calendarId,
+      preferredCalendarId: state.preferredCalendarId,
       mappings: state.mappings,
       reminderMappings: state.reminderMappings,
     }),
