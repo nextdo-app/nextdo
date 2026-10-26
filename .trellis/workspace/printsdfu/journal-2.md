@@ -45,3 +45,44 @@
 ### Next Steps
 
 - 在 Cloudflare 写入 NEXTDO_FEISHU_WEBHOOK / NEXTDO_SERVERCHAN_SENDKEY 并部署后，完成一次真实通道验收
+
+
+## Session 65: 行动提醒时间支持多选
+<!-- trellis-session: v=2 fp=1e67c6d8250e1da3 -->
+
+**Date**: 2026-10-26
+**Task**: 行动提醒时间支持多选
+**Branch**: `main`
+
+### Summary
+
+把行动表单的「提醒时间」从单值改为可增删的多时刻列表，写入层按时刻集合对齐 reminders 表
+
+### Main Changes
+
+- core 新增 deadlineReminderSpecs：升序、分钟粒度去重、丢弃已过去时刻
+- db 的 reconcileReminder 改为集合对齐，仍被选中的时刻保留原行 id，只取消被移除的、只插入新增的
+- listScheduledReminderFor 改为返回全部时刻的 listScheduledRemindersFor
+- snoozeAction 传单元素数组，推迟保持单点语义
+- mobile 新增 reminder-times-field 组件并接入项目详情页与编辑弹窗
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c2be7f5` | feat(reminder): 行动提醒时间支持多选，按时刻集合对齐待发提醒 |
+
+### Testing
+
+- [OK] pnpm lint 通过
+- [OK] pnpm typecheck 五包通过
+- [OK] core 268 / db 333 / mobile 713 测试全绿
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 未在真机验证多提醒的实际通知投递与日历事件生成
+- 如需保留多选集合，推迟语义需产品确认
