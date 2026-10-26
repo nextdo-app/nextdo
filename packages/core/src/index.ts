@@ -112,6 +112,7 @@ export {
   assertValidWaitingForItem,
   calendarActionReminderSpec,
   deadlineReminderSpec,
+  deadlineReminderSpecs,
   habitWindowReminderSpec,
   snoozeReminderSpec,
 } from './domain/invariants';

@@ -125,16 +125,18 @@ export async function listScheduledReminders(db: NextdoDb): Promise<ScheduledRem
 }
 
 /**
- * The moment a form should SHOW as one action's reminder (task 10-17), or
- * null when it has none. Deliberately not `listScheduledReminders`: a form
- * needs one value for one action and must not pay for the three title joins.
+ * The moments a form should SHOW as one action's reminders (task 10-17,
+ * multi-select in 10-26), or an empty array when it has none. Deliberately
+ * not `listScheduledReminders`: a form needs the moments of one action and
+ * must not pay for the three title joins. Ordered by `fires_at` so the
+ * field renders the earliest chip first.
  */
-export async function listScheduledReminderFor(
+export async function listScheduledRemindersFor(
   db: NextdoDb,
   actionKind: ActionKind,
   actionId: string,
-): Promise<string | null> {
-  const row = await db
+): Promise<string[]> {
+  const rows = await db
     .selectFrom('reminders')
     .select('fires_at')
     .where('action_kind', '=', actionKind)
@@ -142,6 +144,6 @@ export async function listScheduledReminderFor(
     .where('state', '=', 'scheduled')
     .where('deleted_at', 'is', null)
     .orderBy('fires_at')
-    .executeTakeFirst();
-  return row?.fires_at ?? null;
+    .execute();
+  return rows.map((row) => row.fires_at ?? '').filter((firesAt) => firesAt !== '');
 }

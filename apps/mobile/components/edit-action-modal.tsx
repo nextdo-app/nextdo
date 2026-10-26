@@ -29,6 +29,7 @@ import { useAppTheme } from '@/lib/theme';
 import { localDateTimeKey, localDateTimeToIso } from '@/lib/clarify-flow';
 import { formatDateTimeValue } from '@/lib/datetime-field';
 import { useActionReminderField } from '@/hooks/use-action-reminder';
+import { ReminderTimesField } from '@/components/reminder-times-field';
 import { errorMessage } from '@/lib/error-messages';
 
 export interface EditActionModalProps {
@@ -276,17 +277,15 @@ export const EditActionModal = memo(function EditActionModal({
               />
             </View>
 
-            {/* Field 6: Reminder (task 10-17) */}
+            {/* Field 6: Reminder (task 10-17; multi-select since 10-26) */}
             <View className="gap-1.5">
               <Text className="font-sans text-xs font-semibold text-muted dark:text-muted-dark">
                 提醒时间（可选）
               </Text>
-              <PickerField
-                label="提醒时间"
-                value={formatDateTimeValue(reminder.value)}
-                placeholder="不提醒"
-                onPress={() => setShowReminderPicker(true)}
-                onClear={() => reminder.setValue('')}
+              <ReminderTimesField
+                values={reminder.values}
+                onAdd={() => setShowReminderPicker(true)}
+                onRemove={reminder.removeValue}
               />
             </View>
 
@@ -371,10 +370,10 @@ export const EditActionModal = memo(function EditActionModal({
             <DateTimePicker
               mode="datetime"
               title="选择提醒时间"
-              value={reminder.value}
+              value=""
               now={now}
               onConfirm={(val) => {
-                reminder.setValue(val);
+                reminder.addValue(val);
                 setShowReminderPicker(false);
               }}
               onClose={() => setShowReminderPicker(false)}

@@ -47,27 +47,55 @@ export function prefillReminderValue(deadlineValue: string, now: Date): string {
   return new Date(resolved).getTime() > now.getTime() ? value : '';
 }
 
+/** One chip's picker value, oldest first — the multi-select field's unit. */
+export type ReminderValues = readonly string[];
+
+/**
+ * What the multi-select 「提醒时间」 field pre-fills with. Same single-value
+ * rule as `prefillReminderValue`, wrapped as a 0-or-1 element list so the
+ * field's rendering has exactly one shape.
+ */
+export function prefillReminderValues(deadlineValue: string, now: Date): ReminderValues {
+  const single = prefillReminderValue(deadlineValue, now);
+  return single === '' ? [] : [single];
+}
+
 /**
  * What a save should SEND for the reminder:
  *
- * - `undefined` → leave the stored row alone. That is the important case:
+ * - `undefined` → leave the stored rows alone. That is the important case:
  *   the form only owns the field the user can see, and a rename (or a
  *   deadline-only edit) must not disarm a reminder that `snoozeAction` armed;
- * - an ISO datetime → (re)arm at that moment;
- * - `null` → clear it.
+ * - a list of ISO datetimes → (re)arm exactly those moments;
+ * - `[]` → clear them.
  *
- * Comparison is at minute granularity (the picker's own resolution), so a
- * stored moment with seconds does not look "changed" just because the field
- * renders it without them.
+ * Comparison is at minute granularity (the picker's own resolution) and
+ * order-insensitive: reordering chips or a stored moment carrying seconds
+ * must not look like an edit. Malformed picks are dropped; a field whose
+ * every pick is malformed reports "unchanged" rather than silently clearing
+ * every stored reminder.
  */
 export function reminderWriteIfChanged(
-  value: string,
-  loadedIso: string | null,
-): string | null | undefined {
-  if (value === '') return loadedIso === null ? undefined : null;
-  const desired = localDateTimeToIso(value);
-  // Malformed input never becomes a silent clear or a bad write.
-  if (desired === null) return undefined;
-  if (loadedIso === null) return desired;
-  return localDateTimeKey(desired) === localDateTimeKey(loadedIso) ? undefined : desired;
+  values: ReminderValues,
+  loaded: ReminderValues,
+): ReminderValues | null | undefined {
+  const desired = new Set<string>();
+  for (const value of values) {
+    const iso = localDateTimeToIso(value);
+    if (iso !== null) desired.add(localDateTimeKey(iso));
+  }
+  const current = new Set<string>();
+  for (const iso of loaded) {
+    const key = localDateTimeKey(iso);
+    if (key !== '') current.add(key);
+  }
+  if (values.length > 0 && desired.size === 0) return undefined;
+  if (desired.size === current.size && [...desired].every((key) => current.has(key))) {
+    return undefined;
+  }
+  if (desired.size === 0) return current.size === 0 ? undefined : null;
+  return [...desired]
+    .map((key) => localDateTimeToIso(key))
+    .filter((iso): iso is string => iso !== null)
+    .sort((a, b) => a.localeCompare(b));
 }

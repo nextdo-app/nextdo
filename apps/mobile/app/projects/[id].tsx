@@ -35,6 +35,7 @@ import { useStartHabit } from '@/hooks/use-start-habit';
 import { useUpdateProject } from '@/hooks/use-update-project';
 import { useUpdateNextAction } from '@/hooks/use-update-next-action';
 import { useActionReminderField } from '@/hooks/use-action-reminder';
+import { ReminderTimesField } from '@/components/reminder-times-field';
 import { useCompleteAction } from '@/hooks/use-complete-action';
 import { useSnoozeAction } from '@/hooks/use-snooze-action';
 import { useTrashAction } from '@/hooks/use-trash-action';
@@ -118,7 +119,7 @@ function AddActionForm({ projectId, now, onDone, onAdded }: { projectId: string;
       value,
       projectId,
       deadline: deadlineIso,
-      reminderAt: reminder.write ?? null,
+      reminderAt: reminder.write ?? [],
     }).then(() => {
       setSubmitting(false);
       setTitle('');
@@ -169,12 +170,10 @@ function AddActionForm({ projectId, now, onDone, onAdded }: { projectId: string;
         />
       </FormField>
       <FormField label="提醒时间（可选）">
-        <PickerField
-          label="提醒时间"
-          value={formatDateTimeValue(reminder.value)}
-          placeholder="不提醒"
-          onPress={() => setShowReminderPicker(true)}
-          onClear={() => reminder.setValue('')}
+        <ReminderTimesField
+          values={reminder.values}
+          onAdd={() => setShowReminderPicker(true)}
+          onRemove={reminder.removeValue}
         />
       </FormField>
       {showPicker ? (
@@ -194,10 +193,10 @@ function AddActionForm({ projectId, now, onDone, onAdded }: { projectId: string;
         <DateTimePicker
           mode="datetime"
           title="选择提醒时间"
-          value={reminder.value}
+          value=""
           now={now}
           onConfirm={(val) => {
-            reminder.setValue(val);
+            reminder.addValue(val);
             setShowReminderPicker(false);
           }}
           onClose={() => setShowReminderPicker(false)}
@@ -389,12 +388,10 @@ function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; 
         />
       </FormField>
       <FormField label="提醒时间（可选）">
-        <PickerField
-          label="提醒时间"
-          value={formatDateTimeValue(reminder.value)}
-          placeholder="不提醒"
-          onPress={() => setShowReminderPicker(true)}
-          onClear={() => reminder.setValue('')}
+        <ReminderTimesField
+          values={reminder.values}
+          onAdd={() => setShowReminderPicker(true)}
+          onRemove={reminder.removeValue}
         />
       </FormField>
       <FormField label="备注">
@@ -444,10 +441,10 @@ function EditActionForm({ action, now, onDone, onSaved }: { action: NextAction; 
         <DateTimePicker
           mode="datetime"
           title="选择提醒时间"
-          value={reminder.value}
+          value=""
           now={now}
           onConfirm={(val) => {
-            reminder.setValue(val);
+            reminder.addValue(val);
             setShowReminderPicker(false);
           }}
           onClose={() => setShowReminderPicker(false)}

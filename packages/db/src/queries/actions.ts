@@ -11,7 +11,7 @@ import {
   assertHabitCheckInWindow,
   assertTransition,
   assertValidNextAction,
-  deadlineReminderSpec,
+  deadlineReminderSpecs,
   localDateKey,
   parseIso,
   snoozeReminderSpec,
@@ -201,54 +201,91 @@ export async function listCompletedActions(db: NextdoDb): Promise<CompletedActio
  * action's reminder to exactly this value (`null` clears it).
  */
 export interface ActionReminderInput {
-  /** The moment the user picked (ISO UTC), or null for "no reminder". */
-  reminderAt: string | null;
+  /**
+   * The moments the user picked (ISO UTC), one per 「提醒时间」 chip; an empty
+   * array (or null) means "no reminder". Order does not matter — the db layer
+   * sorts and deduplicates.
+   */
+  reminderAt: readonly string[] | null;
   /** The clock the past-moment rule runs against — core owns that rule. */
   now: Date;
 }
 
-/** A form's 「提醒时间」 resolved to the spec core allows, or null for none. */
-function resolveReminderSpec(input: ActionReminderInput): ReminderSpec | null {
-  if (input.reminderAt === null || input.reminderAt === '') return null;
-  const at = new Date(input.reminderAt);
-  if (Number.isNaN(at.getTime())) return null;
-  return deadlineReminderSpec(at, input.now);
+/** A form's 「提醒时间」 resolved to the specs core allows (may be empty). */
+function resolveReminderSpecs(input: ActionReminderInput): ReminderSpec[] {
+  if (input.reminderAt === null) return [];
+  const moments: Date[] = [];
+  for (const iso of input.reminderAt) {
+    if (iso === '') continue;
+    const at = new Date(iso);
+    if (Number.isNaN(at.getTime())) continue;
+    moments.push(at);
+  }
+  return deadlineReminderSpecs(moments, input.now);
 }
 
 /**
- * Cancel the action's still-scheduled reminders and arm the new one — the
- * snooze transaction's reminder steps, shared by add / update / snooze so
- * "one action, at most one pending reminder" holds everywhere it is written.
+ * Make the action's scheduled reminders match `specs` exactly — the snooze
+ * transaction's reminder steps, shared by add / update / snooze so every
+ * write path reconciles the same way.
+ *
+ * An action may hold SEVERAL pending reminders (the form's 「提醒时间」 field
+ * is multi-select). Moments that are still wanted are kept in place rather
+ * than cancelled and re-inserted: their row ids are the join keys the
+ * delivery layer and the system-calendar mappings use, so re-creating them
+ * would cancel and re-create every notification on an unrelated edit. Only
+ * dropped moments are cancelled and only new moments are inserted.
  */
 async function reconcileReminder(
   tx: Transaction<Database>,
   kind: ActionKind,
   actionId: string,
-  spec: ReminderSpec | null,
+  specs: readonly ReminderSpec[],
   now: Date,
 ): Promise<void> {
   const nowIso = toIso(now);
-  await tx
-    .updateTable('reminders')
-    .set({ state: 'cancelled', updated_at: nowIso })
+  const wanted = new Set(specs.map((spec) => spec.firesAt));
+  const existing = await tx
+    .selectFrom('reminders')
+    .select(['id', 'fires_at'])
     .where('action_id', '=', actionId)
     .where('state', '=', 'scheduled')
+    .where('deleted_at', 'is', null)
     .execute();
-  if (spec === null) return;
-  await tx
-    .insertInto('reminders')
-    .values({
-      id: ulid(now),
-      created_at: nowIso,
-      updated_at: nowIso,
-      deleted_at: null,
-      action_kind: kind,
-      action_id: actionId,
-      fires_at: spec.firesAt,
-      intensity: spec.intensity,
-      state: 'scheduled',
-    })
-    .execute();
+  const kept = new Set<string>();
+  const staleIds: string[] = [];
+  for (const row of existing) {
+    const firesAt = row.fires_at ?? '';
+    if (wanted.has(firesAt) && !kept.has(firesAt)) {
+      kept.add(firesAt);
+      continue;
+    }
+    staleIds.push(row.id);
+  }
+  if (staleIds.length > 0) {
+    await tx
+      .updateTable('reminders')
+      .set({ state: 'cancelled', updated_at: nowIso })
+      .where('id', 'in', staleIds)
+      .execute();
+  }
+  for (const spec of specs) {
+    if (kept.has(spec.firesAt)) continue;
+    await tx
+      .insertInto('reminders')
+      .values({
+        id: ulid(now),
+        created_at: nowIso,
+        updated_at: nowIso,
+        deleted_at: null,
+        action_kind: kind,
+        action_id: actionId,
+        fires_at: spec.firesAt,
+        intensity: spec.intensity,
+        state: 'scheduled',
+      })
+      .execute();
+  }
 }
 
 export async function addNextAction(
@@ -257,13 +294,13 @@ export async function addNextAction(
   reminder?: ActionReminderInput,
 ): Promise<NextAction> {
   assertValidNextAction(action);
-  const spec = reminder === undefined ? null : resolveReminderSpec(reminder);
+  const specs = reminder === undefined ? [] : resolveReminderSpecs(reminder);
   await db.transaction().execute(async (tx) => {
     await tx
       .insertInto('next_actions')
       .values({ id: action.id, ...nextActionToRow(action) })
       .execute();
-    if (reminder !== undefined) await reconcileReminder(tx, 'next', action.id, spec, reminder.now);
+    if (reminder !== undefined) await reconcileReminder(tx, 'next', action.id, specs, reminder.now);
   });
   return action;
 }
@@ -289,14 +326,14 @@ export async function updateNextAction(
   const next = redefined
     ? { ...action, consecutiveSkips: 0, lastSkippedAt: undefined }
     : action;
-  const spec = reminder === undefined ? null : resolveReminderSpec(reminder);
+  const specs = reminder === undefined ? [] : resolveReminderSpecs(reminder);
   await db.transaction().execute(async (tx) => {
     await tx
       .updateTable('next_actions')
       .set({ ...nextActionToRow(next), updated_at: next.updatedAt })
       .where('id', '=', action.id)
       .execute();
-    if (reminder !== undefined) await reconcileReminder(tx, 'next', action.id, spec, reminder.now);
+    if (reminder !== undefined) await reconcileReminder(tx, 'next', action.id, specs, reminder.now);
   });
   return next;
 }
@@ -560,7 +597,7 @@ export async function snoozeAction(
     // The previous scheduled reminder (if any) is cancelled in the same
     // transaction — otherwise a re-snooze would keep the old target time
     // armed alongside the new one. Same helper the add / update paths use.
-    await reconcileReminder(tx, actionKind, actionId, reminder, now);
+    await reconcileReminder(tx, actionKind, actionId, [reminder], now);
   });
 }
 
