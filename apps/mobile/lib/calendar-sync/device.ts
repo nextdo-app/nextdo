@@ -200,7 +200,8 @@ export async function ensureCalendar(preferredCalendarId?: string | null): Promi
 type CreateEventDetails = Parameters<ExpoCalendar['createEvent']>[0];
 
 function eventDetails(spec: CalendarSyncEventSpec): CreateEventDetails {
-  const alarms: Alarm[] = [{ relativeOffset: ALARM_MINUTES_BEFORE }];
+  // A focus record is a log of finished time, not a reminder — no alarm.
+  const alarms: Alarm[] = spec.alarm === false ? [] : [{ relativeOffset: ALARM_MINUTES_BEFORE }];
   return {
     title: spec.title,
     startDate: new Date(spec.startsAt),

@@ -16,6 +16,11 @@
  * Their mappings are stored separately (`mappings` / `reminderMappings`) so
  * turning one off never withdraws the other's events.
  *
+ * Plus one append-only record: every finished focus session becomes a
+ * `正在完成【…】` event (no alarm), gated by the same `calendarEnabled` switch
+ * as the action events. Its mappings live in `focusMappings`, and
+ * `focusRecordSince` keeps the first enable from backfilling old sessions.
+ *
  * Three gates, in order:
  *   1. the in-app switches above (Settings),
  *   2. the OS calendar permission (never prompted from here — the Settings
@@ -27,7 +32,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { usePowerSync } from '@powersync/react';
-import { listCalendarActions, listScheduledReminders, wrapDb } from '@nextdo/db';
+import { listCalendarActions, listCompletedFocusSessions, listScheduledReminders, wrapDb } from '@nextdo/db';
 import { logger } from '@nextdo/core';
 import type { CalendarTarget } from '@/lib/calendar-sync/target';
 import { calendarTargetId } from '@/lib/calendar-sync/target';
@@ -44,7 +49,8 @@ import {
   type CalendarSyncMappings,
   type CalendarSyncPlan,
 } from '@/lib/calendar-sync/reconcile';
-import { buildReminderCalendarPlan } from '@/lib/calendar-sync/reminder-plan';
+import { buildReminderCalendarPlan, reminderIdsCoveredByActionEvents } from '@/lib/calendar-sync/reminder-plan';
+import { buildFocusCalendarPlan } from '@/lib/calendar-sync/focus-event';
 import {
   clearCalendarSyncState,
   loadCalendarSyncState,
@@ -114,7 +120,8 @@ export function useCalendarSync(): void {
 
         const nothingLeft =
           Object.keys(state.mappings).length === 0 &&
-          Object.keys(state.reminderMappings).length === 0;
+          Object.keys(state.reminderMappings).length === 0 &&
+          Object.keys(state.focusMappings).length === 0;
         if (!actionsEnabled && !remindersEnabled && nothingLeft) {
           if (state.calendarId !== null) await clearCalendarSyncState();
           return;
@@ -129,9 +136,19 @@ export function useCalendarSync(): void {
 
         const nextMappings: CalendarSyncMappings = {};
         const nextReminderMappings: CalendarSyncMappings = {};
+        const nextFocusMappings: CalendarSyncMappings = {};
+        // The first moment calendar sync ran is the focus-record boundary:
+        // turning the switch on must not materialize years of old sessions,
+        // and a session that ends after this moment is always recorded.
+        const focusRecordSince = actionsEnabled
+          ? (state.focusRecordSince ?? new Date().toISOString())
+          : null;
+
+        // Loaded once: the reminder channel needs these too, to recognize a
+        // reminder whose action event already delivers the same moment.
+        const actions = actionsEnabled ? await listCalendarActions(db) : [];
 
         if (actionsEnabled) {
-          const actions = await listCalendarActions(db);
           const plan = buildCalendarSyncPlan({
             enabled: true,
             actions,
@@ -156,6 +173,9 @@ export function useCalendarSync(): void {
             rows,
             mappings: state.reminderMappings,
             now: new Date(),
+            coveredReminderIds: actionsEnabled
+              ? reminderIdsCoveredByActionEvents(rows, actions)
+              : undefined,
           });
           Object.assign(nextReminderMappings, plan.retained);
           await applyPlan(calendar, plan, nextReminderMappings);
@@ -165,14 +185,35 @@ export function useCalendarSync(): void {
           }
         }
 
+        if (actionsEnabled && focusRecordSince !== null) {
+          const sessions = await listCompletedFocusSessions(db);
+          const plan = buildFocusCalendarPlan({
+            enabled: true,
+            sessions,
+            mappings: state.focusMappings,
+            since: focusRecordSince,
+          });
+          Object.assign(nextFocusMappings, plan.retained);
+          await applyPlan(calendar, plan, nextFocusMappings);
+        } else {
+          // Switch off (or never on): withdraw the focus records too.
+          for (const mapping of Object.values(state.focusMappings)) {
+            await deleteCalendarEvent(mapping.eventId);
+          }
+        }
+
         const keepCalendar =
-          Object.keys(nextMappings).length > 0 || Object.keys(nextReminderMappings).length > 0;
+          Object.keys(nextMappings).length > 0 ||
+          Object.keys(nextReminderMappings).length > 0 ||
+          Object.keys(nextFocusMappings).length > 0;
         if (!keepCalendar && state.calendarId === null) return;
         await saveCalendarSyncState({
           calendarId: keepCalendar ? calendarTargetId(calendar) : null,
           preferredCalendarId: state.preferredCalendarId,
           mappings: nextMappings,
           reminderMappings: nextReminderMappings,
+          focusMappings: nextFocusMappings,
+          focusRecordSince,
         });
       })
       .catch((error: unknown) => {
@@ -228,8 +269,9 @@ export function useCalendarSync(): void {
           },
         },
         // `reminders` drives the reminder channel; the action tables carry the
-        // title / note / time a reminder event displays.
-        { tables: ['calendar_actions', 'next_actions', 'reminders'] },
+        // title / note / time a reminder event displays, and `focus_sessions`
+        // carries a finished session's span (the focus record).
+        { tables: ['calendar_actions', 'next_actions', 'reminders', 'focus_sessions'] },
       );
 
       teardown = () => {

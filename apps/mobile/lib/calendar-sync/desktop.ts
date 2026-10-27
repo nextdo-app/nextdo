@@ -118,8 +118,9 @@ function upsertArgs(spec: CalendarSyncEventSpec, eventId?: string): Record<strin
       durationMinutes: Math.max(durationMs, 60_000) / 60_000,
       // The event's start IS the reminder moment — the system calendar
       // notifies at the start, the same 0-minute offset the native
-      // implementation uses.
-      alarmOffsetMinutes: 0,
+      // implementation uses. A focus record opts out entirely (absent = no
+      // alarm on the EventKit side).
+      ...(spec.alarm === false ? {} : { alarmOffsetMinutes: 0 }),
     },
   };
 }
