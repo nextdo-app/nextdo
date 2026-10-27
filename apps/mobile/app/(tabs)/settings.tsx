@@ -144,21 +144,18 @@ const SOUND_TONE_ICONS: Record<NotificationSoundTone, IoniconsName> = {
 
 const SOUND_TONES = Object.keys(SOUND_TONE_LABELS) as NotificationSoundTone[];
 
-/** Issue #63 — the three delivery channels, in the order the picker shows them. */
+/** Issue #63 — the two delivery channels, in the order the picker shows them. */
 const REMINDER_CHANNEL_LABELS: Record<ReminderDeliveryChannel, string> = {
   app: '应用内通知',
   calendar: '系统日历',
-  both: '两者都发',
 };
 const REMINDER_CHANNEL_HINTS: Record<ReminderDeliveryChannel, string> = {
   app: '由 Nextdo 自己发出的通知提醒',
   calendar: '把提醒写成带闹钟的日历事件，由系统日历通知',
-  both: '应用内通知和系统日历事件都发，宁可多响一次',
 };
 const REMINDER_CHANNEL_ICONS: Record<ReminderDeliveryChannel, IoniconsName> = {
   app: 'notifications-outline',
   calendar: 'calendar-outline',
-  both: 'layers-outline',
 };
 
 const THEME_OPTIONS: Array<{
@@ -1032,7 +1029,7 @@ export default function SettingsScreen() {
                       写入系统日历
                     </Text>
                     <Text className="mt-0.5 font-sans text-[11px] leading-tight text-muted dark:text-muted-dark">
-                      把有明确起止时间的行动同步为系统日历事件，由系统原生提醒；关闭后会清理已经写入的事件。
+                      把有明确起止时间的行动同步为系统日历事件，由系统原生提醒；专注结束时也会自动写入一条专注记录。关闭后会清理已经写入的事件。
                     </Text>
                   </View>
                   <View className="shrink-0">

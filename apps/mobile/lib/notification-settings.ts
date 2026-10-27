@@ -69,25 +69,25 @@ export interface NotificationSettings {
    */
   calendarEnabled: boolean;
   /**
-   * Which channel delivers a reminder notification:
-   *   `app`      — the app's own OS notification (default, unchanged);
+   * Which channel delivers a reminder notification — EXACTLY one:
+   *   `app`      — the app's own OS notification (default);
    *   `calendar` — a system calendar event with an alarm, so the OS calendar
-   *                app notifies even when Nextdo is force-killed;
-   *   `both`     — both channels.
+   *                app notifies even when Nextdo is force-killed.
    *
-   * `calendar`/`both` are native-only: the desktop runtime has no calendar
-   * module, so it always falls back to `app` (see the delivery hook).
+   * There is deliberately no "both": two channels meant two notifications for
+   * the same reminder. When the calendar channel is selected but the OS denied
+   * permission, `calendarOwnsReminderDelivery` keeps the app delivering, so
+   * nothing is ever lost by choosing one.
    */
   reminderChannel: ReminderDeliveryChannel;
 }
 
 /** Issue #63: how a reminder reaches the user. */
-export type ReminderDeliveryChannel = 'app' | 'calendar' | 'both';
+export type ReminderDeliveryChannel = 'app' | 'calendar';
 
 export const REMINDER_DELIVERY_CHANNELS: readonly ReminderDeliveryChannel[] = [
   'app',
   'calendar',
-  'both',
 ];
 
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
@@ -194,6 +194,21 @@ function pickBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback;
 }
 
+/**
+ * Legacy `'both'` meant "calendar + app". With a single channel the calendar
+ * wins: it is the delivery that survives the app being force-killed, and the
+ * app already falls back to its own notification when the OS denied access
+ * (`calendarOwnsReminderDelivery`). Anything unrecognized keeps the default.
+ */
+function normalizeReminderChannel(
+  value: unknown,
+  fallback: ReminderDeliveryChannel,
+): ReminderDeliveryChannel {
+  if (value === 'calendar' || value === 'both') return 'calendar';
+  if (value === 'app') return 'app';
+  return fallback;
+}
+
 /** Normalize a stored value; anything unreadable falls back to the defaults. */
 export function parseNotificationSettings(raw: string | null): NotificationSettings {
   if (raw === null) return DEFAULT_NOTIFICATION_SETTINGS;
@@ -207,11 +222,7 @@ export function parseNotificationSettings(raw: string | null): NotificationSetti
       reminderSoundEnabled: pickBoolean(parsed.reminderSoundEnabled, defaults.reminderSoundEnabled),
       soundTone: pickEnum(parsed.soundTone, NOTIFICATION_SOUND_TONES, defaults.soundTone),
       calendarEnabled: pickBoolean(parsed.calendarEnabled, defaults.calendarEnabled),
-      reminderChannel: pickEnum(
-        parsed.reminderChannel,
-        REMINDER_DELIVERY_CHANNELS,
-        defaults.reminderChannel,
-      ),
+      reminderChannel: normalizeReminderChannel(parsed.reminderChannel, defaults.reminderChannel),
     };
   } catch {
     return DEFAULT_NOTIFICATION_SETTINGS;

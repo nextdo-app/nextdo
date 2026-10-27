@@ -62,6 +62,86 @@ export async function listFocusSessions(
   return rows.map(focusSessionFromRow);
 }
 
+/**
+ * A finished session joined to its action's display title — the source for
+ * the calendar record of "what did I do today".
+ *
+ * Same LEFT JOIN shape as `listScheduledReminders`: an orphan session (its
+ * action was trashed) still comes back with `title: null`, because the time
+ * actually spent is a real record of the day either way.
+ */
+export interface CompletedFocusSessionRow {
+  id: string;
+  actionKind: ReminderActionKind;
+  actionId: string;
+  /** ISO-8601 — the session's wall-clock start. */
+  startedAt: string;
+  /** ISO-8601 — written once when the session left `active`. */
+  endedAt: string;
+  /** The action's title; null when the action row is gone. */
+  title: string | null;
+}
+
+/** Every completed (not abandoned) session, oldest first. */
+export async function listCompletedFocusSessions(
+  db: NextdoDb,
+): Promise<CompletedFocusSessionRow[]> {
+  const rows = await db
+    .selectFrom('focus_sessions')
+    .leftJoin('next_actions', (join) =>
+      join
+        .onRef('next_actions.id', '=', 'focus_sessions.action_id')
+        .on('focus_sessions.action_kind', '=', 'next')
+        .on('next_actions.deleted_at', 'is', null),
+    )
+    .leftJoin('calendar_actions', (join) =>
+      join
+        .onRef('calendar_actions.id', '=', 'focus_sessions.action_id')
+        .on('focus_sessions.action_kind', '=', 'calendar')
+        .on('calendar_actions.deleted_at', 'is', null),
+    )
+    .leftJoin('habit_days', (join) =>
+      join
+        .onRef('habit_days.id', '=', 'focus_sessions.action_id')
+        .on('focus_sessions.action_kind', '=', 'habit')
+        .on('habit_days.deleted_at', 'is', null),
+    )
+    .leftJoin('habits', (join) =>
+      join.onRef('habits.id', '=', 'habit_days.habit_id').on('habits.deleted_at', 'is', null),
+    )
+    .select((eb) => [
+      'focus_sessions.id',
+      'focus_sessions.action_kind',
+      'focus_sessions.action_id',
+      'focus_sessions.started_at',
+      'focus_sessions.ended_at',
+      eb
+        .case()
+        .when(eb('focus_sessions.action_kind', '=', 'next'))
+        .thenRef('next_actions.title')
+        .when(eb('focus_sessions.action_kind', '=', 'calendar'))
+        .thenRef('calendar_actions.title')
+        .when(eb('focus_sessions.action_kind', '=', 'habit'))
+        .thenRef('habits.title')
+        .else(null)
+        .end()
+        .as('title'),
+    ])
+    .where('focus_sessions.status', '=', 'completed')
+    .where('focus_sessions.deleted_at', 'is', null)
+    .orderBy('focus_sessions.started_at')
+    .execute();
+
+  return rows.map((row) => ({
+    id: row.id,
+    actionKind: row.action_kind as ReminderActionKind,
+    actionId: row.action_id ?? '',
+    startedAt: row.started_at ?? '',
+    endedAt: row.ended_at ?? '',
+    title: row.title,
+  }));
+}
+
 /** Plain insert (full row) — validated by core's `assertValidFocusSession`
  *  (preset ∈ {25,45,60} vs free = null, pausedSec ≥ 0, endedAt rules). */
 export async function addFocusSession(db: NextdoDb, session: FocusSession): Promise<FocusSession> {

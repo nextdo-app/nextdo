@@ -4,14 +4,17 @@
  * Runs on every cron tick:
  *   1. read the reminders that are due (`state='scheduled'`, `fires_at <= now`),
  *      joined to their action's title;
- *   2. for each reminder × each configured channel, CLAIM a row in
- *      `reminder_deliveries` before sending, then send and record the outcome.
+ *   2. one reminder → one message: try the configured channels in order and
+ *      stop at the first accepted send. A failing channel falls through to
+ *      the next one, so one misconfigured vendor never silences a reminder;
+ *   3. CLAIM a row in `reminder_deliveries` before sending, then record the
+ *      outcome.
  *
  * Why claim first: the client writes no `fired` marker (PRD R7), so the
- * server is the only place that can guarantee one delivery per
- * (reminder, channel). The claim is an `INSERT … ON CONFLICT DO NOTHING
- * RETURNING id` against the unique index — a concurrent tick, or a repeat
- * of the same tick, gets no row back and skips.
+ * server is the only place that can guarantee one delivery per reminder. The
+ * claim is an `INSERT … ON CONFLICT DO NOTHING RETURNING id` against the
+ * unique index — a concurrent tick, or a repeat of the same tick, gets no row
+ * back and skips.
  *
  * Trade-off (v1, deliberate): at-most-once. A crash between the claim and
  * the send loses that one delivery rather than risking a duplicate; a
@@ -164,7 +167,25 @@ async function recordOutcome(
   );
 }
 
-/** Deliver every due reminder to every configured channel. */
+/**
+ * Whether this reminder already reached the user through any channel.
+ *
+ * The dispatcher runs every minute while the reminder stays due until the
+ * client marks it fired, so without this check a reminder that succeeded on
+ * one channel would be picked up again on the next tick and sent through the
+ * next channel in the list — the duplicate the single-message rule forbids.
+ */
+async function alreadyDelivered(pool: DbPool, reminderId: string): Promise<boolean> {
+  const result = await pool.query(
+    `SELECT 1 FROM reminder_deliveries
+      WHERE reminder_id = $1 AND status = 'sent'
+      LIMIT 1`,
+    [reminderId],
+  );
+  return result.rows.length > 0;
+}
+
+/** Deliver every due reminder — exactly once per reminder. */
 export async function dispatchDueReminders(deps: DispatchDeps): Promise<DispatchSummary> {
   const fetchFn = deps.fetchFn ?? fetch;
   const maxAttempts = deps.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
@@ -176,6 +197,13 @@ export async function dispatchDueReminders(deps: DispatchDeps): Promise<Dispatch
   summary.due = due.length;
 
   for (const reminder of due) {
+    if (await alreadyDelivered(deps.pool, reminder.id)) {
+      summary.skipped += 1;
+      continue;
+    }
+
+    // Channels are tried in the order they were configured; the first
+    // accepted send is the whole delivery, so the loop breaks after it.
     for (const channel of deps.channels) {
       const claimed = await claimDelivery(deps.pool, reminder.id, channel.kind, nowIso);
       if (!claimed) {
@@ -219,10 +247,10 @@ export async function dispatchDueReminders(deps: DispatchDeps): Promise<Dispatch
         summary.sent += 1;
         // Log the channel and outcome only — never the reminder's text.
         deps.logger.info(`reminder delivered (${channel.kind})`);
-      } else {
-        summary.failed += 1;
-        deps.logger.error(`reminder delivery failed (${channel.kind})`, lastError);
+        break;
       }
+      summary.failed += 1;
+      deps.logger.error(`reminder delivery failed (${channel.kind})`, lastError);
     }
   }
 

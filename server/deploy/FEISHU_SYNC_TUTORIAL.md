@@ -145,7 +145,7 @@ Cloudflare Workers 负责接收客户端写入的数据，并在首次启动时*
 
 ### 可选：开通外部提醒通道（飞书 / 个人微信）
 
-> 这一步与云同步无关，不配也能正常同步。配上之后，有 DDL 的任务在到点时除了 app / 日历提醒，还会额外推一条到飞书或个人微信（与原有提醒**叠加**，不会替代它们）。
+> 这一步与云同步无关，不配也能正常同步。配上之后，有 DDL 的任务在到点时除了 app / 日历提醒，还会额外推一条到飞书或个人微信（与 app / 日历提醒并存）。**同一条提醒只推一次**：配置多个通道时按配置顺序择一，前一个失败才由下一个接手。
 
 **① 建 Cron 触发器（最容易漏）**
 
@@ -166,7 +166,7 @@ Cron 触发器不在代码里，是 Cloudflare 上的独立配置，所以**在�
 | `NEXTDO_FEISHU_WEBHOOK` | **Secret** | 飞书群里「添加机器人」→「自定义机器人」给出的 webhook，形如 `https://open.feishu.cn/open-apis/bot/v2/hook/<hook-token>`，**整条**粘贴 |
 | `NEXTDO_FEISHU_SECRET` | **Secret** | **选填**。仅当机器人安全设置选了「签名校验」时填它；选「自定义关键词」或「IP 白名单」则不用填 |
 | `NEXTDO_PUSHPLUS_TOKEN` | **Secret** | 个人微信（推荐）：到 [pushplus.plus](https://www.pushplus.plus) 微信扫码登录，在「一对一消息」页复制 **token**；需在微信关注它的服务号。免费实名账号微信渠道**每天 200 条** |
-| `NEXTDO_SERVERCHAN_SENDKEY` | **Secret** | **选填**，与上一项二选一。个人微信的另一条中转：到 [sct.ftqq.com](https://sct.ftqq.com) 微信扫码注册，复制 SendKey（免费版每天最多 5 条） |
+| `NEXTDO_SERVERCHAN_SENDKEY` | **Secret** | **选填**，可与上一项同时配置（只发一次，按顺序择一）。个人微信的另一条中转：到 [sct.ftqq.com](https://sct.ftqq.com) 微信扫码注册，复制 SendKey（免费版每天最多 5 条） |
 | `NEXTDO_TIME_ZONE` | **Text** | **选填**。消息里显示时间的时区，**默认 `Asia/Shanghai`**（北京时间）；如需其他时区填 IANA 名称 |
 
 **③ 验证**

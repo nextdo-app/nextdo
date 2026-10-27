@@ -169,7 +169,9 @@ pub struct UpsertEventArgs {
     /// this side of the boundary.
     pub starts_at: f64,
     pub duration_minutes: f64,
-    /// Minutes BEFORE the start to fire the alarm; absent/0 = at the start.
+    /// Minutes BEFORE the start to fire the alarm. Absent on create/update
+    /// means NO alarm: a focus record is a log entry of finished time, not a
+    /// reminder, and must not ring.
     pub alarm_offset_minutes: Option<f64>,
 }
 
@@ -272,7 +274,7 @@ pub async fn calendar_upsert_event(
 
         let start = ns_date_from_epoch_ms(args.starts_at);
         let end = ns_date_from_epoch_ms(args.starts_at + args.duration_minutes * 60_000.0);
-        let alarm_offset = args.alarm_offset_minutes.unwrap_or(0.0);
+        let alarm_offset = args.alarm_offset_minutes;
 
         unsafe {
             let item: &EKCalendarItem = &event;
@@ -286,8 +288,10 @@ pub async fn calendar_upsert_event(
 
             // A relative offset is measured from the start; negative fires
             // before it, which is what "remind me N minutes early" means.
-            let alarm = EKAlarm::alarmWithRelativeOffset(alarm_offset_seconds(alarm_offset));
-            item.addAlarm(&alarm);
+            if let Some(minutes) = alarm_offset {
+                let alarm = EKAlarm::alarmWithRelativeOffset(alarm_offset_seconds(minutes));
+                item.addAlarm(&alarm);
+            }
         }
 
         if let Err(error) = unsafe { store.saveEvent_span_error(&event, EKSpan::ThisEvent) } {

@@ -13,14 +13,18 @@
  *   - update: a changed note turns the mapping into an update and the OLD
  *     mapping is retained so a failed update retries;
  *   - delete: a reminder that disappeared deletes its event;
+ *   - covered: a reminder in the minute its action event starts is left to
+ *     that event (one moment must not alarm twice);
  *   - disabled: the channel is withdrawn entirely.
  */
 import type { ScheduledReminderRow } from '@nextdo/db';
+import type { CalendarAction } from '@nextdo/core';
 import { calendarEventSignature, type CalendarSyncMappings } from './reconcile';
 import {
   buildReminderCalendarPlan,
   calendarOwnsReminderDelivery,
   reminderEventSpec,
+  reminderIdsCoveredByActionEvents,
 } from './reminder-plan';
 
 const NOW = new Date('2026-10-21T12:00:00.000Z');
@@ -37,6 +41,22 @@ function row(overrides: Partial<ScheduledReminderRow> & { id: string }): Schedul
     note: note ?? null,
     estMinutes: estMinutes ?? null,
     ...rest,
+  };
+}
+
+function action(overrides: Partial<CalendarAction> & { id: string }): CalendarAction {
+  return {
+    createdAt: NOW.toISOString(),
+    updatedAt: NOW.toISOString(),
+    deletedAt: null,
+    title: '默认日程',
+    startsAt: new Date(NOW.getTime() + 30 * MIN).toISOString(),
+    contextIds: [],
+    estMinutes: 30,
+    value: 3,
+    status: 'open',
+    consecutiveSkips: 0,
+    ...overrides,
   };
 }
 
@@ -145,8 +165,103 @@ describe('buildReminderCalendarPlan', () => {
       { actionId: 'r-2', eventId: 'e-2' },
     ]);
   });
+
+  it('never creates a covered reminder a second event', () => {
+    const rows = [row({ id: 'r-1', kind: 'calendar', actionId: 'a-1' })];
+    const covered = new Set(['r-1']);
+
+    const plan = buildReminderCalendarPlan({
+      enabled: true,
+      rows,
+      mappings: {},
+      now: NOW,
+      coveredReminderIds: covered,
+    });
+
+    expect(plan.toCreate).toEqual([]);
+  });
+
+  it('removes the reminder event once an action event speaks for that moment', () => {
+    // One reminder used to become two events (and two alarms) for one moment:
+    // the action's own event plus the reminder event at the same minute.
+    const mappings: CalendarSyncMappings = { 'r-1': { eventId: 'e-1', signature: 'x' } };
+
+    const plan = buildReminderCalendarPlan({
+      enabled: true,
+      rows: [row({ id: 'r-1', kind: 'calendar', actionId: 'a-1' })],
+      mappings,
+      now: NOW,
+      coveredReminderIds: new Set(['r-1']),
+    });
+
+    expect(plan.toCreate).toEqual([]);
+    expect(plan.toDelete).toEqual([{ actionId: 'r-1', eventId: 'e-1' }]);
+  });
 });
 
+describe('reminderIdsCoveredByActionEvents', () => {
+  it('covers a calendar reminder in the minute the action event starts', () => {
+    const startsAt = new Date(NOW.getTime() + 30 * MIN).toISOString();
+    const rows = [
+      row({ id: 'r-1', kind: 'calendar', actionId: 'a-1', firesAt: startsAt }),
+      // Alarms fire at minute granularity: any offset inside that minute rings
+      // together with the action event.
+      row({
+        id: 'r-2',
+        kind: 'calendar',
+        actionId: 'a-1',
+        firesAt: new Date(new Date(startsAt).getTime() + 59_000).toISOString(),
+      }),
+    ];
+
+    const covered = reminderIdsCoveredByActionEvents(rows, [action({ id: 'a-1', startsAt })]);
+
+    expect([...covered]).toEqual(['r-1', 'r-2']);
+  });
+
+  it('leaves a later reminder alone — it carries its own moment', () => {
+    const startsAt = new Date(NOW.getTime() + 30 * MIN).toISOString();
+    const rows = [
+      row({
+        id: 'r-1',
+        kind: 'calendar',
+        actionId: 'a-1',
+        firesAt: new Date(new Date(startsAt).getTime() + MIN).toISOString(),
+      }),
+    ];
+
+    const covered = reminderIdsCoveredByActionEvents(rows, [action({ id: 'a-1', startsAt })]);
+
+    expect([...covered]).toEqual([]);
+  });
+
+  it('ignores reminders whose action has no calendar event, and other actions', () => {
+    const startsAt = new Date(NOW.getTime() + 30 * MIN).toISOString();
+    const rows = [
+      // A next-action reminder never shares a moment with a calendar event.
+      row({ id: 'r-1', kind: 'next', actionId: 'a-1', firesAt: startsAt }),
+      row({ id: 'r-2', kind: 'calendar', actionId: 'a-2', firesAt: startsAt }),
+    ];
+
+    const covered = reminderIdsCoveredByActionEvents(rows, [action({ id: 'a-1', startsAt })]);
+
+    expect([...covered]).toEqual([]);
+  });
+
+  it('covers nothing for a closed or deleted action — its event is gone too', () => {
+    const startsAt = new Date(NOW.getTime() + 30 * MIN).toISOString();
+    const rows = [row({ id: 'r-1', kind: 'calendar', actionId: 'a-1', firesAt: startsAt })];
+
+    expect(
+      reminderIdsCoveredByActionEvents(rows, [action({ id: 'a-1', startsAt, status: 'done' })]),
+    ).toEqual(new Set());
+    expect(
+      reminderIdsCoveredByActionEvents(rows, [
+        action({ id: 'a-1', startsAt, deletedAt: NOW.toISOString() }),
+      ]),
+    ).toEqual(new Set());
+  });
+});
 describe('calendarOwnsReminderDelivery', () => {
   it('hands delivery to the calendar only on native, with the calendar channel, and granted access', () => {
     expect(

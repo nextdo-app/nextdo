@@ -33,6 +33,18 @@ export interface CalendarSyncState {
    * not withdraw the events a reminder channel owns (and vice versa).
    */
   reminderMappings: CalendarSyncMappings;
+  /**
+   * focusSessionId → event: the calendar record of a finished focus session.
+   * Separate again, because it answers a different question ("what did I do
+   * today") and outlives the action it was performed on.
+   */
+  focusMappings: CalendarSyncMappings;
+  /**
+   * ISO-8601 moment calendar sync was first enabled — the boundary for focus
+   * records. Turning the switch on must not materialize years of history;
+   * a session that ENDS after this moment is always recorded.
+   */
+  focusRecordSince: string | null;
 }
 
 const FILE_NAME = 'nextdo-calendar-sync.json';
@@ -140,7 +152,27 @@ async function writeRaw(raw: string | null): Promise<void> {
 }
 
 function emptyState(): CalendarSyncState {
-  return { calendarId: null, preferredCalendarId: null, mappings: {}, reminderMappings: {} };
+  return {
+    calendarId: null,
+    preferredCalendarId: null,
+    mappings: {},
+    reminderMappings: {},
+    focusMappings: {},
+    focusRecordSince: null,
+  };
+}
+
+/** One `id → mapping` bag from the stored JSON; malformed entries are dropped. */
+function parseMappings(value: unknown): CalendarSyncMappings {
+  const mappings: CalendarSyncMappings = {};
+  if (typeof value !== 'object' || value === null) return mappings;
+  for (const [id, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const record = entry as Record<string, unknown>;
+    if (typeof record.eventId !== 'string' || typeof record.signature !== 'string') continue;
+    mappings[id] = { eventId: record.eventId, signature: record.signature };
+  }
+  return mappings;
 }
 
 function parseState(raw: string | null): CalendarSyncState {
@@ -152,29 +184,14 @@ function parseState(raw: string | null): CalendarSyncState {
     const calendarId = typeof record.calendarId === 'string' ? record.calendarId : null;
     const preferredCalendarId =
       typeof record.preferredCalendarId === 'string' ? record.preferredCalendarId : null;
-    const mappings: CalendarSyncMappings = {};
-    const rawMappings = record.mappings;
-    if (typeof rawMappings === 'object' && rawMappings !== null) {
-      for (const [actionId, value] of Object.entries(rawMappings as Record<string, unknown>)) {
-        if (typeof value !== 'object' || value === null) continue;
-        const entry = value as Record<string, unknown>;
-        if (typeof entry.eventId !== 'string' || typeof entry.signature !== 'string') continue;
-        mappings[actionId] = { eventId: entry.eventId, signature: entry.signature };
-      }
-    }
-    const reminderMappings: CalendarSyncMappings = {};
-    const rawReminderMappings = record.reminderMappings;
-    if (typeof rawReminderMappings === 'object' && rawReminderMappings !== null) {
-      for (const [reminderId, value] of Object.entries(
-        rawReminderMappings as Record<string, unknown>,
-      )) {
-        if (typeof value !== 'object' || value === null) continue;
-        const entry = value as Record<string, unknown>;
-        if (typeof entry.eventId !== 'string' || typeof entry.signature !== 'string') continue;
-        reminderMappings[reminderId] = { eventId: entry.eventId, signature: entry.signature };
-      }
-    }
-    return { calendarId, preferredCalendarId, mappings, reminderMappings };
+    return {
+      calendarId,
+      preferredCalendarId,
+      mappings: parseMappings(record.mappings),
+      reminderMappings: parseMappings(record.reminderMappings),
+      focusMappings: parseMappings(record.focusMappings),
+      focusRecordSince: typeof record.focusRecordSince === 'string' ? record.focusRecordSince : null,
+    };
   } catch {
     return emptyState();
   }
@@ -190,11 +207,13 @@ export async function saveCalendarSyncState(state: CalendarSyncState): Promise<v
   cached = state;
   await writeRaw(
     JSON.stringify({
-      version: 3,
+      version: 4,
       calendarId: state.calendarId,
       preferredCalendarId: state.preferredCalendarId,
       mappings: state.mappings,
       reminderMappings: state.reminderMappings,
+      focusMappings: state.focusMappings,
+      focusRecordSince: state.focusRecordSince,
     }),
   );
 }

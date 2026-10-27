@@ -23,6 +23,12 @@ export interface CalendarSyncEventSpec {
   /** Event description. For a reminder event this carries the action's
    *  note (issue #63), so the information survives outside the app. */
   notes?: string;
+  /**
+   * Whether the event carries a calendar alarm at its start. Omitted = yes
+   * (the action / reminder channels ARE the reminder). A focus record sets
+   * `false`: it logs time already spent, and ringing for it is noise.
+   */
+  alarm?: boolean;
 }
 
 /** What we persisted for one action after creating/updating its event. */

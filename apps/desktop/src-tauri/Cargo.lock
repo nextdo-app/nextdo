@@ -2697,7 +2697,7 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
 name = "nextdo-desktop"
-version = "0.1.9-beta.12"
+version = "0.1.9-beta.17"
 dependencies = [
  "block2",
  "objc2",

@@ -104,10 +104,12 @@ export type {
 export {
   abandonFocusSession,
   completeFocusSession,
+  listCompletedFocusSessions,
   listFocusSessions,
   recordPause,
   startFocusSession,
 } from './queries/focus';
+export type { CompletedFocusSessionRow } from './queries/focus';
 // Review records: the append + the completion trail + the snapshot builders.
 export {
   addReviewRecord,
