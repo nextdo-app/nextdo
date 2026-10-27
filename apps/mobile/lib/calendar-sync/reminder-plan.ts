@@ -24,7 +24,7 @@
  * switch off must never withdraw the events the reminder channel owns.
  */
 import type { ScheduledReminderRow } from '@nextdo/db';
-import { markdownToPlainText } from '@nextdo/core';
+import { markdownToPlainText, type CalendarAction } from '@nextdo/core';
 import type { DeliveryPlatform } from '@/lib/reminders/adapters/types';
 import type { ReminderDeliveryChannel } from '@/lib/notification-settings';
 import type { CalendarPermission } from './device';
@@ -68,6 +68,49 @@ export interface ReminderCalendarPlanInput {
   rows: readonly ScheduledReminderRow[];
   mappings: CalendarSyncMappings;
   now: Date;
+  /**
+   * Reminders the calendar-action sync already speaks for: an action event
+   * fires at its `startsAt`, so a reminder in that same minute would be a
+   * second event (and a second alarm) for one moment. Only passed when the
+   * action sync is on — with it off, that event does not exist.
+   */
+  coveredReminderIds?: ReadonlySet<string>;
+}
+
+/**
+ * Reminder ids delivered by their calendar-action event's alarm.
+ *
+ * One minute, because calendar alarms fire at minute granularity — the
+ * action event rings at `startsAt`, so a reminder in that minute is the
+ * same notification. A reminder later in the action's span is independent
+ * information and keeps its own event.
+ */
+export function reminderIdsCoveredByActionEvents(
+  rows: readonly ScheduledReminderRow[],
+  actions: readonly CalendarAction[],
+): Set<string> {
+  const spans = actions
+    .filter(
+      (action) =>
+        action.deletedAt === null && action.status === 'open' && typeof action.startsAt === 'string',
+    )
+    .map((action) => ({ id: action.id, startsAtMs: new Date(action.startsAt).getTime() }))
+    .filter((span) => Number.isFinite(span.startsAtMs));
+
+  const covered = new Set<string>();
+  for (const row of rows) {
+    if (row.kind !== 'calendar') continue;
+    const firesAtMs = new Date(row.firesAt).getTime();
+    if (!Number.isFinite(firesAtMs)) continue;
+    const match = spans.find(
+      (span) =>
+        span.id === row.actionId &&
+        firesAtMs >= span.startsAtMs &&
+        firesAtMs < span.startsAtMs + MIN_EVENT_MS,
+    );
+    if (match !== undefined) covered.add(row.id);
+  }
+  return covered;
 }
 
 /**
@@ -79,7 +122,7 @@ export interface ReminderCalendarPlanInput {
  * event already fired and re-creating it would notify again.
  */
 export function buildReminderCalendarPlan(input: ReminderCalendarPlanInput): CalendarSyncPlan {
-  const { enabled, rows, mappings, now } = input;
+  const { enabled, rows, mappings, now, coveredReminderIds } = input;
 
   if (!enabled) {
     return {
@@ -96,6 +139,7 @@ export function buildReminderCalendarPlan(input: ReminderCalendarPlanInput): Cal
   const desired = new Map<string, CalendarSyncEventSpec>();
   const nowMs = now.getTime();
   for (const row of rows) {
+    if (coveredReminderIds?.has(row.id)) continue;
     const spec = reminderEventSpec(row);
     if (spec === null) continue;
     if (new Date(spec.startsAt).getTime() < nowMs) continue;

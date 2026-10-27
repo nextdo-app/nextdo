@@ -9494,6 +9494,16 @@ async function recordOutcome(pool, reminderId, channel, status, attempts, nowIso
   );
 }
 __name(recordOutcome, "recordOutcome");
+async function alreadyDelivered(pool, reminderId) {
+  const result = await pool.query(
+    `SELECT 1 FROM reminder_deliveries
+      WHERE reminder_id = $1 AND status = 'sent'
+      LIMIT 1`,
+    [reminderId]
+  );
+  return result.rows.length > 0;
+}
+__name(alreadyDelivered, "alreadyDelivered");
 async function dispatchDueReminders(deps) {
   const fetchFn = deps.fetchFn ?? fetch;
   const maxAttempts = deps.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
@@ -9503,6 +9513,10 @@ async function dispatchDueReminders(deps) {
   const due = await listDueReminders(deps.pool, deps.now, limit);
   summary.due = due.length;
   for (const reminder of due) {
+    if (await alreadyDelivered(deps.pool, reminder.id)) {
+      summary.skipped += 1;
+      continue;
+    }
     for (const channel of deps.channels) {
       const claimed = await claimDelivery(deps.pool, reminder.id, channel.kind, nowIso);
       if (!claimed) {
@@ -9541,10 +9555,10 @@ async function dispatchDueReminders(deps) {
       if (ok) {
         summary.sent += 1;
         deps.logger.info(`reminder delivered (${channel.kind})`);
-      } else {
-        summary.failed += 1;
-        deps.logger.error(`reminder delivery failed (${channel.kind})`, lastError);
+        break;
       }
+      summary.failed += 1;
+      deps.logger.error(`reminder delivery failed (${channel.kind})`, lastError);
     }
   }
   return summary;

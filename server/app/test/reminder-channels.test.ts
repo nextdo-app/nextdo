@@ -28,10 +28,12 @@ const REMINDER: DueReminder = {
 };
 
 interface FakePoolOptions {
-  /** Rows returned by SELECT (the due-reminder query). */
+  /** Rows returned by the due-reminder SELECT. */
   selectRows?: unknown[];
   /** Rows returned by an `INSERT … RETURNING` (the dedupe claim). */
   claimRows?: unknown[];
+  /** Rows returned by the "already delivered" probe; defaults to none. */
+  alreadyDelivered?: unknown[];
 }
 
 /** Minimal programmable DbPool; records every statement it saw. */
@@ -40,6 +42,9 @@ function createFakePool(options: FakePoolOptions = {}) {
 
   function respond(text: string, values?: readonly unknown[]) {
     queries.push({ text, values: values ?? [] });
+    if (text.includes('FROM reminder_deliveries') && text.includes("status = 'sent'")) {
+      return { rows: options.alreadyDelivered ?? [] };
+    }
     if (text.includes('RETURNING')) {
       return { rows: options.claimRows ?? [{ id: 'delivery-1' }] };
     }
@@ -318,6 +323,104 @@ describe('dispatchDueReminders', () => {
 
     expect(summary).toEqual({ due: 1, sent: 0, failed: 0, skipped: 1 });
     expect(calls).toBe(0);
+  });
+
+  it('sends a reminder through only the first channel that accepts it', async () => {
+    const { pool, queries } = createFakePool({ selectRows: [dueRow] });
+    const { logger } = createLogger();
+    const sent: string[] = [];
+    const fetchFn = (async (url: string) => {
+      sent.push(String(url));
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const summary = await dispatchDueReminders({
+      pool,
+      channels: [
+        fakeChannel('feishu', async () => ({
+          url: 'https://example.test/feishu',
+          init: { method: 'POST' },
+        })),
+        fakeChannel('pushplus', async () => ({
+          url: 'https://example.test/pushplus',
+          init: { method: 'POST' },
+        })),
+      ],
+      now: NOW,
+      logger,
+      fetchFn,
+    });
+
+    expect(summary).toEqual({ due: 1, sent: 1, failed: 0, skipped: 0 });
+    expect(sent).toEqual(['https://example.test/feishu']);
+    // The second channel was never even claimed.
+    expect(
+      queries.some((q) => q.text.includes('INSERT INTO reminder_deliveries') && q.values.includes('pushplus')),
+    ).toBe(false);
+  });
+
+  it('falls back to the next channel when the first one fails', async () => {
+    const { pool } = createFakePool({ selectRows: [dueRow] });
+    const { logger, error } = createLogger();
+    const sent: string[] = [];
+    const fetchFn = (async (url: string) => {
+      sent.push(String(url));
+      return new Response('nope', { status: String(url).includes('feishu') ? 500 : 200 });
+    }) as unknown as typeof fetch;
+
+    const summary = await dispatchDueReminders({
+      pool,
+      channels: [
+        fakeChannel('feishu', async () => ({
+          url: 'https://example.test/feishu',
+          init: { method: 'POST' },
+        })),
+        fakeChannel('pushplus', async () => ({
+          url: 'https://example.test/pushplus',
+          init: { method: 'POST' },
+        })),
+      ],
+      now: NOW,
+      logger,
+      fetchFn,
+      maxAttempts: 1,
+    });
+
+    expect(summary).toEqual({ due: 1, sent: 1, failed: 1, skipped: 0 });
+    expect(sent).toEqual(['https://example.test/feishu', 'https://example.test/pushplus']);
+    expect(error).toHaveLength(1);
+  });
+
+  it('skips a reminder that already reached the user on an earlier tick', async () => {
+    const { pool, queries } = createFakePool({
+      selectRows: [dueRow],
+      alreadyDelivered: [{ id: 1 }],
+    });
+    const { logger } = createLogger();
+    let calls = 0;
+    const fetchFn = (async () => {
+      calls += 1;
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const summary = await dispatchDueReminders({
+      pool,
+      channels: [
+        fakeChannel('pushplus', async () => ({
+          url: 'https://example.test/pushplus',
+          init: { method: 'POST' },
+        })),
+      ],
+      now: NOW,
+      logger,
+      fetchFn,
+    });
+
+    expect(summary).toEqual({ due: 1, sent: 0, failed: 0, skipped: 1 });
+    expect(calls).toBe(0);
+    expect(
+      queries.some((q) => q.text.includes('INSERT INTO reminder_deliveries')),
+    ).toBe(false);
   });
 
   it('retries up to the cap, records the failure and logs it', async () => {
