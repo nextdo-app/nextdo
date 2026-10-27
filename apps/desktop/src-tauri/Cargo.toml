@@ -1,6 +1,6 @@
 [package]
 name = "nextdo-desktop"
-version = "0.1.9-beta.16"
+version = "0.1.9-beta.17"
 description = "Nextdo desktop shell (Tauri v2) — wraps the @nextdo/mobile web build"
 authors = ["Nextdo"]
 edition = "2021"
