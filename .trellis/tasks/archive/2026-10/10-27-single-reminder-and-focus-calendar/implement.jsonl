@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/app/hook-guidelines.md", "reason": "hook 与纯函数边界、now 注入"}
+{"file": ".trellis/spec/app/database-guidelines.md", "reason": "本地查询层约束"}
