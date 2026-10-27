@@ -109,3 +109,43 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 67: 提醒只发一次 + 专注结束写入日历
+<!-- trellis-session: v=2 fp=1a59f8c7631165d0 -->
+
+**Date**: 2026-10-27
+**Task**: 提醒只发一次 + 专注结束写入日历
+**Branch**: `feat/single-reminder-and-focus-calendar`
+
+### Summary
+
+提醒收敛为单次投递；专注结束自动生成无闹铃的日历记录
+
+### Main Changes
+
+- 客户端「提醒方式」去掉「两者都发」，旧值归一为系统日历；同一分钟的行动事件与提醒事件只保留前者
+- 服务端 Cron 按通道顺序择一发送，首个成功即停，并跳过已 sent 的提醒
+- 新增 focus-event 计划器：每条已完成专注会话写入「正在完成【行动标题】」事件，无闹钟，受同样日历开关与 focusRecordSince 约束
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `84c5275` | fix(reminder): 同一条提醒只送达一次 |
+| `3b6b125` | feat(calendar): 专注结束自动写入日历记录 |
+
+### Testing
+
+- [OK] pnpm verify:web --no-serve 全绿（lint / typecheck / 126+268+333+732 测试 / build:web）
+- [OK] cargo check（desktop）通过
+- [OK] apps/mobile jest lib/calendar-sync 通过（含新增 focus-event 与 reminder-plan 用例）
+- [OK] 浏览器实测 01-04 截图 + evidence.md 存于 .verify/10-27-single-reminder-and-focus-calendar/
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 原生端手测：专注结束后日历出现无闹铃的「正在完成【…】」事件，关闭开关后事件被撤回
