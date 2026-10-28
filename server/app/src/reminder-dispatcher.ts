@@ -16,6 +16,14 @@
  * unique index — a concurrent tick, or a repeat of the same tick, gets no row
  * back and skips.
  *
+ * Claims are per ROW, so they cannot see a DUPLICATE row for the same
+ * moment: the reminders table has no unique key on
+ * (action_kind, action_id, fires_at), and clients reconcile against their
+ * local copy before syncing, so two devices can each insert a row for one
+ * moment — three identical rows produced three identical PushPlus messages.
+ * The "one message per moment" rule therefore also consults the deliveries
+ * of the whole group (see `deliveredForMoment`).
+ *
  * Trade-off (v1, deliberate): at-most-once. A crash between the claim and
  * the send loses that one delivery rather than risking a duplicate; a
  * failed send is recorded on the row and logged, never silently dropped.
@@ -168,19 +176,30 @@ async function recordOutcome(
 }
 
 /**
- * Whether this reminder already reached the user through any channel.
+ * Whether this moment already reached the user through any channel.
+ *
+ * Group-wide, not per row: the reminders table carries no unique key on
+ * (action_kind, action_id, fires_at), and a client can insert a second row
+ * for a moment it has not synced from another device yet. Two such rows must
+ * still produce ONE message, so the check asks whether ANY row of the same
+ * action and fire time has a `sent` delivery. The row itself is covered by
+ * the same join, which subsumes the former per-reminder probe.
  *
  * The dispatcher runs every minute while the reminder stays due until the
  * client marks it fired, so without this check a reminder that succeeded on
  * one channel would be picked up again on the next tick and sent through the
  * next channel in the list — the duplicate the single-message rule forbids.
  */
-async function alreadyDelivered(pool: DbPool, reminderId: string): Promise<boolean> {
+async function deliveredForMoment(pool: DbPool, reminder: DueReminder): Promise<boolean> {
   const result = await pool.query(
-    `SELECT 1 FROM reminder_deliveries
-      WHERE reminder_id = $1 AND status = 'sent'
+    `SELECT 1 FROM reminder_deliveries d
+       JOIN reminders r ON r.id = d.reminder_id
+      WHERE d.status = 'sent'
+        AND r.action_kind = $1
+        AND r.action_id = $2
+        AND r.fires_at = $3
       LIMIT 1`,
-    [reminderId],
+    [reminder.actionKind, reminder.actionId, reminder.firesAt],
   );
   return result.rows.length > 0;
 }
@@ -197,7 +216,7 @@ export async function dispatchDueReminders(deps: DispatchDeps): Promise<Dispatch
   summary.due = due.length;
 
   for (const reminder of due) {
-    if (await alreadyDelivered(deps.pool, reminder.id)) {
+    if (await deliveredForMoment(deps.pool, reminder)) {
       summary.skipped += 1;
       continue;
     }
