@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 67
-- **Last Active**: 2026-10-27
+- **Total Sessions**: 68
+- **Last Active**: 2026-10-28
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~151 | Active |
+| `journal-2.md` | ~186 | Active |
 | `journal-1.md` | ~1990 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 68 | 2026-10-28 | 提醒同一时刻重复推送：派发按任务+时刻去重 | `2f9c685`, `e6b24d5` | `main` |
 | 67 | 2026-10-27 | 提醒只发一次 + 专注结束写入日历 | `84c5275`, `3b6b125` | `feat/single-reminder-and-focus-calendar` |
 | 66 | 2026-10-26 | 多选提醒时间与 Google / iCloud 日历目标选择 | `c2be7f5`, `a495f27` | `main` |
 | 65 | 2026-10-26 | 行动提醒时间支持多选 | `c2be7f5` | `main` |

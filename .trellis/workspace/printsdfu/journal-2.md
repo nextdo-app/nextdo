@@ -149,3 +149,38 @@
 ### Next Steps
 
 - 原生端手测：专注结束后日历出现无闹铃的「正在完成【…】」事件，关闭开关后事件被撤回
+
+
+## Session 68: 提醒同一时刻重复推送：派发按任务+时刻去重
+<!-- trellis-session: v=2 fp=7cbe49b496d52e1f -->
+
+**Date**: 2026-10-28
+**Task**: 提醒同一时刻重复推送：派发按任务+时刻去重
+**Branch**: `main`
+
+### Summary
+
+线上 Worker 先补齐单次投递修复，再按（任务类型+任务 id+触发时刻）去重；交付门禁全绿并已生产部署
+
+### Main Changes
+
+- 派发去重由单行探针改为组级（deliveredForMoment）
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2f9c685` | fix(server): send one message per reminder moment |
+| `e6b24d5` | chore(task): archive reminder-moment-dedupe |
+
+### Testing
+
+- [OK] pnpm verify:web --no-serve 全绿；server/app 10 suites / 127 tests
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 观察下一次微信推送是否只到一条
