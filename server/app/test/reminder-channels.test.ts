@@ -32,8 +32,12 @@ interface FakePoolOptions {
   selectRows?: unknown[];
   /** Rows returned by an `INSERT … RETURNING` (the dedupe claim). */
   claimRows?: unknown[];
-  /** Rows returned by the "already delivered" probe; defaults to none. */
-  alreadyDelivered?: unknown[];
+  /**
+   * Rows returned by the "already delivered" probe; defaults to none. A
+   * function is evaluated per call, so a test can model a probe that starts
+   * hit after the first send was recorded.
+   */
+  alreadyDelivered?: unknown[] | (() => unknown[]);
 }
 
 /** Minimal programmable DbPool; records every statement it saw. */
@@ -43,7 +47,9 @@ function createFakePool(options: FakePoolOptions = {}) {
   function respond(text: string, values?: readonly unknown[]) {
     queries.push({ text, values: values ?? [] });
     if (text.includes('FROM reminder_deliveries') && text.includes("status = 'sent'")) {
-      return { rows: options.alreadyDelivered ?? [] };
+      const option = options.alreadyDelivered;
+      const rows = typeof option === 'function' ? option() : (option ?? []);
+      return { rows };
     }
     if (text.includes('RETURNING')) {
       return { rows: options.claimRows ?? [{ id: 'delivery-1' }] };
@@ -421,6 +427,47 @@ describe('dispatchDueReminders', () => {
     expect(
       queries.some((q) => q.text.includes('INSERT INTO reminder_deliveries')),
     ).toBe(false);
+  });
+
+  /**
+   * Two rows for one moment (a client that reconciled before syncing another
+   * device's row) must still produce ONE message: the second row finds the
+   * moment already delivered and never reaches a channel.
+   */
+  it('sends one message when two rows describe the same moment', async () => {
+    const sibling = { ...dueRow, id: 'rem-2' };
+    let probes = 0;
+    const { pool, queries } = createFakePool({
+      selectRows: [dueRow, sibling],
+      // The first probe (row 1) finds nothing; after its send was recorded,
+      // the second probe (row 2) finds that delivery.
+      alreadyDelivered: () => (probes++ > 0 ? [{ id: 1 }] : []),
+    });
+    const { logger } = createLogger();
+    let calls = 0;
+    const fetchFn = (async () => {
+      calls += 1;
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const summary = await dispatchDueReminders({
+      pool,
+      channels: [
+        fakeChannel('pushplus', async () => ({
+          url: 'https://example.test/pushplus',
+          init: { method: 'POST' },
+        })),
+      ],
+      now: NOW,
+      logger,
+      fetchFn,
+    });
+
+    expect(summary).toEqual({ due: 2, sent: 1, failed: 0, skipped: 1 });
+    expect(calls).toBe(1);
+    expect(
+      queries.filter((q) => q.text.includes('INSERT INTO reminder_deliveries')),
+    ).toHaveLength(1);
   });
 
   it('retries up to the cap, records the failure and logs it', async () => {

@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/project/directory-structure.md", "reason": "服务端不 import monorepo，Postgres SQL 只写在 server/app/src"}
+{"file": ".trellis/spec/domain/domain-model.md", "reason": "提醒/行动/日历的领域语义，决定去重键必须是任务+时刻"}
