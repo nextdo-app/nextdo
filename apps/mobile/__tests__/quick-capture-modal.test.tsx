@@ -154,6 +154,53 @@ describe('QuickCaptureModal', () => {
     });
   });
 
+  it.each([
+    { isComposing: true, keyCode: 13 },
+    { isComposing: false, keyCode: 229 },
+    { keyCode: 229 },
+  ])('keeps the draft when Enter confirms IME input (%j)', async (composition) => {
+    const onAdd = jest.fn(async () => ITEM);
+    const onCaptured = jest.fn();
+    render(
+      <QuickCaptureModal
+        visible={true}
+        onClose={jest.fn()}
+        onAdd={onAdd}
+        onCaptured={onCaptured}
+      />,
+    );
+
+    const input = screen.getByPlaceholderText(/记下任何事/);
+    fireEvent.changeText(input, '买牛奶');
+    fireEvent(input, 'keyPress', { nativeEvent: { key: 'Enter', ...composition } });
+
+    expect(onAdd).not.toHaveBeenCalled();
+    expect(onCaptured).not.toHaveBeenCalled();
+    expect(input.props.value).toBe('买牛奶');
+
+    fireEvent.changeText(input, ITEM.title);
+    fireEvent(input, 'keyPress', {
+      nativeEvent: { key: 'Enter', isComposing: false, keyCode: 13 },
+    });
+
+    await waitFor(() => expect(onCaptured).toHaveBeenCalledWith(ITEM));
+    expect(onAdd).toHaveBeenCalledTimes(1);
+    expect(onAdd).toHaveBeenCalledWith(ITEM.title);
+    expect(input.props.value).toBe('');
+  });
+
+  it('keeps Shift+Enter available for multiline input', () => {
+    const onAdd = jest.fn(async () => ITEM);
+    render(<QuickCaptureModal visible={true} onClose={jest.fn()} onAdd={onAdd} />);
+
+    const input = screen.getByPlaceholderText(/记下任何事/);
+    fireEvent.changeText(input, '买牛奶');
+    fireEvent(input, 'keyPress', { nativeEvent: { key: 'Enter', shiftKey: true } });
+
+    expect(onAdd).not.toHaveBeenCalled();
+    expect(input.props.value).toBe('买牛奶');
+  });
+
   it('dismisses modal on Escape key press', () => {
     const onClose = jest.fn();
     render(

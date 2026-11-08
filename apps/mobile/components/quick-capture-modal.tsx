@@ -135,7 +135,11 @@ export function QuickCaptureModal({
                 return;
               }
               const isShift = 'shiftKey' in e.nativeEvent && Boolean(e.nativeEvent.shiftKey);
-              if (e.nativeEvent.key === 'Enter' && !isShift) {
+              // Safari can end composition before the confirming Enter; keyCode stays 229.
+              const isComposing =
+                ('isComposing' in e.nativeEvent && e.nativeEvent.isComposing === true) ||
+                ('keyCode' in e.nativeEvent && e.nativeEvent.keyCode === 229);
+              if (e.nativeEvent.key === 'Enter' && !isShift && !isComposing) {
                 void handleCapture('save');
               }
             }}
