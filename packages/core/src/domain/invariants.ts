@@ -301,6 +301,11 @@ export function assertValidCompletionRecord(record: CompletionRecord): void {
  * runtime dep in core). packages/db calls this before every write.
  */
 export function assertReviewRecord(record: ReviewRecord): void {
+  const titles = record.snapshot.titles;
+  if (titles !== undefined && (titles === null || typeof titles !== 'object' || Array.isArray(titles) ||
+    Object.entries(titles).some(([id, title]) => !id.trim() || typeof title !== 'string' || !title.trim()))) {
+    throw new ValidationNextdoError('validation.reviewRecord.titles', 'titles must map IDs to non-empty strings');
+  }
   if (record.kind === 'daily') {
     assertDailyReviewShape(record.snapshot, record.answers);
   } else if (record.kind === 'weekly') {
@@ -333,7 +338,9 @@ function assertDailyReviewShape(snapshot: DailyReviewSnapshot, answers: DailyRev
     throw new ValidationNextdoError('validation.dailyReview.rescheduled', 'rescheduled must be an array');
   }
   for (const entry of answers.rescheduled) {
-    if (entry === null || typeof entry !== 'object') continue; // shape error below
+    if (entry === null || typeof entry !== 'object') {
+      throw new ValidationNextdoError('validation.dailyReview.rescheduled', 'Invalid reschedule entry');
+    }
     assertNonEmptyString(entry.actionId, 'dailyReview.answers.rescheduled.actionId');
     assertIso(entry.toDate, 'dailyReview.answers.rescheduled.toDate');
   }
@@ -349,7 +356,9 @@ function assertWeeklyReviewShape(snapshot: WeeklyReviewSnapshot, answers: Weekly
     throw new ValidationNextdoError('validation.weeklyReview.projects', 'projects must be an array');
   }
   for (const project of snapshot.projects) {
-    if (project === null || typeof project !== 'object') continue; // shape error below
+    if (project === null || typeof project !== 'object') {
+      throw new ValidationNextdoError('validation.weeklyReview.projects', 'Invalid project entry');
+    }
     assertNonEmptyString(project.id, 'weeklyReview.projects.id');
     assertNonEmptyString(project.title, 'weeklyReview.projects.title');
     if (typeof project.hasOpenAction !== 'boolean') {
@@ -376,6 +385,16 @@ function assertWeeklyReviewShape(snapshot: WeeklyReviewSnapshot, answers: Weekly
       'validation.weeklyReview.calendarReasonable',
       'calendarReasonable must be a boolean',
     );
+  }
+  if (!Array.isArray(answers.somedayDecisions) || !Array.isArray(answers.projectDecisions) ||
+    [...answers.somedayDecisions, ...answers.projectDecisions].some((entry) => entry === null || typeof entry !== 'object')) {
+    throw new ValidationNextdoError('validation.weeklyReview.decisions', 'Decisions must be arrays of objects');
+  }
+  if (!Array.isArray(answers.somedayDecisions)) {
+    throw new ValidationNextdoError('validation.weeklyReview.somedayDecisions', 'somedayDecisions must be an array');
+  }
+  if (!Array.isArray(answers.projectDecisions)) {
+    throw new ValidationNextdoError('validation.weeklyReview.projectDecisions', 'projectDecisions must be an array');
   }
   const SOMEDAY_TARGETS = ['project', 'action', 'keep', 'trash'];
   const PROJECT_TARGETS = ['active', 'on-hold', 'done', 'dropped'];

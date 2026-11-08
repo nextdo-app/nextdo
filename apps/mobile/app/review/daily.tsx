@@ -1,36 +1,19 @@
-/**
- * The daily review route (design.md §4.5 — PRD R7): the read-only
- * snapshot (inbox / completed / uncovered projects / waiting follow-ups /
- * today+tomorrow schedule) + the decision area over `stillOpen` (per row:
- * 已完成 / 明日必做 / 跳过 / 排期到 <日期> 08:00) + the read-only
- * repeated-skips list (reclarify entry for next/calendar kinds).
- *
- * Submit order is fixed (design.md §8): the decision transactions land
- * FIRST (rescheduled → `snoozeAction(<date> 08:00 本地)`; completed →
- * `completeAction`; 明日必做 → `snoozeAction(明天 08:00)`), and only then
- * the append-only `addReviewRecord`. Any failed step stops the sequence
- * with a message and NO record is written — never "recorded but not
- * executed". Presses only collect answers; nothing mutates until submit.
- */
-import { useMemo, useState } from 'react';
-import { ScrollView, Text, TextInput, View } from 'react-native';
+/** Daily snapshot and decisions; submission commits all changes and the record together. */
+import { useCallback, useMemo, useState } from 'react';
+import { ScrollView, Text, View } from 'react-native';
 import { useAppInsets } from '@/lib/use-app-insets';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Button, Card, Tag } from '@nextdo/ui';
 import { errorMessage as errorCopy } from '@/lib/error-messages';
 import { goBack } from '@/lib/go-back';
 import { useDailyReviewData } from '@/hooks/use-daily-review-data';
-import { useCompleteAction } from '@/hooks/use-complete-action';
-import { useSnoozeAction } from '@/hooks/use-snooze-action';
-import { useAddReviewRecord } from '@/hooks/use-add-review-record';
+import { useSubmitReview } from '@/hooks/use-submit-review';
+import { DateTimePicker } from '@/components/datetime-picker';
 import { useAppClock } from '@/hooks/use-app-clock';
 import { formatLocalDateTime } from '@/lib/format';
 import { KIND_LABELS } from '@/lib/kind-labels';
 import { localDayAt, tomorrowAt } from '@/lib/review-dates';
 import type { DailyReviewAnswers } from '@nextdo/core';
-
-const INPUT_CLASS =
-  'flex-1 rounded-xl border border-border/80 bg-surface px-3.5 py-2 text-sm text-ink placeholder:text-muted shadow-2xs focus:border-accent dark:border-border-dark dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark';
 
 /** The per-row answer (single choice — pressing one clears the others). */
 type RowChoice =
@@ -68,16 +51,13 @@ function resolveSkipRows(
 export default function DailyReviewScreen() {
   const { data, error, reload } = useDailyReviewData();
   const now = useAppClock();
-  const { complete, error: completeError } = useCompleteAction();
-  const { snooze, error: snoozeError } = useSnoozeAction();
-  const { add, error: recordError } = useAddReviewRecord();
+  const { submit: submitReview, error: recordError, submitting } = useSubmitReview();
+  useFocusEffect(useCallback(() => { reload(); }, [reload]));
   const insets = useAppInsets();
   const topPadding = Math.max(insets.top, 16);
   const [choices, setChoices] = useState<Record<string, RowChoice>>({});
-  const [dateInputs, setDateInputs] = useState<Record<string, string>>({});
+  const [datePickerId, setDatePickerId] = useState<string | null>(null);
   const [dateHints, setDateHints] = useState<Record<string, string | null>>({});
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const stillOpen = useMemo(
     () =>
@@ -107,6 +87,8 @@ export default function DailyReviewScreen() {
         <Text className="mb-4 text-xl font-semibold text-ink dark:text-ink-dark">今日回顾</Text>
         <Card>
           <Text className="text-danger">加载回顾数据失败：{errorCopy(error)}</Text>
+          <Button label="重试加载" onPress={reload} />
+          <Button label="← 回顾" variant="ghost" onPress={() => goBack('/(tabs)/review')} />
         </Card>
       </View>
     );
@@ -116,6 +98,7 @@ export default function DailyReviewScreen() {
     return (
       <View className="flex-1 items-center justify-center bg-canvas p-4 dark:bg-canvas-dark">
         <Text className="text-base text-muted dark:text-muted-dark">加载中…</Text>
+        <Button label="← 回顾" variant="ghost" onPress={() => goBack('/(tabs)/review')} />
       </View>
     );
   }
@@ -127,10 +110,10 @@ export default function DailyReviewScreen() {
     setDateHints((prev) => ({ ...prev, [actionId]: null }));
   };
 
-  const applyReschedule = (actionId: string) => {
-    const key = (dateInputs[actionId] ?? '').trim();
-    if (localDayAt(key) === null) {
-      setDateHints((prev) => ({ ...prev, [actionId]: '日期格式应为 YYYY-MM-DD（例如 2026-09-24）' }));
+  const applyReschedule = (actionId: string, key: string) => {
+    const target = localDayAt(key);
+    if (target === null || target.getTime() <= now.getTime()) {
+      setDateHints((prev) => ({ ...prev, [actionId]: '请选择尚未到达的日期（当地 08:00）' }));
       return;
     }
     setChoice(actionId, { type: 'rescheduled', toDate: key });
@@ -162,43 +145,8 @@ export default function DailyReviewScreen() {
 
   const submit = async () => {
     if (submitting) return;
-    setSubmitting(true);
-    setSubmitError(null);
-    const answers = buildAnswers();
-    try {
-      // 1. Rescheduled → snooze to the picked local day at 08:00.
-      for (const entry of answers.rescheduled) {
-        const target = new Date(entry.toDate);
-        const ok = await snooze({
-          actionKind: 'next',
-          actionId: entry.actionId,
-          snoozedUntil: target,
-        });
-        if (!ok) throw new Error('snooze failed');
-      }
-      // 2. Completed → the complete transaction.
-      for (const actionId of answers.completedActionIds) {
-        const ok = await complete({ actionKind: 'next', actionId });
-        if (!ok) throw new Error('complete failed');
-      }
-      // 3. Tomorrow must-do → snooze to tomorrow 08:00 (local).
-      const tomorrowTarget = tomorrowAt(8, now);
-      for (const actionId of answers.tomorrowMustDo) {
-        const ok = await snooze({ actionKind: 'next', actionId, snoozedUntil: tomorrowTarget });
-        if (!ok) throw new Error('snooze failed');
-      }
-      // 4. Last: the append-only record (all-or-nothing with step 1–3).
-      const recorded = await add({ kind: 'daily', snapshot, answers });
-      if (!recorded) throw new Error('record failed');
-      reload();
-      goBack('/(tabs)/review');
-    } catch {
-      // The decision-transaction errors are surfaced through their hooks
-      // (below) — the record was NOT written (submit stopped before step 4).
-      setSubmitError('提交在中途失败，回顾记录未写入。请检查提示后重新提交。');
-    } finally {
-      setSubmitting(false);
-    }
+    const recorded = await submitReview({ kind: 'daily', snapshot, answers: buildAnswers() });
+    if (recorded) goBack('/(tabs)/review');
   };
 
   const calendarRow = (ids: string[], label: string) => {
@@ -244,13 +192,22 @@ export default function DailyReviewScreen() {
             <Tag label={`收件箱 ${snapshot.inboxCount} 条`} />
             <Tag label={`今日完成 ${snapshot.completedToday.length} 项`} tone="accent" />
           </View>
+          <View className="flex-row flex-wrap gap-2">
+            <Button label="整理收件箱" variant="secondary" onPress={() => router.push('/(tabs)/inbox')} />
+            <Button label="查看等待事项" variant="secondary" onPress={() => router.push('/waiting')} />
+            <Button label="查看习惯记录" variant="secondary" onPress={() => router.push('/habits')} />
+          </View>
+          <Text className="text-sm font-medium text-ink dark:text-ink-dark">今日完成的事项</Text>
+          {data.completed.length === 0 ? <Text className="text-sm text-muted dark:text-muted-dark">今天还没有完成记录。</Text> : data.completed.map((entry) => (
+            <Text key={entry.id} className="text-sm text-ink dark:text-ink-dark">
+              {entry.title} · {entry.kind === 'do_now' ? '即时完成' : KIND_LABELS[entry.kind]}
+            </Text>
+          ))}
           {uncoveredProjects.length > 0 ? (
             <View className="gap-1">
               <Text className="text-xs font-medium text-muted dark:text-muted-dark">缺少行动的项目</Text>
               {uncoveredProjects.map((project) => (
-                <Text key={project.id} className="text-sm text-ink dark:text-ink-dark">
-                  {project.title}
-                </Text>
+                <Button key={project.id} label={`打开项目：${project.title}`} variant="ghost" onPress={() => router.push(`/projects/${project.id}`)} />
               ))}
             </View>
           ) : null}
@@ -273,6 +230,7 @@ export default function DailyReviewScreen() {
           <Text className="text-base font-medium text-ink dark:text-ink-dark">
             未完成的行动（{stillOpen.length}）
           </Text>
+          <Text className="text-sm text-muted dark:text-muted-dark">安排到明日：明天 08:00 恢复推荐并提醒。暂不处理：仅保存本次选择，不改变行动状态。</Text>
           {stillOpen.length === 0 ? (
             <Card>
               <Text className="text-sm text-muted dark:text-muted-dark">没有未完成的行动 — 直接提交即可。</Text>
@@ -296,34 +254,27 @@ export default function DailyReviewScreen() {
                       }
                     />
                     <Button
-                      label="明日必做"
+                      label="安排到明日"
                       variant={choice.type === 'tomorrow' ? 'primary' : 'secondary'}
                       onPress={() =>
                         setChoice(action.id, choice.type === 'tomorrow' ? NONE : { type: 'tomorrow' })
                       }
                     />
                     <Button
-                      label="跳过"
+                      label="暂不处理"
                       variant={choice.type === 'skipped' ? 'primary' : 'ghost'}
                       onPress={() => setChoice(action.id, choice.type === 'skipped' ? NONE : { type: 'skipped' })}
                     />
                   </View>
-                  <View className="flex-row items-center gap-2">
-                    <TextInput
-                      className={INPUT_CLASS}
-                      placeholder="排期到 YYYY-MM-DD（08:00）"
-                      autoCapitalize="none"
-                      value={dateInputs[action.id] ?? ''}
-                      onChangeText={(value) =>
-                        setDateInputs((prev) => ({ ...prev, [action.id]: value }))
-                      }
-                    />
-                    <Button
-                      label="排期"
-                      variant={choice.type === 'rescheduled' ? 'primary' : 'secondary'}
-                      onPress={() => applyReschedule(action.id)}
-                    />
-                  </View>
+                  <Text className="text-xs text-muted dark:text-muted-dark">排期日期（当地 08:00）</Text>
+                  <Button
+                    label={choice.type === 'rescheduled' ? `排期到 ${choice.toDate} 08:00` : '选择排期日期'}
+                    variant={choice.type === 'rescheduled' ? 'primary' : 'secondary'}
+                    onPress={() => setDatePickerId(action.id)}
+                  />
+                  {choice.type === 'tomorrow' ? <Text className="text-sm text-ink dark:text-ink-dark">已选：{formatLocalDateTime(tomorrowAt(8, now).toISOString())}</Text> : null}
+                  {choice.type === 'skipped' ? <Text className="text-sm text-muted dark:text-muted-dark">已选：暂不处理（仅记录）</Text> : null}
+                  {choice.type === 'completed' ? <Text className="text-sm text-ink dark:text-ink-dark">已选：完成行动</Text> : null}
                   {hint !== undefined && hint !== null ? (
                     <Text className="text-sm text-danger">{hint}</Text>
                   ) : null}
@@ -357,13 +308,15 @@ export default function DailyReviewScreen() {
 
         {/* 提交 */}
         <View className="gap-2">
-          {submitError !== null ? <Text className="text-sm text-danger">{submitError}</Text> : null}
-          {completeError !== null ? <Text className="text-sm text-danger">{errorCopy(completeError)}</Text> : null}
-          {snoozeError !== null ? <Text className="text-sm text-danger">{errorCopy(snoozeError)}</Text> : null}
-          {recordError !== null ? <Text className="text-sm text-danger">{errorCopy(recordError)}</Text> : null}
+          {recordError !== null ? <Text className="text-sm text-danger">提交失败，本次变更均未保存。选择已保留，可重试。{recordError}</Text> : null}
+          <Button label="刷新回顾数据" variant="ghost" onPress={reload} disabled={submitting} />
           <Button label={submitting ? '提交中…' : '提交回顾'} onPress={() => void submit()} disabled={submitting} />
         </View>
       </ScrollView>
+      {datePickerId !== null ? <DateTimePicker mode="date" title="选择排期日期" now={now}
+        value={choices[datePickerId]?.type === 'rescheduled' ? choices[datePickerId].toDate : ''}
+        onClose={() => setDatePickerId(null)}
+        onConfirm={(key) => { applyReschedule(datePickerId, key); setDatePickerId(null); }} /> : null}
     </View>
   );
 }

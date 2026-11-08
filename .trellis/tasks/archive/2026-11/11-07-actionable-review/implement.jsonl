@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/project/conventions.md", "reason": "TypeScript, errors, package boundaries, and injected time."}
+{"file": ".trellis/spec/app/component-guidelines.md", "reason": "House UI patterns and accessibility."}
+{"file": ".trellis/spec/app/hook-guidelines.md", "reason": "Query/mutation boundaries, focus reload, and error contracts."}
+{"file": ".trellis/spec/app/database-guidelines.md", "reason": "Local transactions, DB access, and additive compatibility."}
+{"file": ".trellis/spec/domain/domain-model.md", "reason": "Habit and review lifecycle and data contracts."}
+{"file": ".trellis/tasks/11-07-actionable-review/research/review-workflow.md", "reason": "Review atomicity, title compatibility, and existing product contract."}

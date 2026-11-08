@@ -220,6 +220,8 @@ export type FocusSession = EntityBase & {
 };
 
 export type DailyReviewSnapshot = {
+  /** Labels captured for new records; absent on older history. */
+  titles?: Record<string, string>;
   inboxCount: number;
   completedToday: string[];
   stillOpen: string[];
@@ -245,6 +247,8 @@ export type WeeklyProjectSnapshot = {
 };
 
 export type WeeklyReviewSnapshot = {
+  /** Labels captured for new records; absent on older history. */
+  titles?: Record<string, string>;
   inboxCount: number;
   projects: WeeklyProjectSnapshot[];
   waitingFollowUps: string[];

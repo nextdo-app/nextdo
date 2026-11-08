@@ -166,6 +166,66 @@ describe('completeAction — habit window enforcement (issue 30)', () => {
   });
 });
 
+describe('completeAction — habit date and schedule bounds', () => {
+  it.each([
+    ['two days ago', -2, 0, 'habit.checkin-date'],
+    ['tomorrow', 1, 0, 'habit.checkin-date'],
+    ['yesterday after midnight', -1, 1, 'habit.checkin-date'],
+  ])('rejects %s even with window override, without changing records or reminders', async (_name, offset, nowOffset, code) => {
+    const { db } = await open();
+    const start = new Date(2026, 8, 19, 0);
+    const habit = makeHabit({ startedAt: toIso(start), windowStart: '08:00', windowEnd: '20:00' });
+    await startHabit(db, habit, WINDOW_NOW);
+    const days = await listHabitDays(db, { habitId: habit.id });
+    const targetDate = new Date(2026, 8, 21 + Number(offset), 13);
+    const target = days.find((day) => day.localDate === localDateKey(targetDate))!;
+    await syncHabitCheckInReminders(db, {
+      habits: [habit], days, now: targetDate, options: DEFAULT_HABIT_REMINDER_OPTIONS,
+    });
+    const reminders = await db.selectFrom('reminders').selectAll().execute();
+    expect(reminders.length).toBeGreaterThan(0);
+    await expect(completeAction(db, {
+      actionKind: 'habit', actionId: target.id,
+      now: new Date(2026, 8, 21 + Number(nowOffset), 13), overrideWindow: true,
+    })).rejects.toMatchObject({ code });
+    expect(await listHabitDays(db, { habitId: habit.id })).toEqual(days);
+    expect(await db.selectFrom('completion_records').selectAll().execute()).toEqual([]);
+    expect(await db.selectFrom('reminders').selectAll().execute()).toEqual(reminders);
+  });
+
+  it.each([
+    [{ started_at: toIso(new Date(2026, 8, 22, 0)) }, 'habit.checkin-outside-cycle'],
+    [{ window_days: JSON.stringify([2]) }, 'habit.checkin-unscheduled'],
+    [{ status: 'completed' }, 'habit.not-active'],
+    [{ status: 'broken' }, 'habit.not-active'],
+    [{ deleted_at: toIso(WINDOW_NOW) }, 'habit.not-found'],
+  ])('rejects stale rows after a parent edit: %s', async (patch, code) => {
+    const { db } = await open();
+    const habit = makeHabit({ windowStart: '08:00', windowEnd: '20:00' });
+    const { today } = await startHabit(db, habit, WINDOW_NOW);
+    await syncHabitCheckInReminders(db, {
+      habits: [habit], days: await listHabitDays(db), now: WINDOW_NOW, options: DEFAULT_HABIT_REMINDER_OPTIONS,
+    });
+    await db.updateTable('habits').set(patch).where('id', '=', habit.id).execute();
+    const reminders = await db.selectFrom('reminders').selectAll().execute();
+    await expect(completeAction(db, {
+      actionKind: 'habit', actionId: today!.id, now: WINDOW_NOW, overrideWindow: true,
+    })).rejects.toMatchObject({ code });
+    expect((await listHabitDays(db)).find((day) => day.id === today!.id)?.status).toBe('open');
+    expect(await db.selectFrom('completion_records').selectAll().execute()).toEqual([]);
+    expect(await db.selectFrom('reminders').selectAll().execute()).toEqual(reminders);
+  });
+
+  it('checks yesterday against its own weekday, not today', async () => {
+    const { db } = await open();
+    const habit = makeHabit({ startedAt: toIso(new Date(2026, 8, 20, 0)), windowDays: [0] });
+    await startHabit(db, habit, WINDOW_NOW);
+    const yesterday = (await listHabitDays(db)).find((day) => day.localDate === YESTERDAY_KEY)!;
+    await completeAction(db, { actionKind: 'habit', actionId: yesterday.id, now: WINDOW_NOW });
+    expect((await listHabitDays(db)).find((day) => day.id === yesterday.id)?.status).toBe('done');
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Issue 32-A — the 打卡提醒 row
 // ---------------------------------------------------------------------------
@@ -452,7 +512,7 @@ describe('carryOverMissedHabitDays (issue 32-B)', () => {
       await completeAction(db, {
         actionKind: 'habit',
         actionId: oldest.id,
-        now: WINDOW_NOW,
+        now: new Date(WINDOW_NOW.getTime() - 2 * DAY_MS),
         overrideWindow: true,
       });
       // Only the still-open 09-20 day is missed; 09-19 was completed.

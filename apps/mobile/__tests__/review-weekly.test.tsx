@@ -1,11 +1,4 @@
-/**
- * Component tests — the weekly review route (PRD R7, design.md §4.5):
- * snapshot rendering (project table + stall tags + someday list + schedule),
- * the decision area (status chips / follow-up check-offs / keep-trash /
- * confirmation switches), the fixed SUBMIT ORDER (changed decisions first,
- * the append-only record LAST), and failure-stop (no record on a failed
- * transaction).
- */
+/** Weekly UI decisions are submitted through one atomic DB operation. */
 const NOW = '2026-09-23T10:00:00.000Z';
 
 const dataRef = {
@@ -86,9 +79,7 @@ jest.mock('@nextdo/db', () => {
     listSomedayMaybeItems: jest.fn(async () => dataRef.somedays),
     listCalendarActions: jest.fn(async () => dataRef.calendar),
     listProjects: jest.fn(async () => dataRef.projects),
-    updateProject: jest.fn(async (db: unknown, project: unknown) => project),
-    trashSomedayMaybeItem: jest.fn(async () => undefined),
-    addReviewRecord: jest.fn(async (db: unknown, record: unknown) => record),
+    submitReview: jest.fn(async (db: unknown, input: unknown) => input),
   };
 });
 
@@ -125,11 +116,11 @@ jest.mock('expo-notifications', () => mockExpoNotifications);
 import { mockExpoNotifications } from './mocks/expo-notifications';
 
 import { act, fireEvent, renderRouter, screen, testRouter, waitFor } from 'expo-router/testing-library';
-import { addReviewRecord, trashSomedayMaybeItem, updateProject } from '@nextdo/db';
+import { listProjects, buildWeeklyReviewSnapshot, submitReview } from '@nextdo/db';
 
-const mockedUpdateProject = updateProject as jest.Mock;
-const mockedTrashSomeday = trashSomedayMaybeItem as jest.Mock;
-const mockedAddReviewRecord = addReviewRecord as jest.Mock;
+const mockedSubmit = submitReview as jest.Mock;
+const mockedProjects = listProjects as jest.Mock;
+const mockedSnapshot = buildWeeklyReviewSnapshot as jest.Mock;
 
 /**
  * Render the weekly review the way the app actually reaches it — pushed from
@@ -196,89 +187,69 @@ describe('weekly review — rendering', () => {
 });
 
 describe('weekly review — submit', () => {
-  it('lands the CHANGED decisions first and the record last', async () => {
+  it('submits project, Someday, follow-up, and confirmation decisions together', async () => {
     const view = await renderWeekly();
-    await waitFor(() => expect(screen.getByText('本周回顾')).toBeTruthy());
-
-    // p-1 → 已完成 (first row's chip), s-1 → 删除, inboxCleared → 是.
     fireEvent.press(screen.getAllByText('已完成')[0]!);
     fireEvent.press(screen.getAllByText('删除')[0]!);
     fireEvent.press(screen.getAllByText('否')[0]!);
-
+    fireEvent.press(screen.getByText('已跟进'));
     fireEvent.press(screen.getByText('提交回顾'));
-    await waitFor(() => expect(mockedAddReviewRecord).toHaveBeenCalledTimes(1));
-
-    // Changed project decision → updateProject (full row, status done).
-    expect(mockedUpdateProject).toHaveBeenCalledTimes(1);
-    expect(mockedUpdateProject).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ id: 'p-1', status: 'done' }),
-    );
-    // p-2 unchanged → no second update.
-    // Someday trash → trashSomedayMaybeItem(s-1) only.
-    expect(mockedTrashSomeday).toHaveBeenCalledTimes(1);
-    expect(mockedTrashSomeday).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ id: 's-1' }),
-    );
-
-    // The record — last, with the full answers.
-    const record = mockedAddReviewRecord.mock.calls[0][1];
-    expect(record).toMatchObject({
-      kind: 'weekly',
-      snapshot: dataRef.snapshot,
-      answers: expect.objectContaining({
-        inboxCleared: true,
-        calendarReasonable: true,
-        followUpsRaised: [],
-        somedayDecisions: expect.arrayContaining([
-          expect.objectContaining({ id: 's-1', to: 'trash' }),
-          expect.objectContaining({ id: 's-2', to: 'keep' }),
-        ]),
-        projectDecisions: expect.arrayContaining([
-          expect.objectContaining({ id: 'p-1', to: 'done' }),
-          expect.objectContaining({ id: 'p-2', to: 'active' }),
-        ]),
-      }),
+    await waitFor(() => expect(mockedSubmit).toHaveBeenCalledTimes(1));
+    expect(mockedSubmit.mock.calls[0][1].record).toMatchObject({
+      kind: 'weekly', snapshot: dataRef.snapshot,
+      answers: {
+        inboxCleared: true, calendarReasonable: true, followUpsRaised: ['w-1'],
+        somedayDecisions: [{ id: 's-1', to: 'trash' }, { id: 's-2', to: 'keep' }],
+        projectDecisions: [{ id: 'p-1', to: 'done' }, { id: 'p-2', to: 'active' }],
+      },
     });
-
-    const recordOrder = mockedAddReviewRecord.mock.invocationCallOrder[0];
-    expect(recordOrder).toBeGreaterThan(mockedUpdateProject.mock.invocationCallOrder.at(-1)!);
-    expect(recordOrder).toBeGreaterThan(mockedTrashSomeday.mock.invocationCallOrder.at(-1)!);
-
-    // The final router.back() pops to the Review tab it was pushed from.
     await waitFor(() => expect(view.getPathname()).toBe('/review'));
   });
 
-  it('a review with NO changes still writes the record, but runs no transactions', async () => {
+  it('uses live status defaults and drops choices invalidated by a terminal state on refresh', async () => {
     await renderWeekly();
-    await waitFor(() => expect(screen.getByText('本周回顾')).toBeTruthy());
-
+    fireEvent.press(screen.getByLabelText('项目 论文实验 状态：搁置'));
+    fireEvent.press(screen.getByLabelText('项目 学 Rust 状态：搁置'));
+    mockedProjects.mockResolvedValueOnce(dataRef.projects.map((project) => ({ ...project, status: project.id === 'p-1' ? 'done' : 'active' })));
+    fireEvent.press(screen.getByText('刷新回顾数据'));
+    await waitFor(() => expect(screen.getByText('已完成（状态不可更改）')).toBeTruthy());
+    expect(screen.queryByLabelText('项目 论文实验 状态：进行中')).toBeNull();
+    expect(screen.queryByLabelText('项目 论文实验 状态：搁置')).toBeNull();
+    expect(screen.getByLabelText('项目 学 Rust 状态：搁置').props.accessibilityState.selected).toBe(true);
     fireEvent.press(screen.getByText('提交回顾'));
-    await waitFor(() => expect(mockedAddReviewRecord).toHaveBeenCalledTimes(1));
-
-    expect(mockedUpdateProject).not.toHaveBeenCalled();
-    expect(mockedTrashSomeday).not.toHaveBeenCalled();
-    const record = mockedAddReviewRecord.mock.calls[0][1];
-    expect(record.answers.inboxCleared).toBe(false);
-    expect(record.answers.projectDecisions).toEqual([
-      { id: 'p-1', to: 'active' },
-      { id: 'p-2', to: 'active' },
+    await waitFor(() => expect(mockedSubmit).toHaveBeenCalledTimes(1));
+    expect(mockedSubmit.mock.calls[0][1].record.answers.projectDecisions).toEqual([
+      { id: 'p-1', to: 'done' }, { id: 'p-2', to: 'on-hold' },
     ]);
   });
 
-  it('a failed decision transaction STOPS the sequence — no record is written', async () => {
-    mockedUpdateProject.mockRejectedValueOnce(new Error('boom'));
+  it('uses refreshed untouched defaults and filters resolved waiting choices', async () => {
     await renderWeekly();
-    await waitFor(() => expect(screen.getByText('本周回顾')).toBeTruthy());
-
-    fireEvent.press(screen.getAllByText('已完成')[0]!);
+    fireEvent.press(screen.getByText('已跟进'));
+    mockedProjects.mockResolvedValueOnce(dataRef.projects.map((project) => ({ ...project, status: 'on-hold' })));
+    mockedSnapshot.mockResolvedValueOnce({ ...dataRef.snapshot, inboxCount: 0, waitingFollowUps: [] });
+    fireEvent.press(screen.getByText('刷新回顾数据'));
+    await waitFor(() => expect(screen.queryByText('跟进勾选')).toBeNull());
     fireEvent.press(screen.getByText('提交回顾'));
+    await waitFor(() => expect(mockedSubmit).toHaveBeenCalledTimes(1));
+    expect(mockedSubmit.mock.calls[0][1].record.answers).toMatchObject({
+      inboxCleared: true, followUpsRaised: [],
+      projectDecisions: [{ id: 'p-1', to: 'on-hold' }, { id: 'p-2', to: 'on-hold' }],
+    });
+  });
 
-    await waitFor(() =>
-      expect(screen.getByText('提交在中途失败，回顾记录未写入。请检查提示后重新提交。')).toBeTruthy(),
-    );
-    expect(mockedUpdateProject).toHaveBeenCalledTimes(1);
-    expect(mockedAddReviewRecord).not.toHaveBeenCalled();
+  it('preserves weekly choices and retries after an atomic submit failure', async () => {
+    mockedSubmit.mockRejectedValueOnce(new Error('boom'));
+    const view = await renderWeekly();
+    fireEvent.press(screen.getAllByText('已完成')[0]!);
+    fireEvent.press(screen.getAllByText('删除')[0]!);
+    fireEvent.press(screen.getByText('提交回顾'));
+    await waitFor(() => expect(screen.getByText(/本次变更均未保存.*boom/)).toBeTruthy());
+    expect(view.getPathname()).toBe('/review/weekly');
+    fireEvent.press(screen.getByText('提交回顾'));
+    await waitFor(() => expect(mockedSubmit).toHaveBeenCalledTimes(2));
+    expect(mockedSubmit.mock.calls[1][1].record.id).toBe(mockedSubmit.mock.calls[0][1].record.id);
+    expect(mockedSubmit.mock.calls[1][1].record.answers).toEqual(mockedSubmit.mock.calls[0][1].record.answers);
+    await waitFor(() => expect(view.getPathname()).toBe('/review'));
   });
 });

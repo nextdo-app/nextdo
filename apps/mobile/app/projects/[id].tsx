@@ -15,12 +15,12 @@
  * via inline forms. Action rows carry the read-only context chips
  * (design §4.2 — the PRD acceptance "项目详情行内 chips").
  */
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAppInsets } from '@/lib/use-app-insets';
-import { router, useLocalSearchParams } from 'expo-router';
-import { Button, Card, EmptyState, MarkdownNote, Tag, ValueChips, cn, colors, type TagTone } from '@nextdo/ui';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { Button, Card, EmptyState, MarkdownNote, Tag, ValueChips, colors, type TagTone } from '@nextdo/ui';
 import { DateTimePicker } from '@/components/datetime-picker';
 import { FormField } from '@/components/form-field';
 import { PickerField } from '@/components/picker-field';
@@ -49,6 +49,7 @@ import { formatDateTimeValue } from '@/lib/datetime-field';
 import { goBack } from '@/lib/go-back';
 import { SnoozeSheet } from '@/components/snooze-sheet';
 import { EditHabitForm } from '@/components/edit-habit-form';
+import { HabitHistoryGrid } from '@/components/habit-history-grid';
 import { HabitWindowConfirmModal } from '@/components/habit-window-confirm-modal';
 
 const STATUS_TONES: Record<ProjectStatus, TagTone> = {
@@ -611,76 +612,11 @@ function ProjectHabitRow({
         <Tag label={`已打卡 ${doneCount} 天`} />
       </View>
 
-      {/* 21-cell grid strip */}
-      <View className="flex-row flex-wrap items-center gap-1.5 pt-1">
-        {grid.map((cell) => {
-          const isDone = cell.status === 'done';
-          const isToday = cell.isToday;
-          const isActionable = isToday && cell.status === 'today' && todayDay !== null;
-
-          if (isActionable) {
-            return (
-              <Pressable
-                key={cell.dayNumber}
-                accessibilityRole="button"
-                accessibilityLabel={`第 ${cell.dayNumber} 天 今日打卡`}
-                onPress={() => onComplete(todayDay.id, habit)}
-                className="h-6 w-6 items-center justify-center rounded border-2 border-accent bg-accent/20 dark:border-accent-dark dark:bg-accent-dark/20"
-              >
-                <Text className="text-xs font-bold text-accent dark:text-accent-dark">
-                  {cell.dayNumber}
-                </Text>
-              </Pressable>
-            );
-          }
-
-          if (cell.status === 'catchup' && cell.day) {
-            return (
-              <Pressable
-                key={cell.dayNumber}
-                accessibilityRole="button"
-                accessibilityLabel={`第 ${cell.dayNumber} 天 补打卡`}
-                onPress={() => onComplete(cell.day!.id, habit)}
-                className="h-6 w-6 items-center justify-center rounded border border-dashed border-accent bg-accent/10 dark:border-accent-dark dark:bg-accent-dark/10"
-              >
-                <Text className="text-[10px] font-bold text-accent dark:text-accent-dark">
-                  补
-                </Text>
-              </Pressable>
-            );
-          }
-
-          return (
-            <View
-              key={cell.dayNumber}
-              accessibilityLabel={`第 ${cell.dayNumber} 天 ${isDone ? '已完成' : isToday ? '今日' : cell.status === 'missed' ? '未打卡' : '未到'}`}
-              className={cn(
-                'h-6 w-6 items-center justify-center rounded',
-                isDone
-                  ? 'bg-accent dark:bg-accent-dark'
-                  : isToday
-                    ? 'border border-accent dark:border-accent-dark'
-                    : cell.status === 'missed'
-                      ? 'border border-border bg-muted/10 dark:border-border-dark dark:bg-muted-dark/10'
-                      : 'border border-dashed border-border/60 dark:border-border-dark/60',
-              )}
-            >
-              <Text
-                className={cn(
-                  'text-[10px]',
-                  isDone
-                    ? 'font-bold text-on-accent'
-                    : isToday
-                      ? 'font-bold text-accent dark:text-accent-dark'
-                      : 'text-muted dark:text-muted-dark',
-                )}
-              >
-                {cell.dayNumber}
-              </Text>
-            </View>
-          );
-        })}
-      </View>
+      <HabitHistoryGrid
+        grid={grid}
+        priorCompletions={entry.priorCompletions}
+        onComplete={(dayId) => onComplete(dayId, habit)}
+      />
 
       <View className="mt-1 flex-row items-center justify-between">
         <View className="flex-row items-center gap-2">
@@ -733,6 +669,7 @@ export default function ProjectDetailScreen() {
   const { data: actions, error: actionsError, reload } = useProjectActions(projectId);
   const now = useAppClock();
   const { data: habits, error: habitsError, reload: reloadHabits } = useProjectHabits(projectId, now);
+  useFocusEffect(useCallback(() => { reloadHabits(); }, [reloadHabits]));
   const { error: addError } = useAddNextAction();
   const { complete, error: completeError } = useCompleteAction();
   const { snooze, error: snoozeError } = useSnoozeAction();
@@ -998,18 +935,16 @@ export default function ProjectDetailScreen() {
                     });
                   }}
                   onComplete={(dayId, habit) => {
-                    void complete({ actionKind: 'habit', actionId: dayId }).then((ok) => {
-                      if (ok) {
-                        reloadHabits();
-                      } else if (habit?.windowStart && habit?.windowEnd) {
-                        setWindowConfirm({
-                          habitDayId: dayId,
-                          habitTitle: habit.title,
-                          windowStart: habit.windowStart,
-                          windowEnd: habit.windowEnd,
-                        });
-                      }
-                    });
+                    const confirmation = habit?.windowStart && habit.windowEnd ? {
+                      habitDayId: dayId,
+                      habitTitle: habit.title,
+                      windowStart: habit.windowStart,
+                      windowEnd: habit.windowEnd,
+                    } : null;
+                    void complete(
+                      { actionKind: 'habit', actionId: dayId },
+                      confirmation ? () => setWindowConfirm(confirmation) : undefined,
+                    ).then((ok) => { if (ok) reloadHabits(); });
                   }}
                 />
               ))

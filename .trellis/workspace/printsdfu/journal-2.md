@@ -184,3 +184,41 @@
 ### Next Steps
 
 - 观察下一次微信推送是否只到一条
+
+
+## Session 69: Commit habit history and actionable review repairs
+<!-- trellis-session: v=2 fp=a47108a80b2cb86a -->
+
+**Date**: 2026-11-08
+**Task**: Commit habit history and actionable review repairs
+**Branch**: `fix/habit-review-repairs`
+
+### Summary
+
+User approved the prepared commit plan. Committed habit history and actionable review repairs, archived both child tasks and the parent, and verified the stored acceptance evidence and unchanged runtime source.
+
+### Main Changes
+
+- Committed the 67 paths from the approved plan, including source, regression tests, specs, and acceptance artifacts.
+- Archived 11-07-habit-date-history, 11-07-actionable-review, and 11-07-habit-review-repairs.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ca7efe0` | fix(app): repair habit history and actionable reviews |
+
+### Testing
+
+- [OK] Rechecked the final pnpm verify:web log: lint, typecheck, 95 suites / 1517 tests, and web export passed. No source or test file was modified after that run; tests were not repeated for this commit-only turn.
+- [OK] Confirmed saved browser results and 20 acceptance screenshots under .verify/habit-review-repairs/habits/ and review/, covering success, rollback, retry, and missing-data states.
+- [OK] git diff --check and git diff --cached --check passed before the work commit.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Remote push and PR creation require a separate user request; neither was performed.
+- Native devices and live multi-device sync remain unverified. Deferred habit lifecycle policy and legacy review title limits remain documented.

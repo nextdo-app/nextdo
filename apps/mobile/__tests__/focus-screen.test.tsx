@@ -127,6 +127,7 @@ jest.mock('expo-notifications', () => mockExpoNotifications);
 import { mockExpoNotifications } from './mocks/expo-notifications';
 
 import { fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
+import { ValidationNextdoError } from '@nextdo/core';
 import { FOCUS_SETTINGS_KEY, __setFocusSettingsStoreForTests } from '@/lib/focus-settings';
 
 /** Device-local preference fixture (the module otherwise uses localStorage). */
@@ -297,6 +298,28 @@ describe('Focus screen', () => {
     await waitFor(() => expect(mockDb.completeAction).toHaveBeenCalledTimes(1));
     expect(mockDb.completeAction.mock.calls[0][1]).toMatchObject({ actionKind: 'next', actionId: 'f-1' });
     // Deep-loaded stack has no parent → goBack replaces to the Now tab.
+    await waitFor(() => expect(view.getPathname()).toBe('/now'));
+  });
+
+  it.each([
+    [new Error('storage write failed'), 'storage write failed'],
+    [new ValidationNextdoError('habit.checkin-date', 'Invalid habit date'), '只能打卡今天或补卡昨天，请刷新后重试'],
+  ])('keeps a rejected habit completion visible and allows retry: %s', async (error, message) => {
+    seedActiveSession({ actionKind: 'habit' });
+    mockDb.completeAction.mockRejectedValueOnce(error);
+    const view = renderRouter('app', { initialUrl: '/focus/f-1?kind=habit' });
+    await waitFor(() => expect(screen.getByText('结束专注')).toBeTruthy());
+    fireEvent.press(screen.getByText('结束专注'));
+    await waitFor(() => expect(screen.getByText('完成行动')).toBeTruthy());
+
+    fireEvent.press(screen.getByText('完成行动'));
+    await waitFor(() => expect(screen.getByText(String(message))).toBeTruthy());
+    expect(view.getPathname()).toBe('/focus/f-1');
+    expect(mockState.sessions[0]?.status).toBe('completed');
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '完成行动', disabled: false })).toBeTruthy());
+    fireEvent.press(screen.getByRole('button', { name: '完成行动', disabled: false }));
+    await waitFor(() => expect(mockDb.completeAction).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(view.getPathname()).toBe('/now'));
   });
 

@@ -1,31 +1,5 @@
-/**
- * The habits screen (task 10-02 — 习惯创建表单与 21 天挑战启动).
- *
- * An ordinary (non-tab) route, reached from the Settings tab's 「习惯」
- * card and from the Now screen's habit strip (empty-state prompt /
- * 「管理」). Deliberately NOT a tab: habits are entered rarely and read
- * from Now.
- *
- * Two parts:
- *  1. the ACTIVE habits with their challenge progress (「第 N/21 天」)
- *     and a per-row 删除 (soft delete — `trashHabit`);
- *  2. the create form — 习惯名 / 每日行动（选填，留空继承习惯名）/
- *     预计分钟 / 价值 1–5 / 可选时间窗口 — submitting calls the
- *     `startHabit` transaction (INSERT + today's HabitDay seeding in ONE
- *     local transaction), so a habit can never exist without its first
- *     challenge day.
- *
- * Scope guards (PRD 非目标): NO editing / pausing / restarting a broken
- * challenge / habit history / weekday mask (`windowDays`) / custom cycle
- * length / `category`. `cycleDays` is fixed at 21 — a CHALLENGE CYCLE,
- * and the copy below never claims 21 days makes a habit (design.md §7).
- *
- * Presentational: every read comes from `useHabits` and every write from
- * `useStartHabit` / `useTrashHabit` (component-guidelines — no db in
- * components). All validation is a pure computation in render that drives
- * the submit button's `disabled` (design.md §6).
- */
-import { useState } from 'react';
+/** Habit management and dated history, including read-only ended challenges. */
+import { useCallback, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -35,6 +9,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useFocusEffect } from 'expo-router';
+import { HabitHistoryGrid } from '@/components/habit-history-grid';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { Button, Card, EmptyState, Tag, ValueChips, cn } from '@nextdo/ui';
 import { checkHabitStartDate, hhmmToMinutes, parseHhmm, type Value } from '@nextdo/core';
@@ -93,15 +69,14 @@ const START_HINTS: Record<'invalid' | 'past', string> = {
   past: '起始日期不能早于今天 —— 挑战周期在创建时一次生成，不能补记已经过去的日子。',
 };
 
-/** One active habit: name, daily action, 第 N/21 天, window (全天 when
- *  none), estimate, value + 编辑 + 删除. */
+/** Ended challenges keep their history; only active habits expose edits. */
 function HabitRow({
   entry,
   onTrash,
   onReload,
 }: {
   entry: HabitWithProgress;
-  onTrash: () => void;
+  onTrash?: () => void;
   onReload: () => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -129,11 +104,13 @@ function HabitRow({
         </Text>
         <Tag
           label={
-            cycleDay !== null
-              ? `第 ${cycleDay}/${habit.cycleDays} 天`
-              : startsInDays !== null
-                ? `${startsInDays} 天后开始`
-                : `本期 ${habit.cycleDays} 天`
+            habit.status !== 'active'
+              ? (habit.status === 'completed' ? '挑战已完成' : '挑战已中断')
+              : cycleDay !== null
+                ? `第 ${cycleDay}/${habit.cycleDays} 天`
+                : startsInDays !== null
+                  ? `${startsInDays} 天后开始`
+                  : `本期 ${habit.cycleDays} 天`
           }
           tone="accent"
         />
@@ -147,22 +124,13 @@ function HabitRow({
         <Tag label={hasWindow ? `${habit.windowStart}–${habit.windowEnd}` : '全天'} />
         <Tag label={`本期已完成 ${doneCount} 天`} />
       </View>
-      <View className="flex-row justify-end gap-2">
-        <Button
-          size="sm"
-          label="编辑"
-          variant="ghost"
-          onPress={() => setIsEditing(true)}
-        />
-        <Button
-          size="sm"
-          label="删除"
-          variant="ghost"
-          onPress={() => {
-            onTrash();
-          }}
-        />
-      </View>
+      <HabitHistoryGrid grid={entry.grid} priorCompletions={entry.priorCompletions} />
+      {habit.status === 'active' ? (
+        <View className="flex-row justify-end gap-2">
+          <Button size="sm" label="编辑" variant="ghost" onPress={() => setIsEditing(true)} />
+          <Button size="sm" label="删除" variant="ghost" onPress={() => onTrash?.()} />
+        </View>
+      ) : null}
     </Card>
   );
 }
@@ -387,7 +355,8 @@ function HabitForm({ onStarted }: { onStarted: () => void }) {
 
 export default function HabitsScreen() {
   const now = useAppClock();
-  const { data, error, reload } = useHabits(now);
+  const { data, error, reload } = useHabits(now, { includeEnded: true });
+  useFocusEffect(useCallback(() => { reload(); }, [reload]));
   const { trash, error: trashError } = useTrashHabit();
   const insets = useAppInsets();
   const topPadding = Math.max(insets.top, 16);
@@ -431,18 +400,26 @@ export default function HabitsScreen() {
               hint="习惯会在每天生成一条行动，并出现在「现在」的执行池里。用下面的表单创建第一个。"
             />
           ) : (
-            habits.map((entry) => (
-              <HabitRow
-                key={entry.habit.id}
-                entry={entry}
-                onReload={reload}
-                onTrash={() => {
-                  void trash(entry.habit.id).then((ok) => {
-                    if (ok) reload();
-                  });
-                }}
-              />
-            ))
+            <>
+              {habits.filter((entry) => entry.habit.status === 'active').map((entry) => (
+                <HabitRow
+                  key={entry.habit.id}
+                  entry={entry}
+                  onReload={reload}
+                  onTrash={() => {
+                    void trash(entry.habit.id).then((ok) => {
+                      if (ok) reload();
+                    });
+                  }}
+                />
+              ))}
+              {habits.some((entry) => entry.habit.status !== 'active') ? (
+                <Text className="mt-3 text-base font-semibold text-ink dark:text-ink-dark">已结束的习惯</Text>
+              ) : null}
+              {habits.filter((entry) => entry.habit.status !== 'active').map((entry) => (
+                <HabitRow key={entry.habit.id} entry={entry} onReload={reload} />
+              ))}
+            </>
           )}
         </View>
 

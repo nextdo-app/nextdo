@@ -12,6 +12,8 @@ import { usePowerSync } from '@powersync/react';
 import {
   buildDailyReviewSnapshot,
   listCalendarActions,
+  listReviewCompletions,
+  type ReviewCompletion,
   listHabitDays,
   listHabits,
   listNextActions,
@@ -33,6 +35,7 @@ import { useAppClock } from './use-app-clock';
 
 export interface DailyReviewData {
   snapshot: DailyReviewSnapshot;
+  completed: ReviewCompletion[];
   /** Open next actions — title/est lookup for `snapshot.stillOpen`. */
   actions: NextAction[];
   /** Today's + tomorrow's schedule — lookup for `calendarToday/Tomorrow`. */
@@ -66,7 +69,7 @@ export function useDailyReviewData(): UseDailyReviewDataResult {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [snapshot, actions, calendar, waiting, habitDays, habits, projects] =
+      const [snapshot, actions, calendar, waiting, habitDays, habits, projects, completed] =
         await Promise.all([
           buildDailyReviewSnapshot(db, now),
           listNextActions(db).then((list) => list.filter((action) => action.status === 'open')),
@@ -75,9 +78,14 @@ export function useDailyReviewData(): UseDailyReviewDataResult {
           listHabitDays(db),
           listHabits(db),
           listProjects(db),
+          listReviewCompletions(db, now),
         ]);
       if (cancelled) return;
-      setData({ snapshot, actions, calendar, waiting, habitDays, habits, projects });
+      const titles = Object.fromEntries([
+        ...actions, ...calendar, ...waiting, ...projects, ...completed,
+        ...habitDays.map((day) => ({ id: day.id, title: habits.find((habit) => habit.id === day.habitId)?.title ?? '' })),
+      ].filter((entry) => entry.title.trim()).map((entry) => [entry.id, entry.title]));
+      setData({ snapshot: { ...snapshot, titles }, actions, calendar, waiting, habitDays, habits, projects, completed });
       setError(null);
     })().catch((err: unknown) => {
       if (cancelled) return;

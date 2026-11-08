@@ -29,8 +29,8 @@
   `updateNextAction`) — a project status change is asserted against
   `PROJECT_TRANSITIONS` in the db layer (the detail screen only offers
   `active ↔ on-hold`; done/dropped stay terminal), and a title/estimate
-  redefinition resets `consecutiveSkips` there too. The weekly review keeps its
-  own `useProjectStatus` (status-only patch).
+  redefinition resets `consecutiveSkips` there too. The weekly review submits
+  project status decisions through `useSubmitReview` in the review transaction.
 
 ## UI Hooks
 

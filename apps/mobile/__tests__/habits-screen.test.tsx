@@ -455,6 +455,19 @@ describe('habits screen', () => {
     expect(mockHabitsRef.current).toHaveLength(0);
   });
 
+  it.each(['completed', 'broken'])('keeps %s history visible with full dates and without edit or check-in actions', async (status) => {
+    mockHabitsRef.current = [habit({ status })];
+    mockDaysRef.current = [doneToday('h-1'), { ...doneToday('h-1'), id: 'old-done', localDate: '20250101' }];
+    await openHabits();
+    await waitFor(() => expect(screen.getByText('已结束的习惯')).toBeTruthy());
+    expect(screen.getByLabelText(`${pickerDateKey(new Date())} 已完成`)).toBeTruthy();
+    expect(screen.getByText('2025-01-01')).toBeTruthy();
+    expect(screen.getByText('本期已完成 1 天')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '编辑' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '删除' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /今日打卡|补打卡/ })).toBeNull();
+  });
+
   it('an all-day habit (no window) reads 全天 instead of a time range', async () => {
     mockHabitsRef.current = [
       habit({
