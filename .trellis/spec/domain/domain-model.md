@@ -255,6 +255,57 @@ A rule generating a recurring action (Proposal §7).
   - A `HabitDay` maps to the engine's `HabitCandidate` (see engine types) with
     `cycleDay` = days since `habit.startedAt` + 1.
 
+#### Habit history and check-in boundary (2026-11-07)
+
+1. **Scope / trigger:** Every habit completion caller, including stale screens,
+   must enforce the same date, cycle, and schedule rules. A hidden UI button is
+   not validation. Global history also includes non-deleted ended habits read-only;
+   Now and project execution lists remain active-only.
+2. **Signatures:** `completeAction(db, { actionKind: 'habit', actionId, now,
+   overrideWindow? })` owns validation and writes. App derivation is
+   `habitHistory(habit, days, now)` in `apps/mobile/lib/habit-history.ts`;
+   `useHabits(now, { includeEnded: true })` opts into ended history without
+   changing existing default consumers.
+3. **Contracts:** Only today or yesterday's persisted open day may complete,
+   and it must belong to the active, live habit's current cycle and weekday mask.
+   Yesterday ignores today's time window. `overrideWindow` bypasses only today's
+   time window, never date/cycle/schedule validity. Cycle math uses local calendar
+   stepping, including the final-day completion check. History cells use stored
+   `YYYYMMDD` dates and distinguish `done`, `today`, `catchup`, `missed`, `future`,
+   `unscheduled`, and `unrecorded`. Missing rows are not fabricated check-ins.
+   Retained completions outside the current cycle remain visible separately and
+   do not contribute to its completion count.
+4. **Validation / errors:** Missing/deleted parent → `habit.not-found`;
+   ended parent → `habit.not-active`; old/future date → `habit.checkin-date`;
+   date outside current cycle → `habit.checkin-outside-cycle`; excluded weekday
+   → `habit.checkin-unscheduled`; today's rejected time →
+   `habit.checkin-outside-window`. All rejected attempts leave day, completion
+   records, and reminders unchanged. Only the last code opens window confirmation;
+   storage failures display their actual error. The completion hook's optional
+   per-attempt callback prevents stale React error state from choosing the modal.
+   Supply that callback only when the caller can actually show confirmation;
+   otherwise retain the typed inline error. Focus completion navigates back only
+   after a `true` result. Both the Now habit strip and generic execution list
+   refresh habit progress after a successful habit completion.
+5. **Good / base / bad:** Today within its window succeeds. Yesterday catch-up
+   succeeds without today's window check. An old pre-seeded row after moving
+   the habit start into the future is rejected, even with a window override.
+   An excluded weekday displays "未安排", not a missed obligation.
+6. **Tests required:** Real-DB assertions cover rejection without side effects,
+   accepted yesterday, weekday/cycle changes, and DST final-day boundaries.
+   Pure derivation tests cover mixed states and retained completion dates.
+   Screen tests cover ended history and storage-error versus window-confirmation.
+   Browser checks must inspect dated cells and check-in/catch-up results.
+7. **Wrong / correct:** Wrong: infer a window error from `false` plus the presence
+   of window fields. Correct: branch on the actual attempt's typed error.
+   Wrong: derive final day as `start + days * 86400000`. Correct: advance the local
+   calendar date and use its key.
+
+The existing final-calendar-day completion policy is retained. Newer carry-over
+comments describing 21 successful completions conflict with that policy, and
+`carryOverMissedHabitDays` is not wired into application execution. Do not silently
+enable carry-over or rewrite existing completed habits while editing history.
+
 ### Reminder (Proposal §8 — MVP-required)
 - `Reminder`: `id`, `actionKind: "next" | "habit" | "calendar"`, `actionId`,
   `firesAt` (ISO datetime), `intensity: "normal" | "important" | "alarm"`,
@@ -388,7 +439,7 @@ Append-only, a **discriminated union** on `kind`:
 `type ReviewRecord = DailyReviewRecord | WeeklyReviewRecord`. Every variant carries
 `kind`, `at`, `snapshot`, `answers`:
 
-- `snapshot` — **computed** by a pure core function at review start (machine-generated,
+- `snapshot` — **computed** by the review queries from local data (machine-generated,
   never hand-edited):
   - daily: `{ inboxCount, completedToday: string[], stillOpen: string[],
     projectsMissingActions: string[], waitingFollowUps: string[],
@@ -409,6 +460,50 @@ Append-only, a **discriminated union** on `kind`:
 - Review decisions are **applied as real transactions** (e.g. a `projectDecisions`
   entry writes the status change); the record is the audit trail, the entities are
   the state.
+
+#### Review submission and historical display (2026-11-07)
+
+1. **Scope / trigger:** Daily and weekly review submission is one user intent,
+   including all decision writes, their completion/reminder effects, and the
+   append-only record. The UI must not sequence separately committed mutations.
+2. **Signature:** `submitReview(db, { record: ReviewRecord, now: Date }):
+   Promise<ReviewRecord>` in `packages/db`. Standalone completion and snooze
+   APIs keep their contracts; transaction-scoped bodies are internal composition
+   details, not new application entrypoints. Kysely does not support nested
+   `transaction()` calls.
+3. **Contracts:** Both snapshot variants optionally contain
+   `titles?: Record<string, string>` for referenced display labels. New submissions
+   capture labels before mutations in the same local transaction. Required fields
+   retain their formats; older records need no metadata or rewrite. Details prefer
+   saved labels, explicitly distinguish current labels for legacy references,
+   and show missing-label fallbacks when resolution is impossible. Do not copy
+   whole entities or private notes into the title map.
+4. **Validation / errors:** Validate the payload before writes and read current
+   live state inside the transaction. Reject conflicting/invalid choices and
+   illegal project transitions. Any write failure rolls back entity changes,
+   completion records, reminders, and review record together. UI keeps choices
+   and exposes retry; duplicate in-flight submits must not create extra records.
+   A project status change patches the live row, never overwrites its title or
+   outcome from an old screen snapshot.
+5. **Good / base / bad:** Good: completion plus tomorrow scheduling commits with
+   one full review record. Base: a legacy record without titles still opens with
+   honest fallbacks. Bad: final INSERT failure must not leave an earlier completion
+   or Someday deletion committed. Done/dropped project states are terminal and
+   read-only in review. Tomorrow means local 08:00 eligibility, not a ranking
+   guarantee; skipped/follow-up notes remain record-only. `tomorrowMustDo` stores
+   IDs only, without the original target timestamp or timezone. Details must label
+   the derived next-day time as recalculated in the viewing device's current
+   timezone; after a timezone change it is not the original reminder instant.
+6. **Tests required:** Inject failure after an earlier write and on final INSERT
+   against a real test DB, then assert complete rollback and one successful retry.
+   Cover old/new JSON roundtrips and validators, saved labels after rename/delete,
+   terminal states, preservation of unrelated live project fields, and navigation
+   return without losing valid choices. Browser checks include visible failure and
+   retry as well as read-only daily/weekly details.
+7. **Wrong / correct:** Wrong: `complete()` → `snooze()` → `addReviewRecord()` in
+   a screen, each committing alone. Correct: one `submitReview` local transaction.
+   Wrong: show a legacy record's current title as its historical title. Correct:
+   retain the distinction and never claim to recover text that was not saved.
 
 ### CompletionRecord
 `actionKind` + `actionId` (polymorphic: NextAction / HabitDay / CalendarAction /

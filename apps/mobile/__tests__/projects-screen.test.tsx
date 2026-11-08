@@ -205,7 +205,7 @@ import {
   updateNextAction,
   updateProject,
 } from '@nextdo/db';
-import { formatDeadline } from '@nextdo/core';
+import { formatDeadline, localDateKey, ValidationNextdoError } from '@nextdo/core';
 
 const mockedAddProject = addProject as jest.Mock;
 const mockedAddNextAction = addNextAction as jest.Mock;
@@ -957,6 +957,7 @@ describe('Project detail', () => {
   });
 
   it('a failed habit check-in does not re-read: same rows come back and the error state survives', async () => {
+    dataRef.habits[0] = { ...dataRef.habits[0], windowStart: '08:00', windowEnd: '09:00' };
     mockedCompleteAction.mockRejectedValueOnce(new Error('complete rejected'));
     renderRouter('app', { initialUrl: '/projects/p-1' });
     await waitFor(() => expect(screen.getByText('读文献习惯')).toBeTruthy());
@@ -969,6 +970,60 @@ describe('Project detail', () => {
     await waitFor(() => expect(screen.getByText(/complete rejected/)).toBeTruthy());
     expect(habitReads.habits).toBe(base.habits);
     expect(habitReads.days).toBe(base.days);
+    expect(screen.queryByText('不在打卡窗口内')).toBeNull();
+  });
+
+  it('a dated yesterday cell catches up that day and refreshes its status and count', async () => {
+    const now = new Date();
+    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12);
+    const dateKey = localDateKey(date);
+    const label = `${dateKey.slice(0, 4)}-${dateKey.slice(4, 6)}-${dateKey.slice(6, 8)}`;
+    dataRef.habitDays.push({ ...dataRef.habitDays[0], id: 'hd-yesterday', localDate: dateKey });
+    mockedCompleteAction.mockImplementationOnce(async () => {
+      dataRef.habitDays = dataRef.habitDays.map((day) => day.id === 'hd-yesterday' ? { ...day, status: 'done' } : day);
+    });
+    renderRouter('app', { initialUrl: '/projects/p-1' });
+    await waitFor(() => expect(screen.getByText('读文献习惯')).toBeTruthy());
+    fireEvent.press(screen.getByRole('button', { name: `${label} 可补卡，补打卡` }));
+    await waitFor(() => expect(screen.getByLabelText(`${label} 已完成`)).toBeTruthy());
+    expect(screen.getByText('已打卡 1 天')).toBeTruthy();
+    expect(screen.getByText('今日打卡')).toBeTruthy();
+    expect(mockedCompleteAction).toHaveBeenCalledWith(
+      expect.anything(), expect.objectContaining({ actionKind: 'habit', actionId: 'hd-yesterday' }),
+    );
+  });
+
+  it('shows a live window rejection when the displayed habit still has no window details', async () => {
+    dataRef.habits[0] = { ...dataRef.habits[0], windowStart: undefined, windowEnd: undefined };
+    mockedCompleteAction.mockRejectedValueOnce(new ValidationNextdoError('habit.checkin-outside-window', 'Outside window'));
+    renderRouter('app', { initialUrl: '/projects/p-1' });
+    await waitFor(() => expect(screen.getByText('读文献习惯')).toBeTruthy());
+    fireEvent.press(screen.getByText('今日打卡'));
+
+    await waitFor(() => expect(screen.getByText('当前时间不在该习惯设定的时间窗口内')).toBeTruthy());
+    expect(screen.queryByText('不在打卡窗口内')).toBeNull();
+    expect(mockedCompleteAction).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens confirmation only for a window error; cancellation does not retry and confirmation uses override', async () => {
+    dataRef.habits[0] = { ...dataRef.habits[0], windowStart: '08:00', windowEnd: '09:00' };
+    const outsideWindow = new ValidationNextdoError('habit.checkin-outside-window', 'Outside window');
+    mockedCompleteAction.mockRejectedValueOnce(outsideWindow);
+    renderRouter('app', { initialUrl: '/projects/p-1' });
+    await waitFor(() => expect(screen.getByText('读文献习惯')).toBeTruthy());
+    fireEvent.press(screen.getByText('今日打卡'));
+    await waitFor(() => expect(screen.getByText('不在打卡窗口内')).toBeTruthy());
+    fireEvent.press(screen.getByRole('button', { name: '取消' }));
+    expect(mockedCompleteAction).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('不在打卡窗口内')).toBeNull();
+
+    mockedCompleteAction.mockRejectedValueOnce(outsideWindow);
+    fireEvent.press(screen.getByText('今日打卡'));
+    await waitFor(() => expect(screen.getByText('不在打卡窗口内')).toBeTruthy());
+    fireEvent.press(screen.getByRole('button', { name: '确定打卡' }));
+    await waitFor(() => expect(mockedCompleteAction).toHaveBeenLastCalledWith(
+      expect.anything(), expect.objectContaining({ actionKind: 'habit', overrideWindow: true }),
+    ));
   });
 
   it('shows empty state when project has no habits', async () => {

@@ -1,0 +1,29 @@
+{
+  "id": "habit-review-repairs",
+  "name": "habit-review-repairs",
+  "title": "Habit history and actionable review repairs",
+  "description": "Plan and repair habit date visibility, useful daily and weekly reviews, and defects in the affected workflows.",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "printsdfu",
+  "assignee": "printsdfu",
+  "createdAt": "2026-11-07",
+  "completedAt": null,
+  "branch": "fix/habit-review-repairs",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "11-07-habit-date-history",
+    "11-07-actionable-review"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "Implementation and final web/browser acceptance passed 2026-11-08; user approved the Phase 3.4 commit plan and finish-work bookkeeping on 2026-11-08. See parent verification.md.",
+  "meta": {}
+}

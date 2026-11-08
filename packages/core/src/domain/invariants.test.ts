@@ -343,6 +343,35 @@ describe('assertReviewRecord', () => {
       ).code,
     ).toBe('validation.weeklyReview.somedayDecisions');
   });
+
+  it.each([
+    ['daily reschedule entry', {
+      ...daily,
+      answers: { ...daily.answers, rescheduled: [null] },
+    } as unknown as DailyReviewRecord, 'validation.dailyReview.rescheduled'],
+    ['weekly snapshot project entry', {
+      ...weekly,
+      snapshot: { ...weekly.snapshot, projects: [null] },
+    } as unknown as WeeklyReviewRecord, 'validation.weeklyReview.projects'],
+    ['weekly project decision entry', {
+      ...weekly,
+      answers: { ...weekly.answers, projectDecisions: [null] },
+    } as unknown as WeeklyReviewRecord, 'validation.weeklyReview.decisions'],
+  ] as const)('rejects a non-object %s with a typed error', (_label, record, code) => {
+    expect(thrown(() => assertReviewRecord(record)).code).toBe(code);
+  });
+
+  it.each([
+    ['somedayDecisions', undefined],
+    ['somedayDecisions', {}],
+    ['projectDecisions', undefined],
+    ['projectDecisions', {}],
+  ] as const)('rejects malformed %s (%p) with a typed error before iteration', (field, value) => {
+    expect(thrown(() => assertReviewRecord({
+      ...weekly,
+      answers: { ...weekly.answers, [field]: value },
+    } as unknown as WeeklyReviewRecord)).code).toBe('validation.weeklyReview.decisions');
+  });
 });
 
 describe('reminder creation rules', () => {

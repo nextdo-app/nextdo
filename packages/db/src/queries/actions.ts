@@ -12,19 +12,22 @@ import {
   assertTransition,
   assertValidNextAction,
   deadlineReminderSpecs,
+  isHabitCatchUpAvailable,
   localDateKey,
   parseIso,
   snoozeReminderSpec,
   StorageNextdoError,
+  ValidationNextdoError,
   toIso,
   ulid,
   type ActionStatus,
   type NextAction,
   type ReminderSpec,
 } from '@nextdo/core';
-import { sql, type Transaction } from 'kysely';
-import { nextActionFromRow, nextActionToRow, parseJson, type Database } from '../schema';
+import { sql, type Kysely, type Transaction } from 'kysely';
+import { habitFromRow, nextActionFromRow, nextActionToRow, parseJson, type Database } from '../schema';
 import type { ActionKind, NextdoDb } from '../types';
+import { habitCycleDay } from './pool';
 
 const ACTION_TABLES: Record<ActionKind, 'next_actions' | 'calendar_actions' | 'habit_days'> = {
   next: 'next_actions',
@@ -32,7 +35,6 @@ const ACTION_TABLES: Record<ActionKind, 'next_actions' | 'calendar_actions' | 'h
   habit: 'habit_days',
 };
 
-const DAY_MS = 86_400_000;
 
 /**
  * Load a live (non-deleted) action row for any of the three action kinds.
@@ -40,7 +42,7 @@ const DAY_MS = 86_400_000;
  * (queries/inbox.ts).
  */
 export async function loadActionRow(
-  db: NextdoDb,
+  db: Kysely<Database>,
   actionKind: ActionKind,
   actionId: string,
 ) {
@@ -372,6 +374,19 @@ export async function completeAction(
     overrideWindow?: boolean;
   },
 ): Promise<void> {
+  await db.transaction().execute((tx) => completeActionInTransaction(tx, args));
+}
+
+export async function completeActionInTransaction(
+  db: Transaction<Database>,
+  args: {
+    actionKind: ActionKind;
+    actionId: string;
+    now: Date;
+    /** Issue 30: skip the habit time-window assert (the user confirmed). */
+    overrideWindow?: boolean;
+  },
+): Promise<void> {
   const { actionKind, actionId, now } = args;
   const nowIso = toIso(now);
   const table = ACTION_TABLES[actionKind];
@@ -385,86 +400,98 @@ export async function completeAction(
   let habitEstMinutes: number | null = null;
   let lastCycleDayKey: string | null = null;
   if (actionKind === 'habit') {
-    const habit = await db
+    const habitRow = await db
       .selectFrom('habits')
       .selectAll()
       .where('id', '=', row.habit_id as string)
       .executeTakeFirst();
-    if (habit !== undefined && habit.deleted_at === null) {
-      habitId = habit.id;
-      habitEstMinutes = habit.est_minutes;
-      const startedAtMs = parseIso(habit.started_at as string).getTime();
-      lastCycleDayKey = localDateKey(
-        new Date(startedAtMs + ((habit.cycle_days as number) - 1) * DAY_MS),
-      );
+    if (habitRow === undefined || habitRow.deleted_at !== null) {
+      throw new StorageNextdoError('habit.not-found', 'The habit no longer exists');
+    }
+    const habit = habitFromRow(habitRow);
+    if (habit.status !== 'active') {
+      throw new ValidationNextdoError('habit.not-active', 'The habit challenge has ended');
+    }
+    const targetDate = row.local_date as string;
+    if (!isHabitCatchUpAvailable(targetDate, now)) {
+      throw new ValidationNextdoError('habit.checkin-date', 'Only today and yesterday can be checked in');
+    }
+    const cycleDay = habitCycleDay(habit.startedAt, habit.cycleDays, targetDate);
+    if (cycleDay === null) {
+      throw new ValidationNextdoError('habit.checkin-outside-cycle', 'The date is outside the current habit cycle');
+    }
+    const start = parseIso(habit.startedAt);
+    const target = new Date(start.getFullYear(), start.getMonth(), start.getDate() + cycleDay - 1, 12);
+    const windowDays = habit.windowDays;
+    if (windowDays !== undefined && !windowDays.includes(target.getDay())) {
+      throw new ValidationNextdoError('habit.checkin-unscheduled', 'The habit is not scheduled on this date');
+    }
+    habitId = habit.id;
+    habitEstMinutes = habit.estMinutes;
+    lastCycleDayKey = localDateKey(
+      new Date(start.getFullYear(), start.getMonth(), start.getDate() + habit.cycleDays - 1, 12),
+    );
 
-      // Issue 30: the time window gates the 打卡 itself, not only the
-      // recommendation. A 补卡 (issue 32-B) targets a PAST day, so the
-      // window check is skipped for it — completing yesterday's habit after
-      // yesterday's window has closed is exactly what the catch-up is for,
-      // and the 1-day catch-up bound is the only limit that applies there.
-      if ((row.local_date as string) === localDateKey(now)) {
-        assertHabitCheckInWindow(
-          now,
-          {
-            windowStart: habit.window_start ?? undefined,
-            windowEnd: habit.window_end ?? undefined,
-            windowDays: parseJson<number[] | null>(habit.window_days, null) ?? undefined,
-          },
-          { overrideWindow: args.overrideWindow },
-        );
-      }
+    // Yesterday's catch-up ignores today's time window; override never bypasses date or schedule.
+    if (targetDate === localDateKey(now)) {
+      assertHabitCheckInWindow(
+        now,
+        {
+          windowStart: habit.windowStart,
+          windowEnd: habit.windowEnd,
+          windowDays,
+        },
+        { overrideWindow: args.overrideWindow },
+      );
     }
   }
   const estMinutes = actionKind === 'habit' ? habitEstMinutes : row.est_minutes;
 
-  await db.transaction().execute(async (tx) => {
-    // Step 2.
-    await tx
-      .updateTable(table)
-      .set({
-        status: 'done',
-        snoozed_until: null,
-        consecutive_skips: 0,
-        updated_at: nowIso,
-      })
-      .where('id', '=', actionId)
+  // Step 2.
+  await db
+    .updateTable(table)
+    .set({
+      status: 'done',
+      snoozed_until: null,
+      consecutive_skips: 0,
+      updated_at: nowIso,
+    })
+    .where('id', '=', actionId)
+    .execute();
+  // Step 3.
+  await db
+    .insertInto('completion_records')
+    .values({
+      id: ulid(now),
+      created_at: nowIso,
+      updated_at: nowIso,
+      deleted_at: null,
+      action_kind: actionKind,
+      action_id: actionId,
+      completed_at: nowIso,
+      est_minutes: estMinutes,
+    })
+    .execute();
+  // Step 4.
+  await db
+    .updateTable('reminders')
+    .set({ state: 'cancelled', updated_at: nowIso })
+    .where('action_id', '=', actionId)
+    .where('state', '=', 'scheduled')
+    .execute();
+  // Step 5 (habit only — the day row was already set to done in step 2).
+  if (
+    actionKind === 'habit' &&
+    habitId !== null &&
+    lastCycleDayKey !== null &&
+    row.local_date === lastCycleDayKey
+  ) {
+    await db
+      .updateTable('habits')
+      .set({ status: 'completed', updated_at: nowIso })
+      .where('id', '=', habitId)
       .execute();
-    // Step 3.
-    await tx
-      .insertInto('completion_records')
-      .values({
-        id: ulid(now),
-        created_at: nowIso,
-        updated_at: nowIso,
-        deleted_at: null,
-        action_kind: actionKind,
-        action_id: actionId,
-        completed_at: nowIso,
-        est_minutes: estMinutes,
-      })
-      .execute();
-    // Step 4.
-    await tx
-      .updateTable('reminders')
-      .set({ state: 'cancelled', updated_at: nowIso })
-      .where('action_id', '=', actionId)
-      .where('state', '=', 'scheduled')
-      .execute();
-    // Step 5 (habit only — the day row was already set to done in step 2).
-    if (
-      actionKind === 'habit' &&
-      habitId !== null &&
-      lastCycleDayKey !== null &&
-      row.local_date === lastCycleDayKey
-    ) {
-      await tx
-        .updateTable('habits')
-        .set({ status: 'completed', updated_at: nowIso })
-        .where('id', '=', habitId)
-        .execute();
-    }
-  });
+  }
 }
 
 /**
@@ -577,28 +604,33 @@ export async function snoozeAction(
   db: NextdoDb,
   args: { actionKind: ActionKind; actionId: string; snoozedUntil: Date; now: Date },
 ): Promise<void> {
+  await db.transaction().execute((tx) => snoozeActionInTransaction(tx, args));
+}
+
+export async function snoozeActionInTransaction(
+  db: Transaction<Database>,
+  args: { actionKind: ActionKind; actionId: string; snoozedUntil: Date; now: Date },
+): Promise<void> {
   const { actionKind, actionId, snoozedUntil, now } = args;
   const nowIso = toIso(now);
   const snoozedUntilIso = toIso(snoozedUntil);
   const table = ACTION_TABLES[actionKind];
   await loadActionRow(db, actionKind, actionId);
   const reminder = snoozeReminderSpec(snoozedUntil);
-  await db.transaction().execute(async (tx) => {
-    await tx
-      .updateTable(table)
-      .set({
-        snoozed_until: snoozedUntilIso,
-        last_snoozed_at: nowIso,
-        consecutive_skips: 0,
-        updated_at: nowIso,
-      })
-      .where('id', '=', actionId)
-      .execute();
-    // The previous scheduled reminder (if any) is cancelled in the same
-    // transaction — otherwise a re-snooze would keep the old target time
-    // armed alongside the new one. Same helper the add / update paths use.
-    await reconcileReminder(tx, actionKind, actionId, [reminder], now);
-  });
+  await db
+    .updateTable(table)
+    .set({
+      snoozed_until: snoozedUntilIso,
+      last_snoozed_at: nowIso,
+      consecutive_skips: 0,
+      updated_at: nowIso,
+    })
+    .where('id', '=', actionId)
+    .execute();
+  // The previous scheduled reminder (if any) is cancelled in the same
+  // transaction — otherwise a re-snooze would keep the old target time
+  // armed alongside the new one. Same helper the add / update paths use.
+  await reconcileReminder(db, actionKind, actionId, [reminder], now);
 }
 
 /**

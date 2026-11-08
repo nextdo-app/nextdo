@@ -699,9 +699,11 @@ export default function NowScreen() {
    *  (issue #17), so the two can never diverge. */
   const handleComplete = useCallback(
     (actionKind: CandidateKind, actionId: string) => {
-      void complete({ actionKind, actionId });
+      void complete({ actionKind, actionId }).then((ok) => {
+        if (ok && actionKind === 'habit') reloadHabits();
+      });
     },
-    [complete],
+    [complete, reloadHabits],
   );
 
   const handleEdit = useCallback(
@@ -745,18 +747,16 @@ export default function NowScreen() {
 
   const handleCompleteHabit = useCallback(
     (habitDayId: string, habit?: HabitWithProgress['habit']) => {
-      void complete({ actionKind: 'habit', actionId: habitDayId }).then((ok) => {
-        if (ok) {
-          reloadHabits();
-        } else if (habit?.windowStart && habit?.windowEnd) {
-          setWindowConfirm({
-            habitDayId,
-            habitTitle: habit.title,
-            windowStart: habit.windowStart,
-            windowEnd: habit.windowEnd,
-          });
-        }
-      });
+      const confirmation = habit?.windowStart && habit.windowEnd ? {
+        habitDayId,
+        habitTitle: habit.title,
+        windowStart: habit.windowStart,
+        windowEnd: habit.windowEnd,
+      } : null;
+      void complete(
+        { actionKind: 'habit', actionId: habitDayId },
+        confirmation ? () => setWindowConfirm(confirmation) : undefined,
+      ).then((ok) => { if (ok) reloadHabits(); });
     },
     [complete, reloadHabits],
   );

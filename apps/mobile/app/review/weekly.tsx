@@ -1,25 +1,11 @@
-/**
- * The weekly review route (design.md §4.5 — PRD R7): the read-only
- * snapshot (inbox / project table with last progress / waiting follow-ups /
- * someday count / stalled projects / next-7-day schedule) + the decision
- * area:
- *   - inboxCleared / calendarReasonable confirmation switches
- *     (inboxCleared defaults from `snapshot.inboxCount === 0`);
- *   - followUpsRaised — waiting follow-up check-offs (record-only);
- *   - projectDecisions — per-project status chips (default: current);
- *   - somedayDecisions — per-item keep/trash (v1: no →project/→action,
- *     PRD decision 2).
- *
- * Submit order is fixed (design.md §8): the CHANGED decisions land first
- * (project status → `updateProject`; someday trash → `trashSomedayMaybeItem`),
- * then the append-only `addReviewRecord`. Any failed step stops the
- * sequence with a message and NO record is written.
- */
-import { useEffect, useMemo, useRef, useState } from 'react';
+/** Weekly checklist with live defaults, legal status choices, and atomic submission. */
+import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useAppInsets } from '@/lib/use-app-insets';
+import { router, useFocusEffect } from 'expo-router';
 import { Button, Card, Tag } from '@nextdo/ui';
 import {
+  PROJECT_TRANSITIONS,
   type ProjectStatus,
   type SomedayDecision,
   type WeeklyReviewAnswers,
@@ -28,42 +14,23 @@ import { errorMessage as errorCopy } from '@/lib/error-messages';
 import { goBack } from '@/lib/go-back';
 import { PROJECT_STATUS_LABELS } from '@/lib/status-labels';
 import { useWeeklyReviewData } from '@/hooks/use-weekly-review-data';
-import { useProjectStatus } from '@/hooks/use-project-status';
-import { useTrashSomeday } from '@/hooks/use-trash-someday';
-import { useAddReviewRecord } from '@/hooks/use-add-review-record';
+import { useSubmitReview } from '@/hooks/use-submit-review';
 import { formatLocalDate, formatLocalDateTime } from '@/lib/format';
 
-const STATUS_OPTIONS: ProjectStatus[] = ['active', 'on-hold', 'done', 'dropped'];
 
 type SomedayChoice = 'keep' | 'trash';
 
 export default function WeeklyReviewScreen() {
-  const { data, error } = useWeeklyReviewData();
-  const { set: setProjectStatus, error: statusError } = useProjectStatus();
-  const { trash, error: trashError } = useTrashSomeday();
-  const { add, error: recordError } = useAddReviewRecord();
+  const { data, error, reload } = useWeeklyReviewData();
+  const { submit: submitReview, error: recordError, submitting } = useSubmitReview();
+  useFocusEffect(useCallback(() => { reload(); }, [reload]));
   const insets = useAppInsets();
   const topPadding = Math.max(insets.top, 16);
-  // Decision state — seeded ONCE when the snapshot first lands (later
-  // reloads must not clobber the user's in-progress decisions).
-  const [inboxCleared, setInboxCleared] = useState(false);
+  const [inboxChoice, setInboxChoice] = useState<boolean | undefined>();
   const [calendarReasonable, setCalendarReasonable] = useState(true);
   const [followUps, setFollowUps] = useState<string[]>([]);
   const [projectStatuses, setProjectStatuses] = useState<Record<string, ProjectStatus>>({});
   const [somedayChoices, setSomedayChoices] = useState<Record<string, SomedayChoice>>({});
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const seeded = useRef(false);
-
-  useEffect(() => {
-    if (data === null || seeded.current) return;
-    seeded.current = true;
-    setInboxCleared(data.snapshot.inboxCount === 0);
-    setCalendarReasonable(true);
-    setProjectStatuses(Object.fromEntries(data.projects.map((project) => [project.id, project.status])));
-    setSomedayChoices(Object.fromEntries(data.somedays.map((item) => [item.id, 'keep' as const])));
-  }, [data]);
-
   const waitingItems = useMemo(
     () =>
       (data?.snapshot.waitingFollowUps ?? [])
@@ -78,20 +45,28 @@ export default function WeeklyReviewScreen() {
         <Text className="mb-4 text-xl font-semibold text-ink dark:text-ink-dark">本周回顾</Text>
         <Card>
           <Text className="text-danger">加载回顾数据失败：{errorCopy(error)}</Text>
+          <Button label="重试加载" onPress={reload} />
+          <Button label="← 回顾" variant="ghost" onPress={() => goBack('/(tabs)/review')} />
         </Card>
       </View>
     );
   }
 
-  if (data === null || !seeded.current) {
+  if (data === null) {
     return (
       <View className="flex-1 items-center justify-center bg-canvas p-4 dark:bg-canvas-dark">
         <Text className="text-base text-muted dark:text-muted-dark">加载中…</Text>
+        <Button label="← 回顾" variant="ghost" onPress={() => goBack('/(tabs)/review')} />
       </View>
     );
   }
 
   const { snapshot } = data;
+  const inboxCleared = inboxChoice ?? snapshot.inboxCount === 0;
+  const projectChoice = (id: string, persisted: ProjectStatus): ProjectStatus => {
+    const chosen = projectStatuses[id];
+    return chosen !== undefined && (chosen === persisted || PROJECT_TRANSITIONS[persisted].includes(chosen)) ? chosen : persisted;
+  };
 
   const toggleFollowUp = (id: string) => {
     setFollowUps((prev) => (prev.includes(id) ? prev.filter((entry) => entry !== id) : [...prev, id]));
@@ -104,11 +79,11 @@ export default function WeeklyReviewScreen() {
     }));
     const projectDecisions = data.projects.map((project) => ({
       id: project.id,
-      to: (projectStatuses[project.id] ?? project.status) as ProjectStatus,
+      to: projectChoice(project.id, project.status),
     }));
     return {
       inboxCleared,
-      followUpsRaised: followUps,
+      followUpsRaised: followUps.filter((id) => snapshot.waitingFollowUps.includes(id)),
       calendarReasonable,
       somedayDecisions,
       projectDecisions,
@@ -117,35 +92,8 @@ export default function WeeklyReviewScreen() {
 
   const submit = async () => {
     if (submitting) return;
-    setSubmitting(true);
-    setSubmitError(null);
-    const answers = buildAnswers();
-    try {
-      // 1. Project status DECISIONS that changed → updateProject (the db
-      //    layer asserts the lifecycle transition; done/dropped terminal).
-      for (const decision of answers.projectDecisions) {
-        const project = data.projects.find((entry) => entry.id === decision.id);
-        if (project === undefined || project.status === decision.to) continue;
-        const ok = await setProjectStatus({ project, status: decision.to });
-        if (!ok) throw new Error('project status failed');
-      }
-      // 2. Someday trash decisions.
-      for (const item of data.somedays) {
-        if ((somedayChoices[item.id] ?? 'keep') !== 'trash') continue;
-        const ok = await trash(item.id);
-        if (!ok) throw new Error('someday trash failed');
-      }
-      // 3. Last: the append-only record (all-or-nothing with step 1–2).
-      const recorded = await add({ kind: 'weekly', snapshot, answers });
-      if (!recorded) throw new Error('record failed');
-      goBack('/(tabs)/review');
-    } catch {
-      // The mutation hooks surface their own typed error below; the record
-      // was NOT written (submit stopped before step 3).
-      setSubmitError('提交在中途失败，回顾记录未写入。请检查提示后重新提交。');
-    } finally {
-      setSubmitting(false);
-    }
+    const recorded = await submitReview({ kind: 'weekly', snapshot, answers: buildAnswers() });
+    if (recorded) goBack('/(tabs)/review');
   };
 
   const calendarEntries = snapshot.calendarNext7
@@ -171,6 +119,11 @@ export default function WeeklyReviewScreen() {
           <View className="flex-row flex-wrap gap-2">
             <Tag label={`收件箱 ${snapshot.inboxCount} 条`} />
             <Tag label={`Someday ${snapshot.somedayCount} 条`} />
+          </View>
+          <View className="flex-row flex-wrap gap-2">
+            <Button label="整理收件箱" variant="secondary" onPress={() => router.push('/(tabs)/inbox')} />
+            <Button label="查看等待事项" variant="secondary" onPress={() => router.push('/waiting')} />
+            <Button label="查看习惯记录" variant="secondary" onPress={() => router.push('/habits')} />
           </View>
           {waitingItems.length > 0 ? (
             <View className="gap-1">
@@ -203,7 +156,10 @@ export default function WeeklyReviewScreen() {
             </Card>
           ) : (
             snapshot.projects.map((project) => {
-              const current = projectStatuses[project.id] ?? 'active';
+              const persisted = data.projects.find((entry) => entry.id === project.id)?.status;
+              if (persisted === undefined) return null;
+              const current = projectChoice(project.id, persisted);
+              const options = PROJECT_TRANSITIONS[persisted];
               return (
                 <Card key={project.id} className="gap-2">
                   <View className="flex-row items-center gap-2">
@@ -217,8 +173,9 @@ export default function WeeklyReviewScreen() {
                   <Text className="text-xs text-muted dark:text-muted-dark">
                     最近进展：{project.lastProgressAt !== null ? formatLocalDate(project.lastProgressAt) : '暂无'}
                   </Text>
-                  <View className="flex-row flex-wrap gap-2">
-                    {STATUS_OPTIONS.map((status) => (
+                  <Button label={`打开项目：${project.title}`} variant="ghost" onPress={() => router.push(`/projects/${project.id}`)} />
+                  {options.length === 0 ? <Text className="text-sm text-muted dark:text-muted-dark">{PROJECT_STATUS_LABELS[persisted]}（状态不可更改）</Text> : <View className="flex-row flex-wrap gap-2">
+                    {[persisted, ...options].map((status) => (
                       <Pressable
                         key={status}
                         accessibilityRole="button"
@@ -229,8 +186,8 @@ export default function WeeklyReviewScreen() {
                         }
                         className={
                           current === status
-                            ? 'rounded-full bg-accent px-3 py-1 dark:bg-accent-dark'
-                            : 'rounded-full border border-border px-3 py-1 dark:border-border-dark'
+                            ? 'min-h-11 justify-center rounded-full bg-accent px-3 py-2 dark:bg-accent-dark'
+                            : 'min-h-11 justify-center rounded-full border border-border px-3 py-2 dark:border-border-dark'
                         }
                       >
                         <Text
@@ -244,7 +201,7 @@ export default function WeeklyReviewScreen() {
                         </Text>
                       </Pressable>
                     ))}
-                  </View>
+                  </View>}
                 </Card>
               );
             })
@@ -255,6 +212,7 @@ export default function WeeklyReviewScreen() {
         {waitingItems.length > 0 ? (
           <View className="gap-2">
             <Text className="text-base font-medium text-ink dark:text-ink-dark">跟进勾选</Text>
+            <Text className="text-sm text-muted dark:text-muted-dark">勾选仅记录本次跟进，不修改等待事项，也不设置提醒。</Text>
             {waitingItems.map((item) => (
               <Card key={item.id} className="gap-1">
                 <View className="flex-row items-center justify-between gap-2">
@@ -308,7 +266,7 @@ export default function WeeklyReviewScreen() {
             <Button
               label={inboxCleared ? '是 ✓' : '否'}
               variant={inboxCleared ? 'primary' : 'secondary'}
-              onPress={() => setInboxCleared((value) => !value)}
+              onPress={() => setInboxChoice(!inboxCleared)}
             />
           </View>
           <View className="flex-row items-center justify-between">
@@ -323,10 +281,8 @@ export default function WeeklyReviewScreen() {
 
         {/* 提交 */}
         <View className="gap-2">
-          {submitError !== null ? <Text className="text-sm text-danger">{submitError}</Text> : null}
-          {statusError !== null ? <Text className="text-sm text-danger">{errorCopy(statusError)}</Text> : null}
-          {trashError !== null ? <Text className="text-sm text-danger">{errorCopy(trashError)}</Text> : null}
-          {recordError !== null ? <Text className="text-sm text-danger">{errorCopy(recordError)}</Text> : null}
+          {recordError !== null ? <Text className="text-sm text-danger">提交失败，本次变更均未保存。选择已保留，可重试。{recordError}</Text> : null}
+          <Button label="刷新回顾数据" variant="ghost" onPress={reload} disabled={submitting} />
           <Button label={submitting ? '提交中…' : '提交回顾'} onPress={() => void submit()} disabled={submitting} />
         </View>
       </ScrollView>

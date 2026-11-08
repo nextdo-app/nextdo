@@ -10,11 +10,16 @@ import {
   type DailyReviewRecord,
   type WeeklyReviewRecord,
 } from '@nextdo/core';
+import { sql } from 'kysely';
+import { snoozeAction } from '../queries/actions';
 import type { NextdoDb } from '../types';
 import {
   buildDailyReviewSnapshot,
+  submitReview,
+  getReviewDetails,
   buildWeeklyReviewSnapshot,
   listCompletionRecords,
+  listReviewCompletions,
 } from '../queries/reviews';
 import { addReviewRecord, listReviewRecords } from '../queries/reviews';
 import { openTestDb, type TestDb } from './query-helpers';
@@ -536,5 +541,136 @@ describe('buildWeeklyReviewSnapshot', () => {
     } finally {
       await close();
     }
+  });
+});
+
+describe('submitReview atomic decisions and history', () => {
+  it.each(['reminders', 'review_records'] as const)('rolls back after earlier completion when %s INSERT fails, then retries once', async (table) => {
+    const { db } = await open();
+    await insertNextAction(db, { id: 'a-complete', createdAt: at(0) });
+    await insertNextAction(db, { id: 'a-tomorrow', createdAt: at(0) });
+    await snoozeAction(db, { actionKind: 'next', actionId: 'a-complete', snoozedUntil: new Date(at(1)), now: FIXTURE_NOW });
+    const beforeReminders = await db.selectFrom('reminders').selectAll().execute();
+    const record = makeDaily();
+    record.snapshot.stillOpen = ['a-complete', 'a-tomorrow'];
+    record.answers.completedActionIds = ['a-complete'];
+    record.answers.tomorrowMustDo = ['a-tomorrow'];
+    await sql.raw(`CREATE TRIGGER fail_review_write INSTEAD OF INSERT ON ${table} BEGIN SELECT RAISE(ABORT, 'injected review failure'); END`).execute(db);
+    await expect(submitReview(db, { record, now: FIXTURE_NOW })).rejects.toThrow('injected review failure');
+    expect((await db.selectFrom('next_actions').selectAll().execute()).every((row) => row.status === 'open')).toBe(true);
+    expect((await db.selectFrom('next_actions').selectAll().where('id', '=', 'a-tomorrow').executeTakeFirst())?.snoozed_until).toBeNull();
+    expect(await listCompletionRecords(db)).toEqual([]);
+    expect(await listReviewRecords(db)).toEqual([]);
+    expect(await db.selectFrom('reminders').selectAll().execute()).toEqual(beforeReminders);
+    await sql.raw('DROP TRIGGER fail_review_write').execute(db);
+    const saved = await submitReview(db, { record, now: FIXTURE_NOW });
+    expect(saved.answers).toEqual(record.answers);
+    expect(await listReviewRecords(db)).toHaveLength(1);
+    expect(await listCompletionRecords(db)).toHaveLength(1);
+    expect(await db.selectFrom('reminders').selectAll().where('state', '=', 'scheduled').execute()).toEqual([
+      expect.objectContaining({ action_id: 'a-tomorrow', fires_at: '2026-09-22T08:00:00.000Z' }),
+    ]);
+    await expect(submitReview(db, { record, now: FIXTURE_NOW })).rejects.toMatchObject({ code: 'review.already-submitted' });
+    expect(await listCompletionRecords(db)).toHaveLength(1);
+  });
+
+  it('rolls back weekly status and trash at final INSERT; retry preserves live unrelated project edits and titles', async () => {
+    const { db } = await open(true);
+    const record = makeWeekly({ snapshot: await buildWeeklyReviewSnapshot(db, FIXTURE_NOW) });
+    const someday = await db.selectFrom('someday_maybe_items').selectAll().where('deleted_at', 'is', null).executeTakeFirstOrThrow();
+    record.answers.projectDecisions = [{ id: FIXTURE_IDS.projects.paper, to: 'done' }];
+    record.answers.somedayDecisions = [{ id: someday.id, to: 'trash' }];
+    await db.updateTable('projects').set({ outcome: 'concurrently edited outcome', title: 'renamed title' }).where('id', '=', FIXTURE_IDS.projects.paper).execute();
+    await sql.raw("CREATE TRIGGER fail_review_write INSTEAD OF INSERT ON review_records BEGIN SELECT RAISE(ABORT, 'injected review failure'); END").execute(db);
+    await expect(submitReview(db, { record, now: FIXTURE_NOW })).rejects.toThrow('injected review failure');
+    expect((await db.selectFrom('projects').select('status').where('id', '=', FIXTURE_IDS.projects.paper).executeTakeFirst())?.status).toBe('active');
+    expect((await db.selectFrom('someday_maybe_items').select('deleted_at').where('id', '=', someday.id).executeTakeFirst())?.deleted_at).toBeNull();
+    expect(await listReviewRecords(db)).toHaveLength(2);
+    await sql.raw('DROP TRIGGER fail_review_write').execute(db);
+    await submitReview(db, { record, now: FIXTURE_NOW });
+    const project = await db.selectFrom('projects').selectAll().where('id', '=', FIXTURE_IDS.projects.paper).executeTakeFirst();
+    expect(project).toMatchObject({ status: 'done', outcome: 'concurrently edited outcome', title: 'renamed title' });
+    expect((await getReviewDetails(db, record.id))?.record.snapshot.titles?.[someday.id]).toBe(someday.title);
+    expect(await listReviewRecords(db)).toHaveLength(3);
+  });
+
+  it('rejects overlapping, foreign, stale, and past-date daily choices without writes', async () => {
+    const { db } = await open();
+    await insertNextAction(db, { id: 'a', createdAt: at(0) });
+    const record = makeDaily();
+    record.snapshot.stillOpen = ['a'];
+    record.answers.completedActionIds = ['a'];
+    record.answers.skippedNoted = ['a'];
+    await expect(submitReview(db, { record, now: FIXTURE_NOW })).rejects.toMatchObject({ code: 'review.invalid-decision' });
+    record.answers.skippedNoted = [];
+    record.answers.completedActionIds = ['foreign'];
+    await expect(submitReview(db, { record, now: FIXTURE_NOW })).rejects.toMatchObject({ code: 'review.invalid-decision' });
+    record.answers.completedActionIds = [];
+    record.answers.rescheduled = [{ actionId: 'a', toDate: '2026-09-21T08:00:00.000Z' }];
+    await expect(submitReview(db, { record, now: FIXTURE_NOW })).rejects.toMatchObject({ code: 'review.invalid-date' });
+    record.answers.rescheduled = [];
+    record.answers.tomorrowMustDo = ['a'];
+    await db.updateTable('next_actions').set({ status: 'done' }).where('id', '=', 'a').execute();
+    await expect(submitReview(db, { record, now: FIXTURE_NOW })).rejects.toMatchObject({ code: 'review.stale-action' });
+    expect(await listReviewRecords(db)).toEqual([]);
+    expect(await db.selectFrom('reminders').selectAll().execute()).toEqual([]);
+  });
+
+  it('rolls back an earlier project status change when a later terminal project rejects transition', async () => {
+    const { db } = await open();
+    await insertProject(db, { id: 'p-active', createdAt: at(0) });
+    await insertProject(db, { id: 'p-done', status: 'done', createdAt: at(0) });
+    const record = makeWeekly({ snapshot: await buildWeeklyReviewSnapshot(db, FIXTURE_NOW) });
+    record.answers.projectDecisions = [{ id: 'p-active', to: 'on-hold' }, { id: 'p-done', to: 'active' }];
+    await expect(submitReview(db, { record, now: FIXTURE_NOW })).rejects.toMatchObject({ code: 'invalid-transition:done:active' });
+    expect((await db.selectFrom('projects').select('status').where('id', '=', 'p-active').executeTakeFirst())?.status).toBe('active');
+    expect(await listReviewRecords(db)).toEqual([]);
+  });
+
+  it('retains captured titles after rename/delete, reads old records without rewriting, validates optional metadata', async () => {
+    const { db } = await open();
+    await insertNextAction(db, { id: 'a', createdAt: at(0) });
+    const record = makeDaily();
+    record.snapshot.stillOpen = ['a'];
+    const saved = await submitReview(db, { record, now: FIXTURE_NOW });
+    await db.updateTable('next_actions').set({ title: 'new title', deleted_at: at(1) }).where('id', '=', 'a').execute();
+    const details = await getReviewDetails(db, record.id);
+    expect(details?.record.snapshot.titles).toEqual({ a: 'na-a' });
+    expect(details?.currentTitles).toEqual({ a: 'new title' });
+    const legacy = makeDaily();
+    legacy.snapshot.stillOpen = ['a', 'missing'];
+    await addReviewRecord(db, legacy);
+    expect((await getReviewDetails(db, legacy.id))?.record).toEqual(legacy);
+    expect(await getReviewDetails(db, 'missing')).toBeNull();
+    expect((await listReviewRecords(db)).find((entry) => entry.id === saved.id)).toEqual(saved);
+    for (const titles of [null, [], { a: 3 }, { a: '' }]) {
+      const bad = makeDaily({ snapshot: { ...record.snapshot, titles } } as unknown as Partial<DailyReviewRecord>);
+      await expect(addReviewRecord(db, bad)).rejects.toMatchObject({ code: 'validation.reviewRecord.titles' });
+    }
+  });
+});
+
+
+describe('listReviewCompletions', () => {
+  it('resolves mixed completion kinds, soft-deleted labels, and a missing legacy label on the local day', async () => {
+    const { db } = await open(true);
+    const day = await db.selectFrom('habit_days').select(['id', 'habit_id']).where('deleted_at', 'is', null).executeTakeFirstOrThrow();
+    const examples = [
+      { id: FIXTURE_IDS.actions.trashed, kind: 'next' },
+      { id: FIXTURE_IDS.calendar.done, kind: 'calendar' },
+      { id: day.id, kind: 'habit' },
+      { id: FIXTURE_IDS.inbox.trashed, kind: 'do_now' },
+      { id: 'missing-legacy', kind: 'do_now' },
+    ];
+    for (const example of examples) {
+      await db.insertInto('completion_records').values({ id: ulid(FIXTURE_NOW), created_at: at(0), updated_at: at(0),
+        deleted_at: null, completed_at: at(0), action_kind: example.kind, action_id: example.id, est_minutes: 10 }).execute();
+    }
+    const rows = await listReviewCompletions(db, FIXTURE_NOW);
+    expect(rows).toHaveLength(5);
+    for (const example of examples) expect(rows).toContainEqual(expect.objectContaining(example));
+    for (const row of rows.filter((entry) => entry.id !== 'missing-legacy')) expect(row.title).not.toContain('标题不可用');
+    expect(rows.find((row) => row.id === 'missing-legacy')?.title).toBe('标题不可用（missing-legacy）');
+    expect(await listReviewCompletions(db, new Date('2026-09-22T00:00:00.000Z'))).toEqual([]);
   });
 });

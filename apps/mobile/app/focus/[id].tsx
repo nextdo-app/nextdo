@@ -287,8 +287,8 @@ export default function FocusScreen() {
     if (busy) return;
     setBusy(true);
     try {
-      await completeAction({ actionKind, actionId });
-      goBack('/(tabs)/now');
+      const completed = await completeAction({ actionKind, actionId });
+      if (completed) goBack('/(tabs)/now');
     } finally {
       setBusy(false);
     }

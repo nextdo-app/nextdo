@@ -2,8 +2,7 @@
  * Weekly-review data hook (design.md §4.5): the one-shot snapshot
  * (`buildWeeklyReviewSnapshot`) + the display lists (waiting follow-up
  * titles, the full someday list for keep/trash decisions, the next-7-day
- * schedule, and the FULL project rows — `updateProject` takes the whole
- * entity). Query-style like `useProjectActions`.
+ * schedule, and current project statuses for legal choices). Query-style like `useProjectActions`.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePowerSync } from '@powersync/react';
@@ -33,7 +32,7 @@ export interface WeeklyReviewData {
   somedays: SomedayMaybeItem[];
   /** Calendar actions — lookup for `snapshot.calendarNext7`. */
   calendar: CalendarAction[];
-  /** Full project rows — `updateProject` needs the whole entity. */
+  /** Current project rows — defaults and allowed status transitions. */
   projects: Project[];
 }
 
@@ -64,7 +63,9 @@ export function useWeeklyReviewData(): UseWeeklyReviewDataResult {
         listProjects(db),
       ]);
       if (cancelled) return;
-      setData({ snapshot, waiting, somedays, calendar, projects });
+      const titles = Object.fromEntries([...projects, ...waiting, ...somedays, ...calendar]
+        .filter((entry) => entry.title.trim()).map((entry) => [entry.id, entry.title]));
+      setData({ snapshot: { ...snapshot, titles }, waiting, somedays, calendar, projects });
       setError(null);
     })().catch((err: unknown) => {
       if (cancelled) return;

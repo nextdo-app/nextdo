@@ -16,6 +16,11 @@
  */
 import {
   RECLARIFY_THRESHOLD,
+  PROJECT_TRANSITIONS,
+  StorageNextdoError,
+  ValidationNextdoError,
+  assertTransition,
+  type ProjectStatus,
   assertReviewRecord,
   localDateKey,
   parseIso,
@@ -29,8 +34,12 @@ import {
   completionRecordFromRow,
   reviewRecordFromRow,
   reviewRecordToRow,
+  type Database,
 } from '../schema';
 import { projectActionCoverage } from './projects';
+import type { Kysely } from 'kysely';
+import { completeActionInTransaction, loadActionRow, snoozeActionInTransaction } from './actions';
+import { trashSomedayMaybeItem } from './someday';
 import type { NextdoDb } from '../types';
 
 export async function listReviewRecords(
@@ -57,6 +66,158 @@ export async function addReviewRecord(db: NextdoDb, record: ReviewRecord): Promi
     .values({ id: record.id, ...reviewRecordToRow(record) })
     .execute();
   return record;
+}
+
+/** Resolve only referenced labels, including soft-deleted rows for legacy history. */
+export async function resolveReviewTitles(db: Kysely<Database>, ids: string[]): Promise<Record<string, string>> {
+  if (ids.length === 0) return {};
+  const rows = await Promise.all([
+    ...(['next_actions', 'calendar_actions', 'projects', 'waiting_for_items', 'someday_maybe_items', 'inbox_items'] as const)
+      .map((table) => db.selectFrom(table).select(['id', 'title']).where('id', 'in', ids).execute()),
+    db.selectFrom('habit_days').innerJoin('habits', 'habits.id', 'habit_days.habit_id')
+      .select(['habit_days.id as id', 'habits.title as title']).where('habit_days.id', 'in', ids).execute(),
+  ]);
+  return Object.fromEntries(rows.flat().filter((row) => row.title?.trim()).map((row) => [row.id, row.title as string]));
+}
+
+function referenceIds(record: ReviewRecord): string[] {
+  const { snapshot } = record;
+  if (record.kind === 'daily') {
+    return [...new Set([
+      ...record.snapshot.completedToday, ...record.snapshot.stillOpen, ...record.snapshot.projectsMissingActions,
+      ...snapshot.waitingFollowUps, ...record.snapshot.calendarToday, ...record.snapshot.calendarTomorrow,
+      ...record.snapshot.repeatedSkips, ...record.answers.completedActionIds, ...record.answers.tomorrowMustDo,
+      ...record.answers.skippedNoted, ...record.answers.rescheduled.map((entry) => entry.actionId),
+    ])];
+  }
+  return [...new Set([
+    ...record.snapshot.projects.map((project) => project.id), ...snapshot.waitingFollowUps,
+    ...record.snapshot.stalledProjects, ...record.snapshot.calendarNext7,
+    ...record.answers.projectDecisions.map((entry) => entry.id), ...record.answers.somedayDecisions.map((entry) => entry.id),
+    ...record.answers.followUpsRaised,
+  ])];
+}
+
+export async function getReviewDetails(db: NextdoDb, id: string): Promise<{
+  record: ReviewRecord;
+  currentTitles: Record<string, string>;
+} | null> {
+  const row = await db.selectFrom('review_records').selectAll().where('id', '=', id)
+    .where('deleted_at', 'is', null).executeTakeFirst();
+  if (row === undefined) return null;
+  const record = reviewRecordFromRow(row).record;
+  return { record, currentTitles: await resolveReviewTitles(db, referenceIds(record)) };
+}
+
+export type ReviewCompletion = { id: string; title: string; kind: CompletionRecord['actionKind'] };
+
+export async function listReviewCompletions(db: NextdoDb, now: Date): Promise<ReviewCompletion[]> {
+  const records = (await listCompletionRecords(db, { since: startOfLocalDay(now) }))
+    .filter((record) => localDateKey(parseIso(record.completedAt)) === localDateKey(now));
+  const titles = await resolveReviewTitles(db, records.map((record) => record.actionId));
+  return [...new Map(records.map((record) => [record.actionId, {
+    id: record.actionId,
+    title: titles[record.actionId] ?? `标题不可用（${record.actionId}）`,
+    kind: record.actionKind,
+  }])).values()];
+}
+
+function assertMembers(ids: string[], allowed: string[]): void {
+  if (new Set(ids).size !== ids.length || ids.some((id) => !allowed.includes(id))) {
+    throw new ValidationNextdoError('review.invalid-decision', 'Review choices must refer to distinct items in the snapshot');
+  }
+}
+
+/** One user submission: live validation, decisions, reminders, audit, then record. */
+export async function submitReview(
+  db: NextdoDb,
+  { record, now }: { record: ReviewRecord; now: Date },
+): Promise<ReviewRecord> {
+  assertReviewRecord(record);
+  const nowIso = toIso(now);
+  if (record.at !== nowIso || !record.id.trim()) {
+    throw new ValidationNextdoError('review.invalid-record', 'Review time must match the injected submission time');
+  }
+  if (record.kind === 'daily') {
+    assertMembers([
+      ...record.answers.completedActionIds, ...record.answers.tomorrowMustDo, ...record.answers.skippedNoted,
+      ...record.answers.rescheduled.map((entry) => entry.actionId),
+    ], record.snapshot.stillOpen);
+    for (const entry of record.answers.rescheduled) {
+      const target = parseIso(entry.toDate);
+      if (target.getTime() <= now.getTime() || target.getHours() !== 8 || target.getMinutes() !== 0 ||
+        target.getSeconds() !== 0 || target.getMilliseconds() !== 0) {
+        throw new ValidationNextdoError('review.invalid-date', 'Choose a future local date at 08:00');
+      }
+    }
+  } else {
+    assertMembers(record.answers.projectDecisions.map((entry) => entry.id), record.snapshot.projects.map((project) => project.id));
+    assertMembers(record.answers.followUpsRaised, record.snapshot.waitingFollowUps);
+    const somedayIds = record.answers.somedayDecisions.map((entry) => entry.id);
+    assertMembers(somedayIds, somedayIds);
+    if (record.answers.somedayDecisions.some((entry) => entry.to !== 'keep' && entry.to !== 'trash')) {
+      throw new ValidationNextdoError('review.invalid-decision', 'Review supports keeping or trashing Someday items');
+    }
+  }
+  return db.transaction().execute(async (tx) => {
+    const existing = await tx.selectFrom('review_records').select('id').where('id', '=', record.id).executeTakeFirst();
+    if (existing !== undefined) {
+      throw new ValidationNextdoError('review.already-submitted', 'This review has already been submitted');
+    }
+    const ids = referenceIds(record);
+    const currentTitles = await resolveReviewTitles(tx, ids);
+    // Keep labels the user saw, with current labels filling older/incomplete snapshots.
+    const titles = Object.fromEntries(ids.flatMap((id) => {
+      const title = record.snapshot.titles?.[id]
+        ?? (record.kind === 'weekly' ? record.snapshot.projects.find((project) => project.id === id)?.title : undefined)
+        ?? currentTitles[id];
+      return title === undefined ? [] : [[id, title]];
+    }));
+    const saved: ReviewRecord = record.kind === 'daily'
+      ? { ...record, snapshot: { ...record.snapshot, titles } }
+      : { ...record, snapshot: { ...record.snapshot, titles } };
+    if (record.kind === 'daily') {
+      const { answers } = record;
+      const decisions = [...answers.completedActionIds, ...answers.tomorrowMustDo, ...answers.skippedNoted,
+        ...answers.rescheduled.map((entry) => entry.actionId)];
+      for (const id of decisions) {
+        const row = await loadActionRow(tx, 'next', id);
+        if (row.status !== 'open') throw new ValidationNextdoError('review.stale-action', 'An action changed; refresh the review');
+      }
+      for (const actionId of answers.completedActionIds) {
+        await completeActionInTransaction(tx, { actionKind: 'next', actionId, now });
+      }
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(8, 0, 0, 0);
+      for (const entry of [...answers.rescheduled, ...answers.tomorrowMustDo.map((actionId) => ({ actionId, toDate: toIso(tomorrow) }))]) {
+        await snoozeActionInTransaction(tx, { actionKind: 'next', actionId: entry.actionId, snoozedUntil: parseIso(entry.toDate), now });
+      }
+    } else {
+      for (const decision of record.answers.projectDecisions) {
+        const row = await tx.selectFrom('projects').select(['status', 'deleted_at']).where('id', '=', decision.id).executeTakeFirst();
+        if (row === undefined || row.deleted_at !== null) throw new StorageNextdoError('project.not-found', 'Project no longer exists');
+        if (row.status !== decision.to) {
+          assertTransition(PROJECT_TRANSITIONS, row.status as ProjectStatus, decision.to, now);
+          await tx.updateTable('projects').set({ status: decision.to, updated_at: nowIso }).where('id', '=', decision.id).execute();
+        }
+      }
+      for (const id of record.answers.followUpsRaised) {
+        const row = await tx.selectFrom('waiting_for_items').select('id').where('id', '=', id).where('deleted_at', 'is', null).executeTakeFirst();
+        if (row === undefined) throw new StorageNextdoError('waitingForItem.not-found', 'Waiting item no longer exists');
+      }
+      for (const decision of record.answers.somedayDecisions) {
+        if (decision.to === 'trash') await trashSomedayMaybeItem(tx, { id: decision.id, now });
+        else {
+          const row = await tx.selectFrom('someday_maybe_items').select('id').where('id', '=', decision.id).where('deleted_at', 'is', null).executeTakeFirst();
+          if (row === undefined) throw new StorageNextdoError('somedayMaybeItem.not-found', 'Someday item no longer exists');
+        }
+      }
+    }
+    assertReviewRecord(saved);
+    await tx.insertInto('review_records').values({ id: saved.id, ...reviewRecordToRow(saved) }).execute();
+    return saved;
+  });
 }
 
 // ---------------------------------------------------------------------------

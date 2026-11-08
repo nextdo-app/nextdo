@@ -1,14 +1,4 @@
-/**
- * Component tests — the daily review route (PRD R7, design.md §4.5):
- * snapshot rendering (inbox / completed / uncovered projects / waiting /
- * schedule / repeated skips), answer collection (single choice per row),
- * the fixed SUBMIT ORDER (decision transactions first, the append-only
- * record LAST), failure-stop (a failed transaction → NO record), and the
- * reschedule date validation.
- *
- * The data + mutation hooks run for real against a mocked `@nextdo/db`
- * boundary — the screen logic and the submit sequence are under test.
- */
+/** Daily UI tests exercise one atomic DB boundary; rollback is covered by real DB tests. */
 const NOW = '2026-09-23T10:00:00.000Z';
 
 const dataRef = {
@@ -132,9 +122,13 @@ jest.mock('@nextdo/db', () => {
     listHabitDays: jest.fn(async () => dataRef.habitDays),
     listHabits: jest.fn(async () => dataRef.habits),
     listProjects: jest.fn(async () => dataRef.projects),
-    completeAction: jest.fn(async () => undefined),
-    snoozeAction: jest.fn(async () => undefined),
-    addReviewRecord: jest.fn(async (db: unknown, record: unknown) => record),
+    listReviewCompletions: jest.fn(async () => [
+      { id: 'c-1', title: '完成的行动', kind: 'next' },
+      { id: 'c-2', title: '完成的会议', kind: 'calendar' },
+      { id: 'c-3', title: '完成的晨跑', kind: 'habit' },
+      { id: 'c-4', title: '标题不可用（legacy）', kind: 'do_now' },
+    ]),
+    submitReview: jest.fn(async (db: unknown, input: unknown) => input),
   };
 });
 
@@ -171,24 +165,18 @@ jest.mock('expo-notifications', () => mockExpoNotifications);
 import { mockExpoNotifications } from './mocks/expo-notifications';
 
 import { act, fireEvent, renderRouter, screen, testRouter, waitFor } from 'expo-router/testing-library';
-import { addReviewRecord, completeAction, snoozeAction } from '@nextdo/db';
+import { buildDailyReviewSnapshot, submitReview } from '@nextdo/db';
 
-const mockedCompleteAction = completeAction as jest.Mock;
-const mockedSnoozeAction = snoozeAction as jest.Mock;
-const mockedAddReviewRecord = addReviewRecord as jest.Mock;
+const mockedSubmit = submitReview as jest.Mock;
+const mockedSnapshot = buildDailyReviewSnapshot as jest.Mock;
 
-function local8(hour8: string | Date): Date {
-  return typeof hour8 === 'string'
-    ? new Date(Number(hour8.slice(0, 4)), Number(hour8.slice(5, 7)) - 1, Number(hour8.slice(8, 10)), 8, 0, 0, 0)
-    : hour8;
-}
-
-function tomorrowAt8(): Date {
-  const target = new Date();
-  target.setDate(target.getDate() + 1);
-  target.setHours(8, 0, 0, 0);
-  return target;
-}
+jest.mock('@/components/datetime-picker', () => {
+  const { Pressable, Text } = jest.requireActual('react-native');
+  return { DateTimePicker: ({ onConfirm }: { onConfirm: (date: string) => void }) => (
+    <><Pressable onPress={() => onConfirm('2099-09-25')}><Text>选择未来日期</Text></Pressable>
+      <Pressable onPress={() => onConfirm('2026-02-30')}><Text>选择无效日期</Text></Pressable></>
+  ) };
+});
 
 /**
  * Render the daily review the way the app actually reaches it — pushed from
@@ -225,7 +213,11 @@ describe('daily review — rendering', () => {
     expect(screen.getByText('收件箱 2 条')).toBeTruthy();
     expect(screen.getByText('今日完成 1 项')).toBeTruthy();
     expect(screen.getByText('缺少行动的项目')).toBeTruthy();
-    expect(screen.getByText('论文实验')).toBeTruthy();
+    expect(screen.getByText('打开项目：论文实验')).toBeTruthy();
+    expect(screen.getByText('完成的行动 · 下一步行动')).toBeTruthy();
+    expect(screen.getByText('完成的会议 · 日程')).toBeTruthy();
+    expect(screen.getByText('完成的晨跑 · 习惯')).toBeTruthy();
+    expect(screen.getByText('标题不可用（legacy） · 即时完成')).toBeTruthy();
     expect(screen.getByText('待跟进（已过期）')).toBeTruthy();
     expect(screen.getByText('等供应商报价 — 等供应商')).toBeTruthy();
     expect(screen.getByText('今日日程')).toBeTruthy();
@@ -252,93 +244,84 @@ describe('daily review — rendering', () => {
 });
 
 describe('daily review — submit', () => {
-  it('lands the decision transactions FIRST and the record LAST, with the full answers', async () => {
+  it('submits one atomic request with all choices and local 08:00 dates', async () => {
     const view = await renderDaily();
     await waitFor(() => expect(screen.getByText('未完成的行动（4）')).toBeTruthy());
-
-    // a-1 → 已完成 · a-2 → 明日必做 · a-3 → 排期 2026-09-25 · a-4 → 跳过
     fireEvent.press(screen.getAllByText('已完成')[0]!);
-    fireEvent.press(screen.getAllByText('明日必做')[1]!);
-    fireEvent.changeText(screen.getAllByPlaceholderText('排期到 YYYY-MM-DD（08:00）')[2]!, '2026-09-25');
-    fireEvent.press(screen.getAllByText('排期')[2]!);
-    fireEvent.press(screen.getAllByText('跳过')[3]!);
-
+    fireEvent.press(screen.getAllByText('安排到明日')[1]!);
+    fireEvent.press(screen.getAllByText('选择排期日期')[2]!);
+    fireEvent.press(screen.getByText('选择未来日期'));
+    expect(screen.getByText('排期到 2099-09-25 08:00')).toBeTruthy();
+    fireEvent.press(screen.getAllByText('暂不处理')[3]!);
     fireEvent.press(screen.getByText('提交回顾'));
-    await waitFor(() => expect(mockedAddReviewRecord).toHaveBeenCalledTimes(1));
-
-    // 1. completed → completeAction(next, a-1).
-    expect(mockedCompleteAction).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ actionKind: 'next', actionId: 'a-1' }),
-    );
-    // 2. rescheduled → snooze at the picked LOCAL day 08:00.
-    const rescheduleCall = mockedSnoozeAction.mock.calls.find(
-      (call) => call[1]?.actionId === 'a-3',
-    );
-    expect(rescheduleCall).toBeDefined();
-    expect(rescheduleCall?.[1].actionKind).toBe('next');
-    expect(rescheduleCall?.[1].snoozedUntil.getTime()).toBe(local8('2026-09-25').getTime());
-    // 3. tomorrow must-do → snooze at TOMORROW 08:00 (local).
-    const tomorrowCall = mockedSnoozeAction.mock.calls.find(
-      (call) => call[1]?.actionId === 'a-2',
-    );
-    expect(tomorrowCall).toBeDefined();
-    expect(tomorrowCall?.[1].snoozedUntil.getTime()).toBe(tomorrowAt8().getTime());
-
-    // 4. The record — last, with the full snapshot + answers.
-    const record = mockedAddReviewRecord.mock.calls[0][1];
-    expect(record).toMatchObject({
-      kind: 'daily',
-      snapshot: dataRef.snapshot,
+    await waitFor(() => expect(mockedSubmit).toHaveBeenCalledTimes(1));
+    expect(mockedSubmit.mock.calls[0][1].record).toMatchObject({
+      kind: 'daily', snapshot: dataRef.snapshot,
       answers: {
-        completedActionIds: ['a-1'],
-        rescheduled: [{ actionId: 'a-3', toDate: local8('2026-09-25').toISOString() }],
-        skippedNoted: ['a-4'],
-        tomorrowMustDo: ['a-2'],
+        completedActionIds: ['a-1'], tomorrowMustDo: ['a-2'], skippedNoted: ['a-4'],
+        rescheduled: [{ actionId: 'a-3', toDate: new Date(2099, 8, 25, 8).toISOString() }],
       },
     });
-    // Order: the record lands after every decision transaction.
-    const recordOrder = mockedAddReviewRecord.mock.invocationCallOrder[0];
-    const lastSnoozeOrder = mockedSnoozeAction.mock.invocationCallOrder.at(-1)!;
-    const lastCompleteOrder = mockedCompleteAction.mock.invocationCallOrder.at(-1)!;
-    expect(recordOrder).toBeGreaterThan(lastSnoozeOrder);
-    expect(recordOrder).toBeGreaterThan(lastCompleteOrder);
-
-    // 5. The final router.back() pops to the Review tab it was pushed from.
     await waitFor(() => expect(view.getPathname()).toBe('/review'));
   });
 
-  it('an invalid reschedule date is rejected with a hint and never reaches the record', async () => {
+  it('rejects an impossible picked date without adding a decision', async () => {
     await renderDaily();
-    await waitFor(() => expect(screen.getByText('未完成的行动（4）')).toBeTruthy());
-
-    fireEvent.changeText(screen.getAllByPlaceholderText('排期到 YYYY-MM-DD（08:00）')[0]!, '2026-02-30');
-    fireEvent.press(screen.getAllByText('排期')[0]!);
-    expect(screen.getByText('日期格式应为 YYYY-MM-DD（例如 2026-09-24）')).toBeTruthy();
-
+    fireEvent.press(screen.getAllByText('选择排期日期')[0]!);
+    fireEvent.press(screen.getByText('选择无效日期'));
+    expect(screen.getByText('请选择尚未到达的日期（当地 08:00）')).toBeTruthy();
     fireEvent.press(screen.getByText('提交回顾'));
-    await waitFor(() => expect(mockedAddReviewRecord).toHaveBeenCalledTimes(1));
-
-    expect(mockedSnoozeAction).not.toHaveBeenCalled();
-    const record = mockedAddReviewRecord.mock.calls[0][1];
-    expect(record.answers.rescheduled).toEqual([]);
+    await waitFor(() => expect(mockedSubmit).toHaveBeenCalledTimes(1));
+    expect(mockedSubmit.mock.calls[0][1].record.answers.rescheduled).toEqual([]);
   });
 
-  it('a failed decision transaction STOPS the sequence — no record is written', async () => {
-    mockedCompleteAction.mockRejectedValueOnce(new Error('boom'));
-    await renderDaily();
-    await waitFor(() => expect(screen.getByText('未完成的行动（4）')).toBeTruthy());
-
+  it('preserves choices and attempt identity on failure, then retries successfully', async () => {
+    mockedSubmit.mockRejectedValueOnce(new Error('boom'));
+    const view = await renderDaily();
     fireEvent.press(screen.getAllByText('已完成')[0]!);
     fireEvent.press(screen.getByText('提交回顾'));
-
-    await waitFor(() =>
-      expect(screen.getByText('提交在中途失败，回顾记录未写入。请检查提示后重新提交。')).toBeTruthy(),
-    );
-    // The decision-transaction error is surfaced through its hook (the
-    // "请检查提示" hint is real, not decorative).
-    expect(screen.getByText('boom')).toBeTruthy();
-    expect(mockedCompleteAction).toHaveBeenCalledTimes(1);
-    expect(mockedAddReviewRecord).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByText(/本次变更均未保存.*boom/)).toBeTruthy());
+    expect(view.getPathname()).toBe('/review/daily');
+    expect(screen.getByText('已选：完成行动')).toBeTruthy();
+    fireEvent.press(screen.getByText('提交回顾'));
+    await waitFor(() => expect(mockedSubmit).toHaveBeenCalledTimes(2));
+    const first = mockedSubmit.mock.calls[0][1].record;
+    const second = mockedSubmit.mock.calls[1][1].record;
+    expect(second.id).toBe(first.id);
+    expect(second.answers).toEqual(first.answers);
+    await waitFor(() => expect(view.getPathname()).toBe('/review'));
   });
+
+  it('refreshes snapshot without clearing a valid explicit choice', async () => {
+    await renderDaily();
+    fireEvent.press(screen.getAllByText('已完成')[0]!);
+    mockedSnapshot.mockResolvedValueOnce({ ...dataRef.snapshot, projectsMissingActions: [] });
+    fireEvent.press(screen.getByText('刷新回顾数据'));
+    await waitFor(() => expect(screen.queryByText('缺少行动的项目')).toBeNull());
+    expect(screen.getByText('已选：完成行动')).toBeTruthy();
+    fireEvent.press(screen.getByText('提交回顾'));
+    await waitFor(() => expect(mockedSubmit).toHaveBeenCalledTimes(1));
+    expect(mockedSubmit.mock.calls[0][1].record.answers.completedActionIds).toEqual(['a-1']);
+  });
+
+  it('shows load errors and permits a successful retry', async () => {
+    mockedSnapshot.mockRejectedValue(new Error('read failed'));
+    await renderDaily();
+    await waitFor(() => expect(screen.getByText(/加载回顾数据失败/)).toBeTruthy());
+    mockedSnapshot.mockImplementation(async () => dataRef.snapshot);
+    fireEvent.press(screen.getByText('重试加载'));
+    await waitFor(() => expect(screen.getByText('未完成的行动（4）')).toBeTruthy());
+  });
+});
+
+
+it('guards a second submit while the first transaction is still pending', async () => {
+  let finish: () => void = () => undefined;
+  mockedSubmit.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+  await renderDaily();
+  const submitButton = screen.getByText('提交回顾');
+  fireEvent.press(submitButton);
+  fireEvent.press(submitButton);
+  expect(mockedSubmit).toHaveBeenCalledTimes(1);
+  await act(async () => finish());
 });

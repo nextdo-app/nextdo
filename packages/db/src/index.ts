@@ -113,6 +113,10 @@ export type { CompletedFocusSessionRow } from './queries/focus';
 // Review records: the append + the completion trail + the snapshot builders.
 export {
   addReviewRecord,
+  submitReview,
+  getReviewDetails,
+  listReviewCompletions,
+  type ReviewCompletion,
   buildDailyReviewSnapshot,
   buildWeeklyReviewSnapshot,
   listCompletionRecords,

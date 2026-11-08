@@ -75,6 +75,10 @@ jest.mock('@nextdo/db', () => {
     listScheduledReminders: async () => [],
     seedDefaultContexts: async () => 0,
     isReactNativeRuntime: () => false,
+    getReviewDetails: jest.fn(async (_db: unknown, id: string) => {
+      const record = recordsRef.records.find((entry) => entry.id === id);
+      return record === undefined ? null : { record, currentTitles: { 'c-1': '当前行动名' } };
+    }),
     reviewRecordsWatchQuery: () => ({
       compile: () => ({ sql: 'SELECT 1', parameters: [] }),
       execute: async () => [],
@@ -113,7 +117,12 @@ jest.mock('expo-notifications', () => mockExpoNotifications);
 
 import { mockExpoNotifications } from './mocks/expo-notifications';
 
-import { renderRouter, screen, waitFor } from 'expo-router/testing-library';
+import { act, fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
+
+import { getReviewDetails } from '@nextdo/db';
+const mockedDetails = getReviewDetails as jest.Mock;
+
+beforeEach(() => { jest.clearAllMocks(); });
 
 describe('Review tab', () => {
   it('shows the two entry cards and the history trail (kind + date + digest)', async () => {
@@ -126,7 +135,66 @@ describe('Review tab', () => {
     // Both records: kind tags + digests.
     expect(screen.getByText('日常')).toBeTruthy();
     expect(screen.getByText('每周')).toBeTruthy();
-    expect(screen.getByText('完成 1 · 排期 0 · 明日必做 0')).toBeTruthy();
+    expect(screen.getByText('完成 1 · 排期 0 · 安排明日 0 · 暂不处理 0')).toBeTruthy();
     expect(screen.getByText('项目 0 · 待跟进 0 · Someday 0')).toBeTruthy();
+  });
+});
+
+
+describe('Review details', () => {
+  it('opens a history card and labels old current-title fallbacks honestly', async () => {
+    const view = renderRouter('app', { initialUrl: '/review' });
+    await waitFor(() => expect(screen.getByText('历史记录')).toBeTruthy());
+    fireEvent.press(screen.getByRole('button', { name: /查看日常回顾/ }));
+    await waitFor(() => expect(view.getPathname()).toBe('/review/r-1'));
+    await waitFor(() => expect(screen.getByText('本次标记完成')).toBeTruthy());
+    expect(screen.getAllByText('当前行动名（当前标题）')).toHaveLength(2);
+    expect(screen.getByText('回顾时未完成')).toBeTruthy();
+    expect(screen.getByText('本次排期')).toBeTruthy();
+  });
+
+  it('prefers captured titles and displays recorded dates and missing references', async () => {
+    const old = recordsRef.records[0]!;
+    mockedDetails.mockResolvedValueOnce({
+      record: { ...old, snapshot: { ...old.snapshot, titles: { 'c-1': '保存的原名' } }, answers: {
+        completedActionIds: ['c-1'], rescheduled: [{ actionId: 'missing', toDate: '2026-09-25T08:00:00.000Z' }],
+        skippedNoted: ['missing'], tomorrowMustDo: ['c-1'],
+      } }, currentTitles: { 'c-1': '改名后的标题' },
+    });
+    renderRouter('app', { initialUrl: '/review/r-1' });
+    await waitFor(() => expect(screen.getByText('本次排期')).toBeTruthy());
+    expect(screen.getAllByText('保存的原名')).toHaveLength(2);
+    expect(screen.queryByText(/改名后的标题/)).toBeNull();
+    expect(screen.getByText('标题不可用（missing）')).toBeTruthy();
+    expect(screen.getByText(/标题不可用（missing） →/)).toBeTruthy();
+    expect(screen.getByText('安排到次日（按当前时区重算）')).toBeTruthy();
+  });
+
+  it('renders all legacy weekly checklist sections', async () => {
+    renderRouter('app', { initialUrl: '/review/r-2' });
+    await waitFor(() => expect(screen.getByText('项目状态决定')).toBeTruthy());
+    expect(screen.getByText('Someday 决定')).toBeTruthy();
+    expect(screen.getByText('本次跟进（仅记录）')).toBeTruthy();
+    expect(screen.getByText('收件箱已清空：是')).toBeTruthy();
+    expect(screen.getByText('日程安排合理：是')).toBeTruthy();
+  });
+
+  it('distinguishes loading from missing and offers a back path', async () => {
+    let resolve: (value: null) => void = () => undefined;
+    mockedDetails.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    renderRouter('app', { initialUrl: '/review/missing' });
+    await waitFor(() => expect(screen.getByText('加载中…')).toBeTruthy());
+    expect(screen.queryByText('找不到这条回顾记录。')).toBeNull();
+    await act(async () => resolve(null));
+    expect(screen.getByText('找不到这条回顾记录。')).toBeTruthy();
+    expect(screen.getByText('← 回顾')).toBeTruthy();
+  });
+
+  it('shows a failed detail read and can retry', async () => {
+    mockedDetails.mockRejectedValueOnce(new Error('read failed'));
+    renderRouter('app', { initialUrl: '/review/r-2' });
+    await waitFor(() => expect(screen.getByText('加载回顾详情失败：read failed')).toBeTruthy());
+    fireEvent.press(screen.getByText('重试加载'));
+    await waitFor(() => expect(screen.getByText('项目状态决定')).toBeTruthy());
   });
 });

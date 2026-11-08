@@ -4,7 +4,7 @@
  * append-only history (newest first — the tab's list query orders by
  * `at` ascending, so the trail is reversed client-side).
  */
-import { Card, EmptyState, Tag, colors } from '@nextdo/ui';
+import { Button, Card, EmptyState, Tag, colors } from '@nextdo/ui';
 import { FlatList, Pressable, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAppInsets } from '@/lib/use-app-insets';
@@ -22,13 +22,13 @@ const REVIEW_KIND_LABELS: Record<ReviewRecord['kind'], string> = {
 /** A compact one-line digest of what the review decided. */
 function recordSummary(record: ReviewRecord): string {
   if (record.kind === 'daily') {
-    return `完成 ${record.answers.completedActionIds.length} · 排期 ${record.answers.rescheduled.length} · 明日必做 ${record.answers.tomorrowMustDo.length}`;
+    return `完成 ${record.answers.completedActionIds.length} · 排期 ${record.answers.rescheduled.length} · 安排明日 ${record.answers.tomorrowMustDo.length} · 暂不处理 ${record.answers.skippedNoted.length}`;
   }
   return `项目 ${record.snapshot.projects.length} · 待跟进 ${record.snapshot.waitingFollowUps.length} · Someday ${record.snapshot.somedayCount}`;
 }
 
 export default function ReviewScreen() {
-  const { data, error } = useReviewRecords();
+  const { data, error, loading, reload } = useReviewRecords();
   // Newest first — the watch query orders by `at` ascending.
   const records = data.slice().reverse();
   const insets = useAppInsets();
@@ -40,7 +40,7 @@ export default function ReviewScreen() {
       style={{ paddingTop: topPadding }}
       className="flex-1 w-full bg-canvas px-4 pb-4 dark:bg-canvas-dark"
     >
-      <View className="flex-1 w-full max-w-4xl mx-auto">
+      <View className="flex-1 w-full">
       <Text className="mb-4 text-2xl font-bold tracking-tight text-ink dark:text-ink-dark">
         回顾
       </Text>
@@ -101,7 +101,9 @@ export default function ReviewScreen() {
           历史记录
         </Text>
         {error !== null ? (
-          <EmptyState title="加载回顾记录失败" hint={error} />
+          <View><EmptyState title="加载回顾记录失败" hint={error} /><Button label="重试加载" onPress={reload} /></View>
+        ) : loading ? (
+          <Text className="text-sm text-muted dark:text-muted-dark">加载中…</Text>
         ) : records.length === 0 ? (
           <EmptyState
             title="还没有回顾记录"
@@ -113,6 +115,9 @@ export default function ReviewScreen() {
             keyExtractor={(item) => item.id}
             contentContainerClassName="gap-2.5"
             renderItem={({ item }) => (
+              <Pressable accessibilityRole="button"
+                accessibilityLabel={`查看${REVIEW_KIND_LABELS[item.kind]}回顾：${formatLocalDate(item.at)}`}
+                onPress={() => router.push(`/review/${item.id}`)}>
               <Card className="gap-1.5 p-4">
                 <View className="flex-row items-center justify-between gap-2">
                   <Tag label={REVIEW_KIND_LABELS[item.kind]} tone="accent" />
@@ -123,7 +128,9 @@ export default function ReviewScreen() {
                 <Text className="text-xs text-muted dark:text-muted-dark">
                   {recordSummary(item)}
                 </Text>
+                <Text className="text-sm text-accent dark:text-accent-dark">查看详情 →</Text>
               </Card>
+              </Pressable>
             )}
           />
         )}

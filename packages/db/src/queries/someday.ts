@@ -9,10 +9,11 @@ import {
   toIso,
   type SomedayMaybeItem,
 } from '@nextdo/core';
-import { somedayMaybeItemFromRow, somedayMaybeItemToRow } from '../schema';
+import type { Kysely } from 'kysely';
+import { somedayMaybeItemFromRow, somedayMaybeItemToRow, type Database } from '../schema';
 import type { NextdoDb } from '../types';
 
-async function loadRow(db: NextdoDb, id: string) {
+async function loadRow(db: Kysely<Database>, id: string) {
   const row = await db
     .selectFrom('someday_maybe_items')
     .selectAll()
@@ -64,7 +65,7 @@ export async function updateSomedayMaybeItem(
 
 /** Soft delete (Trash = deleted_at set, domain-model.md). */
 export async function trashSomedayMaybeItem(
-  db: NextdoDb,
+  db: Kysely<Database>,
   args: { id: string; now: Date },
 ): Promise<void> {
   const nowIso = toIso(args.now);

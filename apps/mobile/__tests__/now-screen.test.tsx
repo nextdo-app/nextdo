@@ -21,9 +21,10 @@ const habitListRef: { current: unknown[] } = { current: [] };
 // Counts `completeAction` calls and lets a test flip it to a FAILURE, so
 // the block's post-write re-read can be pinned both ways (re-read on
 // success, NO re-read on failure).
-const completeCalls: { count: number; shouldFail: boolean; args: unknown[] } = {
+const completeCalls: { count: number; shouldFail: boolean; error: Error | null; args: unknown[] } = {
   count: 0,
   shouldFail: false,
+  error: null,
   args: [],
 };
 const updateCalls: { count: number; actions: unknown[] } = {
@@ -95,6 +96,7 @@ jest.mock('@nextdo/db', () => {
     completeAction: async (_db: unknown, args: unknown) => {
       completeCalls.count += 1;
       completeCalls.args.push(args);
+      if (completeCalls.error) throw completeCalls.error;
       if (completeCalls.shouldFail) throw new Error('complete rejected');
     },
     updateNextAction: async (_db: unknown, action: unknown) => {
@@ -168,7 +170,7 @@ jest.mock('expo-notifications', () => mockExpoNotifications);
 import { act, fireEvent, renderRouter, screen, testRouter, waitFor } from 'expo-router/testing-library';
 import { mockExpoNotifications } from './mocks/expo-notifications';
 import type { NextCandidate } from '@nextdo/core';
-import { localDateKey } from '@nextdo/core';
+import { localDateKey, ValidationNextdoError } from '@nextdo/core';
 import { __setEngineContextStoreForTests } from '@/lib/engine-context';
 
 /** A minimal eligible next-action candidate (the pool contract shape). */
@@ -207,7 +209,7 @@ function habitFixture(overrides: Record<string, unknown> = {}): Record<string, u
     estMinutes: 30,
     value: 4,
     cycleDays: 21,
-    startedAt: '2026-09-20T01:00:00.000Z',
+    startedAt: new Date().toISOString(),
     status: 'active',
     ...overrides,
   };
@@ -247,6 +249,7 @@ beforeEach(() => {
   habitListRef.current = [];
   completeCalls.count = 0;
   completeCalls.shouldFail = false;
+  completeCalls.error = null;
   completeCalls.args = [];
   updateCalls.count = 0;
   updateCalls.actions = [];
@@ -673,6 +676,16 @@ describe('Now screen', () => {
       expect(screen.getByText('还有 1 项…')).toBeTruthy();
     });
 
+    it('ended habits stay out of Now even if retained day rows are open', async () => {
+      habitListRef.current = [habitFixture({ status: 'completed' })];
+      habitDaysRef.current = [habitDayFixture()];
+      setPool([]);
+      renderRouter('app', { initialUrl: '/(tabs)/now' });
+      await flushRenders();
+      expect(screen.queryByRole('button', { name: '完成习惯：阅读' })).toBeNull();
+      expect(screen.queryByText('阅读')).toBeNull();
+    });
+
     it('zero habits → the block shows the guidance entry (not a silent 0/0 with no way out)', async () => {
       setPool([]);
       renderRouter('app', { initialUrl: '/(tabs)/now' });
@@ -849,6 +862,37 @@ describe('Now screen', () => {
       expect(habitReads.habits).toBeGreaterThan(readsBeforePress);
     });
 
+    it('refreshes habit progress after completing its execution-list row', async () => {
+      habitListRef.current = [habitFixture()];
+      habitDaysRef.current = [habitDayFixture()];
+      poolRef.current = {
+        actions: [{ ...nextAction({ id: 'hd-1' }), kind: 'habit', habitId: 'h-1', cycleDay: 1, cycleDays: 21 }],
+        calendar: [], projects: [],
+      };
+      renderRouter('app', { initialUrl: '/(tabs)/now' });
+      await waitFor(() => expect(screen.getByText('今天习惯 0/1')).toBeTruthy());
+      await waitFor(() => expect(screen.getByRole('button', { name: '完成' })).toBeTruthy());
+
+      habitDaysRef.current = [habitDayFixture({ status: 'done' })];
+      fireEvent.press(screen.getByRole('button', { name: '完成' }));
+
+      await waitFor(() => expect(screen.getByText('今天习惯 1/1')).toBeTruthy());
+      expect(screen.queryByRole('button', { name: '完成习惯：阅读' })).toBeNull();
+    });
+
+    it('shows a live window rejection when the displayed habit still has no window details', async () => {
+      habitListRef.current = [habitFixture()];
+      habitDaysRef.current = [habitDayFixture()];
+      completeCalls.error = new ValidationNextdoError('habit.checkin-outside-window', 'Outside window');
+      renderRouter('app', { initialUrl: '/(tabs)/now' });
+      await waitFor(() => expect(screen.getByText('今天习惯 0/1')).toBeTruthy());
+      fireEvent.press(screen.getByRole('button', { name: '完成习惯：阅读' }));
+
+      await waitFor(() => expect(screen.getByText('当前时间不在该习惯设定的时间窗口内')).toBeTruthy());
+      expect(screen.queryByText('不在打卡窗口内')).toBeNull();
+      expect(completeCalls.count).toBe(1);
+    });
+
     // The mirror of the case above: a REJECTED write must NOT trigger the
     // re-read.
     //
@@ -857,8 +901,24 @@ describe('Now screen', () => {
     // the same data and renders the same DOM. Verified by mutation —
     // turning the guard into `if (ok || !ok)` kept that assertion green.
     // The observable is the READ ITSELF, so count it.
-    it('does not re-read the habits when the check-in write is rejected', async () => {
-      habitListRef.current = [habitFixture()];
+    it('opens a window confirmation for the attempted habit and retries only after confirmation', async () => {
+      habitListRef.current = [habitFixture({ windowStart: '08:00', windowEnd: '09:00' })];
+      habitDaysRef.current = [habitDayFixture({ id: 'hd-window' })];
+      completeCalls.error = new ValidationNextdoError('habit.checkin-outside-window', 'Outside window');
+      setPool([]);
+      renderRouter('app', { initialUrl: '/(tabs)/now' });
+      await waitFor(() => expect(screen.getByText('今天习惯 0/1')).toBeTruthy());
+      fireEvent.press(screen.getByRole('button', { name: '完成习惯：阅读' }));
+      await waitFor(() => expect(screen.getByText('不在打卡窗口内')).toBeTruthy());
+      expect(completeCalls.count).toBe(1);
+      completeCalls.error = null;
+      fireEvent.press(screen.getByRole('button', { name: '确定打卡' }));
+      await waitFor(() => expect(completeCalls.count).toBe(2));
+      expect(completeCalls.args[1]).toMatchObject({ actionKind: 'habit', actionId: 'hd-window', overrideWindow: true });
+    });
+
+    it('does not re-read or open window confirmation when the check-in write is rejected', async () => {
+      habitListRef.current = [habitFixture({ windowStart: '08:00', windowEnd: '09:00' })];
       habitDaysRef.current = [habitDayFixture({ id: 'hd-1', status: 'open' })];
       setPool([]);
       renderRouter('app', { initialUrl: '/(tabs)/now' });
@@ -877,6 +937,7 @@ describe('Now screen', () => {
       await flushRenders();
 
       expect(completeCalls.count).toBe(1);
+      expect(screen.queryByText('不在打卡窗口内')).toBeNull();
       // No re-read was fired for the failed write.
       expect(habitReads.habits).toBe(readsBeforePress);
       // The row is unchanged and still checkable.
