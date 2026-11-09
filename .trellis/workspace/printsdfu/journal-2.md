@@ -222,3 +222,41 @@ User approved the prepared commit plan. Committed habit history and actionable r
 
 - Remote push and PR creation require a separate user request; neither was performed.
 - Native devices and live multi-device sync remain unverified. Deferred habit lifecycle policy and legacy review title limits remain documented.
+
+
+## Session 70: Ship compact desktop focus island
+<!-- trellis-session: v=2 fp=7ee0a2bbdee7f3a7 -->
+
+**Date**: 2026-11-10
+**Task**: Ship compact desktop focus island
+**Branch**: `fix/ime-enter`
+
+### Summary
+
+Accepted focus island with one main-window session owner, isolated desktop controls, and macOS 240x32 compact presentation at 0pt. Removed task verification files and local build output at user request; installers will be built with GitHub Actions.
+
+### Main Changes
+
+- Shared focus runtime and typed IPC keep main and island synchronized without duplicate database/effect owners.
+- Compact desktop island uses zero macOS top gap and 240x32 collapsed bounds; expanded controls retain accessible sizes.
+- Removed local Rust/Swift caches, web exports, temporary screenshots/harnesses, and isolated browser profiles; unrelated server changes remain untouched.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ad5ae8c` | feat(focus): add compact desktop focus island |
+
+### Testing
+
+- [OK] Full pnpm verify:web --no-serve passed: 100 suites / 1551 tests.
+- [OK] Rust check and 8 tests passed; final full-scope review found no blocking defect.
+- [OK] Browser and macOS native checks passed for compact geometry, accessibility, expansion, pause/resume, hide/show, and main restoration.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Build distribution packages with GitHub Actions. Long-background, sleep/wake, tray/Dock, native keyboard, and Windows/Linux runtime checks remain unverified.

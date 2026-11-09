@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 69
-- **Last Active**: 2026-11-08
+- **Total Sessions**: 70
+- **Last Active**: 2026-11-10
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~224 | Active |
+| `journal-2.md` | ~262 | Active |
 | `journal-1.md` | ~1990 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 70 | 2026-11-10 | Ship compact desktop focus island | `ad5ae8c` | `fix/ime-enter` |
 | 69 | 2026-11-08 | Commit habit history and actionable review repairs | `ca7efe0` | `fix/habit-review-repairs` |
 | 68 | 2026-10-28 | 提醒同一时刻重复推送：派发按任务+时刻去重 | `2f9c685`, `e6b24d5` | `main` |
 | 67 | 2026-10-27 | 提醒只发一次 + 专注结束写入日历 | `84c5275`, `3b6b125` | `feat/single-reminder-and-focus-calendar` |
