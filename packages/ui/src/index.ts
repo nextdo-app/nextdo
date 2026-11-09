@@ -22,6 +22,8 @@ export { ContextChip, contextTone } from './components/context-chip';
 export type { ContextChipProps } from './components/context-chip';
 export { ProgressBar } from './components/progress-bar';
 export type { ProgressBarProps } from './components/progress-bar';
+export { FocusIsland } from './components/focus-island';
+export type { FocusIslandProps } from './components/focus-island';
 export { ValueChips } from './components/value-chips';
 export type { ValueChipsProps } from './components/value-chips';
 export { MarkdownNote } from './components/markdown-note';

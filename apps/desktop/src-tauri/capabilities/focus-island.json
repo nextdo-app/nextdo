@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "focus-island",
+  "description": "The focus capsule receives directed focus events; application commands are separately gated by its native window label.",
+  "windows": ["focus-island"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+}

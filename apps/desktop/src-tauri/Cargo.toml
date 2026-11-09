@@ -1,6 +1,6 @@
 [package]
 name = "nextdo-desktop"
-version = "0.1.9-beta.20"
+version = "0.1.9-beta.21"
 description = "Nextdo desktop shell (Tauri v2) — wraps the @nextdo/mobile web build"
 authors = ["Nextdo"]
 edition = "2021"
@@ -13,7 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2.11.6", features = ["tray-icon"] }
+tauri = { version = "2.11.6", features = ["tray-icon", "macos-private-api"] }
 tauri-plugin-stronghold = "2.3.2"
 # Local reminder delivery (task 09-30): the desktop webview calls
 # sendNotification / isPermissionGranted through this plugin. 2.4.0 is

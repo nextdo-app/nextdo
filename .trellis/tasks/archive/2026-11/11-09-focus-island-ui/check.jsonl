@@ -1,0 +1,11 @@
+{"file":".trellis/spec/app/index.md","reason":"Review app checklist across focus and root changes."}
+{"file":".trellis/spec/app/component-guidelines.md","reason":"Review shared presentation, themes and accessible controls."}
+{"file":".trellis/spec/app/hook-guidelines.md","reason":"Verify lifecycle results, time discipline and route re-entry."}
+{"file":".trellis/spec/app/state-management.md","reason":"Verify sole data owner and isolated per-second display rendering."}
+{"file":".trellis/spec/app/testing-guidelines.md","reason":"Check regressions exercise behavior with accurate mocks and fake time."}
+{"file":".trellis/spec/project/conventions.md","reason":"Review failure handling, runtime types and logging."}
+{"file":".trellis/spec/project/directory-structure.md","reason":"Check package exports, dependency direction and desktop/frontend separation."}
+{"file":".trellis/spec/project/quality-guidelines.md","reason":"Required final gate, browser screenshots and honest native coverage."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Check bridge payload validation, stale commands and state flow."}
+{"file":".trellis/tasks/11-09-focus-island-ui/research/existing-focus-flow.md","reason":"Protect existing entry points and pause/break/completion behavior."}
+{"file":".trellis/tasks/11-09-focus-island-ui/research/desktop-window-apis.md","reason":"Review window isolation, pinned API support and native acceptance limits."}

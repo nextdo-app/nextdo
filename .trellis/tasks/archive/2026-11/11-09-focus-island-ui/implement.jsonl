@@ -1,0 +1,12 @@
+{"file":".trellis/spec/app/index.md","reason":"App and Tauri web-shell development checklist."}
+{"file":".trellis/spec/app/component-guidelines.md","reason":"Shared UI placement, NativeWind tokens, accessibility and theme rules."}
+{"file":".trellis/spec/app/hook-guidelines.md","reason":"Data ownership, mutation outcomes, route lifecycle and sub-minute clock exception."}
+{"file":".trellis/spec/app/state-management.md","reason":"Database remains authoritative; avoid duplicate rows and per-second Context updates."}
+{"file":".trellis/spec/app/testing-guidelines.md","reason":"Router/fake-clock tests and DB-boundary mocks."}
+{"file":".trellis/spec/project/directory-structure.md","reason":"Cross-package boundaries and shared Expo frontend for Tauri."}
+{"file":".trellis/spec/project/conventions.md","reason":"Typed errors, logging, exports and injected timestamps."}
+{"file":".trellis/spec/project/quality-guidelines.md","reason":"Full web gate, browser evidence and CI-only installer packaging."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"One owner for typed IPC decoding and source identity."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Reuse focus timer and UI primitives; avoid new state/event frameworks."}
+{"file":".trellis/tasks/11-09-focus-island-ui/research/existing-focus-flow.md","reason":"Existing flows, entry points and state defects that extraction must preserve or correct."}
+{"file":".trellis/tasks/11-09-focus-island-ui/research/desktop-window-apis.md","reason":"Pinned Tauri APIs, custom-command security and background-window limits."}

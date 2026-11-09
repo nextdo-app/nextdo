@@ -24,6 +24,7 @@ type Session = {
 // factory may reference (babel hoisting whitelist).
 const mockState: { sessions: Session[] } = { sessions: [] };
 const mockDb = {
+  listFocusSessions: jest.fn(),
   startFocusSession: jest.fn(),
   recordPause: jest.fn(),
   completeFocusSession: jest.fn(),
@@ -60,8 +61,7 @@ jest.mock('@nextdo/db', () => {
     listScheduledReminders: async () => [],
     seedDefaultContexts: async () => 0,
     isReactNativeRuntime: () => false,
-    listFocusSessions: async (_db: unknown, options?: { actionId?: string }) =>
-      mockState.sessions.filter((s) => options?.actionId === undefined || s.actionId === options.actionId),
+    listFocusSessions: (...args: unknown[]) => mockDb.listFocusSessions(...args),
     // `mockDb` is declared after this factory but only touched when the
     // module is required — which now happens during import hoisting (the
     // focus-settings import pulls `@nextdo/db` in), so these go through
@@ -123,10 +123,27 @@ jest.mock('@powersync/react', () => {
 // Platform 'ios', so the real native adapter drives expo-notifications
 // (mocked: idle OS state — nothing pending, permission undetermined).
 jest.mock('expo-notifications', () => mockExpoNotifications);
+jest.mock('expo-calendar', () => ({
+  getCalendarPermissions: async () => ({ granted: false, status: 'denied' }),
+}));
+jest.mock('@/lib/notification-sound', () => ({
+  playFocusCompletionSound: jest.fn(async () => undefined),
+}));
+jest.mock('@/lib/focus-notification', () => ({
+  notifyFocusComplete: jest.fn(async () => undefined),
+  scheduleBreakEnd: jest.fn(async () => undefined),
+  cancelBreakEnd: jest.fn(async () => undefined),
+  notifyBreakComplete: jest.fn(),
+}));
 
 import { mockExpoNotifications } from './mocks/expo-notifications';
 
-import { fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
+import { act, fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
+import { router } from 'expo-router';
+import { renderHook } from '@testing-library/react-native';
+import { useFocusRuntime } from '@/hooks/use-focus-runtime';
+import { playFocusCompletionSound } from '@/lib/notification-sound';
+import { notifyBreakComplete } from '@/lib/focus-notification';
 import { ValidationNextdoError } from '@nextdo/core';
 import { FOCUS_SETTINGS_KEY, __setFocusSettingsStoreForTests } from '@/lib/focus-settings';
 
@@ -167,21 +184,29 @@ beforeEach(() => {
   jest.clearAllMocks();
   focusStore.map.clear();
   __setFocusSettingsStoreForTests(focusStore);
+  mockDb.listFocusSessions.mockImplementation(
+    async (_db: unknown, options?: { actionId?: string }) =>
+      mockState.sessions.filter(
+        (session) => options?.actionId === undefined || session.actionId === options.actionId,
+      ),
+  );
   mockDb.addInboxItem.mockImplementation(async (_db: unknown, item: unknown) => item);
-  mockDb.startFocusSession.mockImplementation(async (_db: unknown, args: { now: Date; plannedMinutes: number | null; mode: string }) => {
-    const session: Session = {
-      id: 's-new',
-      actionId: 'f-1',
-      actionKind: 'next',
-      mode: args.mode as 'preset' | 'free',
-      plannedMinutes: args.plannedMinutes,
-      startedAt: args.now.toISOString(),
-      pausedSec: 0,
-      status: 'active',
-    };
-    mockState.sessions = [...mockState.sessions, session];
-    return session;
-  });
+  mockDb.startFocusSession.mockImplementation(
+    async (_db: unknown, args: { now: Date; plannedMinutes: number | null; mode: string }) => {
+      const session: Session = {
+        id: 's-new',
+        actionId: 'f-1',
+        actionKind: 'next',
+        mode: args.mode as 'preset' | 'free',
+        plannedMinutes: args.plannedMinutes,
+        startedAt: args.now.toISOString(),
+        pausedSec: 0,
+        status: 'active',
+      };
+      mockState.sessions = [...mockState.sessions, session];
+      return session;
+    },
+  );
   mockDb.recordPause.mockImplementation(
     async (_db: unknown, args: { sessionId: string; pausedSec: number }) => {
       const session = mockState.sessions.find((s) => s.id === args.sessionId);
@@ -189,26 +214,202 @@ beforeEach(() => {
       return session;
     },
   );
-  mockDb.completeFocusSession.mockImplementation(async (_db: unknown, args: { sessionId: string }) => {
-    const session = mockState.sessions.find((s) => s.id === args.sessionId);
-    if (session !== undefined) {
-      session.status = 'completed';
-      session.endedAt = new Date().toISOString();
-    }
-    return session;
-  });
-  mockDb.abandonFocusSession.mockImplementation(async (_db: unknown, args: { sessionId: string }) => {
-    const session = mockState.sessions.find((s) => s.id === args.sessionId);
-    if (session !== undefined) {
-      session.status = 'abandoned';
-      session.endedAt = new Date().toISOString();
-    }
-    return session;
-  });
+  mockDb.completeFocusSession.mockImplementation(
+    async (_db: unknown, args: { sessionId: string }) => {
+      const session = mockState.sessions.find((s) => s.id === args.sessionId);
+      if (session !== undefined) {
+        session.status = 'completed';
+        session.endedAt = new Date().toISOString();
+      }
+      return session;
+    },
+  );
+  mockDb.abandonFocusSession.mockImplementation(
+    async (_db: unknown, args: { sessionId: string }) => {
+      const session = mockState.sessions.find((s) => s.id === args.sessionId);
+      if (session !== undefined) {
+        session.status = 'abandoned';
+        session.endedAt = new Date().toISOString();
+      }
+      return session;
+    },
+  );
   mockDb.completeAction.mockResolvedValue(undefined);
 });
 
 describe('Focus screen', () => {
+  it('blocks auto-start after a failed recovery and retries the existing session', async () => {
+    seedActiveSession();
+    mockDb.listFocusSessions.mockRejectedValueOnce(new Error('session read failed'));
+    renderRouter('app', { initialUrl: '/focus/f-1?kind=next&preset=2&autoStart=1' });
+    await waitFor(() => expect(screen.getByText('session read failed')).toBeTruthy());
+    expect(screen.queryByText('选择本次专注时长')).toBeNull();
+    expect(mockDb.startFocusSession).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByText('重试读取专注记录'));
+    await waitFor(() => expect(screen.getByText('暂停')).toBeTruthy());
+    expect(screen.queryByText('session read failed')).toBeNull();
+    expect(mockDb.startFocusSession).not.toHaveBeenCalled();
+    expect(mockState.sessions).toHaveLength(1);
+  });
+
+  it('waits for the new action recovery before starting after a same-turn attachment', async () => {
+    const { result } = renderHook(() => useFocusRuntime());
+    act(() => {
+      result.current.attach('f-1', 'next');
+    });
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    seedActiveSession({ actionId: 'f-other' });
+    await act(async () => {
+      expect(result.current.attach('f-other', 'next')).toBe(true);
+      expect(await result.current.start(25)).toBe(false);
+    });
+    await waitFor(() => expect(result.current.session?.actionId).toBe('f-other'));
+    expect(mockDb.startFocusSession).not.toHaveBeenCalled();
+  });
+
+  it('ignores an old recovery result after another action has attached', async () => {
+    const oldSession = seedActiveSession();
+    let finishOldRead: (sessions: Session[]) => void = () => undefined;
+    mockDb.listFocusSessions.mockImplementationOnce(
+      () =>
+        new Promise<Session[]>((resolve) => {
+          finishOldRead = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useFocusRuntime());
+    act(() => {
+      result.current.attach('f-1', 'next');
+    });
+    act(() => {
+      result.current.attach('f-other', 'next');
+    });
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    await act(async () => {
+      finishOldRead([oldSession]);
+    });
+    expect(result.current.action?.id).toBe('f-other');
+    expect(result.current.session).toBeNull();
+    expect(result.current.view.sessionId).toBeNull();
+  });
+
+  it('collapses without stopping or recreating the session', async () => {
+    seedActiveSession({ startedAt: minutesAgo(2) });
+    renderRouter('app', { initialUrl: '/focus/f-1?kind=next' });
+    await waitFor(() => expect(screen.getByText('暂停')).toBeTruthy());
+    fireEvent.press(screen.getByLabelText('收起专注岛'));
+    expect(screen.queryByText('暂停')).toBeNull();
+    act(() => {
+      jest.advanceTimersByTime(30_000);
+    });
+    expect(screen.getByText('22:30')).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('展开专注岛'));
+    expect(screen.getByText('暂停')).toBeTruthy();
+    expect(mockDb.startFocusSession).not.toHaveBeenCalled();
+    expect(mockState.sessions).toHaveLength(1);
+  });
+
+  it('keeps a pause across route navigation and rejects another live action', async () => {
+    seedActiveSession();
+    renderRouter('app', { initialUrl: '/focus/f-1?kind=next' });
+    await waitFor(() => expect(screen.getByText('暂停')).toBeTruthy());
+    fireEvent.press(screen.getByText('暂停'));
+    act(() => {
+      router.push('/now');
+    });
+    act(() => {
+      jest.advanceTimersByTime(10_000);
+      router.push('/focus/f-other?kind=next');
+    });
+    await waitFor(() => expect(screen.getByText('已有专注进行中')).toBeTruthy());
+    fireEvent.press(screen.getByText('返回当前专注'));
+    await waitFor(() => expect(screen.getByText('已暂停')).toBeTruthy());
+    fireEvent.press(screen.getByText('继续'));
+    await waitFor(() => expect(mockDb.recordPause).toHaveBeenCalledTimes(1));
+    expect(mockDb.recordPause.mock.calls[0][1].pausedSec).toBe(10);
+    expect(mockDb.startFocusSession).not.toHaveBeenCalled();
+  });
+
+  it('keeps the paused state on failed resume, then retries the write', async () => {
+    seedActiveSession();
+    mockDb.recordPause.mockRejectedValueOnce(new Error('pause write failed'));
+    renderRouter('app', { initialUrl: '/focus/f-1?kind=next' });
+    await waitFor(() => expect(screen.getByText('暂停')).toBeTruthy());
+    fireEvent.press(screen.getByText('暂停'));
+    fireEvent.press(screen.getByText('继续'));
+    await waitFor(() => expect(screen.getByText('pause write failed')).toBeTruthy());
+    expect(screen.getByText('已暂停')).toBeTruthy();
+    fireEvent.press(screen.getByText('继续'));
+    await waitFor(() => expect(screen.getByText('暂停')).toBeTruthy());
+    expect(mockDb.recordPause).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not report completion after a failed write or count a pause twice on retry', async () => {
+    seedActiveSession();
+    mockDb.completeFocusSession.mockRejectedValueOnce(new Error('end write failed'));
+    renderRouter('app', { initialUrl: '/focus/f-1?kind=next' });
+    await waitFor(() => expect(screen.getByText('暂停')).toBeTruthy());
+    fireEvent.press(screen.getByText('暂停'));
+    act(() => {
+      jest.advanceTimersByTime(6_000);
+    });
+    fireEvent.press(screen.getByText('结束专注'));
+    await waitFor(() => expect(screen.getByText('end write failed')).toBeTruthy());
+    expect(screen.queryByText('专注已完成')).toBeNull();
+    expect(screen.getByText('已暂停')).toBeTruthy();
+    expect(mockState.sessions[0]?.pausedSec).toBe(6);
+    act(() => {
+      jest.advanceTimersByTime(4_000);
+    });
+    fireEvent.press(screen.getByText('结束专注'));
+    await waitFor(() => expect(screen.getByText('专注已完成')).toBeTruthy());
+    expect(mockState.sessions[0]?.pausedSec).toBe(10);
+    expect(mockDb.completeAction).not.toHaveBeenCalled();
+  });
+
+  it('natural break expiry leaves the countdown and exposes the completion choice', async () => {
+    seedActiveSession();
+    renderRouter('app', { initialUrl: '/focus/f-1?kind=next' });
+    await waitFor(() => expect(screen.getByText('结束专注')).toBeTruthy());
+    fireEvent.press(screen.getByText('结束专注'));
+    await waitFor(() => expect(screen.getByText('5 分钟')).toBeTruthy());
+    fireEvent.press(screen.getByText('5 分钟'));
+    expect(screen.getByText('休息中')).toBeTruthy();
+    act(() => {
+      jest.advanceTimersByTime(301_000);
+    });
+    expect(screen.getByText('休息结束')).toBeTruthy();
+    expect(screen.queryByText('结束休息')).toBeNull();
+    expect(notifyBreakComplete).toHaveBeenCalledTimes(1);
+    fireEvent.press(screen.getByText('继续'));
+    expect(screen.getByText('完成行动')).toBeTruthy();
+  });
+
+  it('does not repeat a time-up effect after collapse and route re-entry', async () => {
+    seedActiveSession({ startedAt: minutesAgo(26) });
+    renderRouter('app', { initialUrl: '/focus/f-1?kind=next' });
+    await waitFor(() => expect(screen.getByText('时间到')).toBeTruthy());
+    fireEvent.press(screen.getByLabelText('收起专注岛'));
+    act(() => {
+      router.push('/now');
+      router.push('/focus/f-1?kind=next');
+    });
+    await waitFor(() => expect(screen.getByText('时间到')).toBeTruthy());
+    act(() => {
+      jest.advanceTimersByTime(2_000);
+    });
+    expect(playFocusCompletionSound).toHaveBeenCalledTimes(1);
+  });
+
+  it('serializes rapid start presses before the write resolves', async () => {
+    renderRouter('app', { initialUrl: '/focus/f-1?kind=next' });
+    await waitFor(() => expect(screen.getByText('25 分钟')).toBeTruthy());
+    act(() => {
+      fireEvent.press(screen.getByText('25 分钟'));
+      fireEvent.press(screen.getByText('25 分钟'));
+    });
+    await waitFor(() => expect(screen.getByText('暂停')).toBeTruthy());
+    expect(mockDb.startFocusSession).toHaveBeenCalledTimes(1);
+  });
   it('with no active session: the pick step offers 15/25/45/60/free', async () => {
     renderRouter('app', { initialUrl: '/focus/f-1?kind=next' });
     await waitFor(() => expect(screen.getByText('选择本次专注时长')).toBeTruthy());
@@ -296,14 +497,20 @@ describe('Focus screen', () => {
 
     fireEvent.press(screen.getByText('完成行动'));
     await waitFor(() => expect(mockDb.completeAction).toHaveBeenCalledTimes(1));
-    expect(mockDb.completeAction.mock.calls[0][1]).toMatchObject({ actionKind: 'next', actionId: 'f-1' });
+    expect(mockDb.completeAction.mock.calls[0][1]).toMatchObject({
+      actionKind: 'next',
+      actionId: 'f-1',
+    });
     // Deep-loaded stack has no parent → goBack replaces to the Now tab.
     await waitFor(() => expect(view.getPathname()).toBe('/now'));
   });
 
   it.each([
     [new Error('storage write failed'), 'storage write failed'],
-    [new ValidationNextdoError('habit.checkin-date', 'Invalid habit date'), '只能打卡今天或补卡昨天，请刷新后重试'],
+    [
+      new ValidationNextdoError('habit.checkin-date', 'Invalid habit date'),
+      '只能打卡今天或补卡昨天，请刷新后重试',
+    ],
   ])('keeps a rejected habit completion visible and allows retry: %s', async (error, message) => {
     seedActiveSession({ actionKind: 'habit' });
     mockDb.completeAction.mockRejectedValueOnce(error);
@@ -317,7 +524,9 @@ describe('Focus screen', () => {
     expect(view.getPathname()).toBe('/focus/f-1');
     expect(mockState.sessions[0]?.status).toBe('completed');
 
-    await waitFor(() => expect(screen.getByRole('button', { name: '完成行动', disabled: false })).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '完成行动', disabled: false })).toBeTruthy(),
+    );
     fireEvent.press(screen.getByRole('button', { name: '完成行动', disabled: false }));
     await waitFor(() => expect(mockDb.completeAction).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(view.getPathname()).toBe('/now'));
@@ -348,7 +557,12 @@ describe('Focus screen', () => {
   });
 
   it('terminal-only rows fall back to the pick step', async () => {
-    seedActiveSession({ id: 's-old', status: 'completed', startedAt: minutesAgo(300), endedAt: minutesAgo(275) });
+    seedActiveSession({
+      id: 's-old',
+      status: 'completed',
+      startedAt: minutesAgo(300),
+      endedAt: minutesAgo(275),
+    });
     renderRouter('app', { initialUrl: '/focus/f-1?kind=next' });
     await waitFor(() => expect(screen.getByText('选择本次专注时长')).toBeTruthy());
     expect(screen.queryByText('时间到')).toBeNull();
@@ -440,7 +654,12 @@ describe('Focus screen', () => {
     await waitFor(() =>
       expect(mockDb.startFocusSession).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ actionId: 'f-1', actionKind: 'next', mode: 'preset', plannedMinutes: 2 }),
+        expect.objectContaining({
+          actionId: 'f-1',
+          actionKind: 'next',
+          mode: 'preset',
+          plannedMinutes: 2,
+        }),
       ),
     );
     await waitFor(() => expect(screen.getByText('结束专注')).toBeTruthy());

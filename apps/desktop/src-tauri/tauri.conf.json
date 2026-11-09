@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "identifier": "com.nextdo.desktop",
   "productName": "Nextdo",
-  "version": "0.1.9-beta.20",
+  "version": "0.1.9-beta.21",
   "build": {
     "beforeDevCommand": "pnpm --filter @nextdo/mobile run web",
     "devUrl": "http://localhost:8081",
@@ -10,6 +10,7 @@
     "frontendDist": "http://127.0.0.1:52123"
   },
   "app": {
+    "macOSPrivateApi": true,
     "security": {
       "csp": null
     },
