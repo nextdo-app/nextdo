@@ -10,6 +10,7 @@
     "frontendDist": "http://127.0.0.1:52123"
   },
   "app": {
+    "macOSPrivateApi": true,
     "security": {
       "csp": null
     },

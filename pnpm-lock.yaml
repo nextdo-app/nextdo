@@ -230,6 +230,9 @@ importers:
       '@powersync/web':
         specifier: 2.3.1
         version: 2.3.1(@powersync/common@2.2.1)(@powersync/shared-internals@1.2.0(@powersync/common@2.2.1))
+      '@tauri-apps/api':
+        specifier: 2.11.1
+        version: 2.11.1
       '@tauri-apps/plugin-notification':
         specifier: 2.4.0
         version: 2.4.0

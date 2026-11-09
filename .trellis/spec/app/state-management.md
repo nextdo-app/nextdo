@@ -39,13 +39,20 @@
    device-local by definition. If a value should follow the user across devices, it
    belongs in the DB.
 
-## Focus Session (the one non-trivial store)
+## Focus Session (the app-lifetime owner)
 
 - A running focus session is **an `active` row in `focus_sessions` from the moment it
   starts** (domain/domain-model.md) — that row is the source of truth and makes
   kill/restart recovery trivial.
-- The Zustand `focus-store` holds only the lightweight handle (session id + display
-  tick), never a second copy of the fields.
+- `FocusProvider` mounts below the main window's PowerSync provider and above
+  navigation. `useFocusRuntime` owns transient pause/break/command state;
+  `useFocusSession` owns the database row. Do not add a second global row store.
+- Its Context carries low-frequency transitions only. `useFocusDisplay` owns
+  per-view one-second ticks and derives the clock from timestamps; ticks must not
+  re-render the provider or cross the desktop bridge.
+- The desktop capsule consumes a disposable presentation snapshot and sends
+  commands to main. It never initializes PowerSync or writes focus rows. See
+  [Focus Island](./focus-island.md) for the IPC and lifecycle contract.
 - Completion finalizes the row (`completed`) and marks the action complete **only** if
   the user confirms completion (timer end ≠ task complete); stopping early finalizes
   it as `abandoned` (domain/domain-model.md).

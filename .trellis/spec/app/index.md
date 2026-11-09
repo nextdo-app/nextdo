@@ -33,6 +33,7 @@
 | [State Management](./state-management.md) | Local-first state model, what goes in Zustand |
 | [Database Guidelines](./database-guidelines.md) | PowerSync schema, Kysely queries, sync rules |
 | [Testing Guidelines](./testing-guidelines.md) | `renderRouter` fake timers, navigation in tests, db mocks |
+| [Focus Island](./focus-island.md) | Main-owned focus lifecycle, desktop IPC, isolated capsule root |
 
 ---
 

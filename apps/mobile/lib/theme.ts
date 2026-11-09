@@ -43,6 +43,7 @@ import {
 } from 'react-native';
 import { useColorScheme as useNativeWindColorScheme } from 'nativewind';
 import { isReactNativeRuntime } from '@nextdo/db';
+import { isFocusIslandWindow } from './focus-island-desktop';
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 /** What the UI actually renders — 'system' is always resolved away. */
@@ -270,7 +271,7 @@ function computeSnapshot(
 
 let currentSnapshot: ThemeSnapshot = computeSnapshot(cachedPreference, authenticSystemScheme);
 // Sync web dark class at module load so initial paint is already synchronized
-applyWebDarkClass(currentSnapshot.isDark);
+if (!isFocusIslandWindow()) applyWebDarkClass(currentSnapshot.isDark);
 
 /** Push the stored PREFERENCE to the desktop shell. Passing the resolved
  *  scheme here pinned macOS's app-wide appearance, which also froze the web
@@ -286,6 +287,7 @@ function syncTauriWindowTheme(preference: ThemePreference): void {
 }
 
 function syncPlatformTheme(snapshot: ThemeSnapshot): void {
+  if (isFocusIslandWindow()) return;
   applyWebDarkClass(snapshot.isDark);
   syncMetaThemeColor(snapshot.isDark);
   syncTauriWindowTheme(snapshot.preference);
@@ -347,7 +349,7 @@ if (typeof webHost.window?.matchMedia === 'function') {
 }
 
 // 2. Tauri desktop native theme detection (queries macOS native appearance directly)
-if (webHost.window?.__TAURI_INTERNALS__?.invoke) {
+if (!isFocusIslandWindow() && webHost.window?.__TAURI_INTERNALS__?.invoke) {
   void webHost.window.__TAURI_INTERNALS__
     .invoke('get_system_theme', {})
     .then((theme) => {

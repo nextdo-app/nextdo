@@ -25,6 +25,8 @@ use std::sync::{Arc, Mutex};
 use tauri::Manager;
 use tauri_plugin_notification::NotificationExt;
 
+mod focus_island;
+
 // macOS calendar channel (task 10-23). EventKit only exists on macOS; the
 // other targets compile `calendar_stub.rs` under the same module name, so
 // `generate_handler!` below lists one set of paths on every platform and the
@@ -779,6 +781,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(OwnerTokenStore::default())
         .manage(DownloadState::default())
+        .manage(focus_island::FocusIslandState::default())
         // Local reminder delivery (task 09-30): registers the notify /
         // is_permission_granted / request_permission commands + the JS
         // init script. `init()` needs no extra setup code (unlike the
@@ -836,13 +839,18 @@ pub fn run() {
                 // on a REAL http origin (PowerSync's module worker is rejected
                 // under the `tauri://` custom-protocol's opaque origin).
                 let url = tauri::WebviewUrl::App(std::path::PathBuf::from(""));
-                tauri::WebviewWindowBuilder::new(app, "main", url)
+                let builder = tauri::WebviewWindowBuilder::new(app, "main", url)
                     .title("Nextdo")
                     .inner_size(1024.0, 720.0)
                     .min_inner_size(800.0, 560.0)
                     .resizable(true)
-                    .center()
-                    .build()?;
+                    .center();
+                // The main webview owns the capsule's writes and timer effects.
+                #[cfg(target_os = "macos")]
+                let builder = builder.background_throttling(
+                    tauri::utils::config::BackgroundThrottlingPolicy::Disabled,
+                );
+                builder.build()?;
             }
 
             // System tray icon & menu: allows running in background when closed.
@@ -856,10 +864,8 @@ pub fn run() {
                 .tooltip("Nextdo")
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.unminimize();
-                            let _ = window.set_focus();
+                        if let Err(error) = focus_island::restore_main(app) {
+                            eprintln!("restore main window: {error}");
                         }
                     }
                     "quit" => {
@@ -875,10 +881,8 @@ pub fn run() {
                     } = event
                     {
                         let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.unminimize();
-                            let _ = window.set_focus();
+                        if let Err(error) = focus_island::restore_main(app) {
+                            eprintln!("restore main window: {error}");
                         }
                     }
                 });
@@ -917,31 +921,65 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Close button hides window to tray/dock instead of quitting immediately.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let _ = window.hide();
-                api.prevent_close();
+                match window.label() {
+                    "main" => {
+                        let _ = window.hide();
+                        api.prevent_close();
+                    }
+                    focus_island::LABEL => {
+                        if let Err(error) = focus_island::hide(window.app_handle()) {
+                            eprintln!("hide focus island: {error}");
+                        }
+                        api.prevent_close();
+                    }
+                    _ => {}
+                }
+            } else if matches!(event, tauri::WindowEvent::ScaleFactorChanged { .. })
+                && window.label() == focus_island::LABEL
+            {
+                if let Err(error) = focus_island::position_window(window.app_handle(), false) {
+                    eprintln!("position focus island: {error}");
+                }
             }
         })
-        .invoke_handler(tauri::generate_handler![
-            save_owner_token,
-            load_owner_token,
-            stronghold_snapshot_path,
-            current_arch,
-            open_url,
-            download_update,
-            get_download_progress,
-            open_downloaded_file,
-            install_update_and_restart,
-            set_window_theme,
-            get_system_theme,
-            calendar::calendar_supported,
-            calendar::calendar_permission,
-            calendar::calendar_request_permission,
-            calendar::calendar_upsert_event,
-            calendar::calendar_delete_event,
-            calendar::calendar_open_settings
-        ])
+        .invoke_handler(|invoke| {
+            if !focus_island::permits_command(
+                invoke.message.webview_ref().label(),
+                invoke.message.command(),
+            ) {
+                invoke.resolver.reject("focus-island.command-forbidden");
+                return true;
+            }
+            let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
+                save_owner_token,
+                load_owner_token,
+                stronghold_snapshot_path,
+                current_arch,
+                open_url,
+                download_update,
+                get_download_progress,
+                open_downloaded_file,
+                install_update_and_restart,
+                set_window_theme,
+                get_system_theme,
+                calendar::calendar_supported,
+                calendar::calendar_permission,
+                calendar::calendar_request_permission,
+                calendar::calendar_upsert_event,
+                calendar::calendar_delete_event,
+                calendar::calendar_open_settings,
+                focus_island::focus_island_show,
+                focus_island::focus_island_hide,
+                focus_island::focus_island_resize,
+                focus_island::focus_island_open_main,
+                focus_island::focus_island_ready,
+                focus_island::focus_island_publish,
+                focus_island::focus_island_command,
+                focus_island::focus_island_reply
+            ];
+            handler(invoke)
+        })
         .build(tauri::generate_context!())
         .expect("error while building Nextdo desktop")
         .run(|app_handle, _event| {
@@ -949,13 +987,10 @@ pub fn run() {
             // `RunEvent::Reopen` only exists on macOS, so the whole arm is cfg-gated —
             // otherwise Windows/Linux fail with E0599 (variant not found).
             #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen { has_visible_windows, .. } = _event {
-                if !has_visible_windows {
-                    if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.unminimize();
-                        let _ = window.set_focus();
-                    }
+            if let tauri::RunEvent::Reopen { .. } = _event {
+                // The capsule may be visible while main is hidden/minimized.
+                if let Err(error) = focus_island::restore_main(app_handle) {
+                    eprintln!("restore main window: {error}");
                 }
             }
         });

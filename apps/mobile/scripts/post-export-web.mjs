@@ -50,8 +50,14 @@ if (fs.existsSync(indexPath)) {
   );
 
   // Inject PWA and iOS tags before </head>
+  // Expo's single-page output does not use app/+html.tsx.
   const pwaTags = `
     <!-- Nextdo PWA & iOS Safari Configuration -->
+    <script>
+      if (window.__NEXTDO_FOCUS_ISLAND__ === true) {
+        document.documentElement.setAttribute('data-focus-island', 'true');
+      }
+    </script>
     <link rel="manifest" href="/manifest.json" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -78,13 +84,16 @@ if (fs.existsSync(indexPath)) {
       html.dark, html.dark body {
         background-color: #171412;
       }
+      html[data-focus-island], html[data-focus-island] body, html[data-focus-island] #root {
+        background: transparent !important;
+      }
       /* Prevent iOS tap highlight and pull-down reload on standalone */
       * {
         -webkit-tap-highlight-color: transparent;
       }
     </style>
     <script>
-      if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+      if (!window.__NEXTDO_FOCUS_ISLAND__ && 'serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
         window.addEventListener('load', function() {
           navigator.serviceWorker.register('/sw.js').then(function(reg) {
             console.log('[Nextdo PWA] Service Worker registered:', reg.scope);
