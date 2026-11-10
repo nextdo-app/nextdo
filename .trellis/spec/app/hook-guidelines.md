@@ -121,3 +121,35 @@
 - Direct `expo-sqlite` / PowerSync API usage outside `packages/db` (exception: `@powersync/react` Provider/hooks per the Database Guidelines boundary).
 - `fetch`/network calls in hooks (the sync layer is the only network path).
 - Storing DB rows in a Zustand store "for convenience" (see State Management).
+
+## Action Detail Reads
+
+- **Scope / trigger:** Focus and re-clarify need the metadata of one action.
+- **Signature:** `getActionDetails(db, actionKind, actionId): Promise<ActionDetails | null>`
+  from `@nextdo/db`; `ActionDetails` contains `title`, `projectId`, and `contextIds`.
+- **Contract:** Query by ID and exclude soft-deleted rows. HabitDay titles come
+  from a live parent Habit in the same query. Calendar/habit project IDs are
+  `null`; habit contexts are `[]`. The query performs no writes.
+- **Validation / errors:** Missing/deleted actions or habit parents return `null`.
+  Database failures reject and the hook exposes its error. Null input clears old
+  metadata without a query; late results cannot replace a newer action's state.
+- **Cases:** An existing next action preserves its project and contexts; a
+  standalone action has no project; a deleted parent cannot supply a habit title.
+- **Tests:** `queries.action-details.test.ts` covers all kinds and deletion,
+  and compares returned rows on a larger SQLite fixture. `use-action-title.test.ts`
+  covers cleared input, stale reads and errors.
+- **Wrong vs correct:** Do not load an entire action/history table and call
+  `.find()` for one header. Call the ID lookup through `useActionTitle`.
+
+## Manual Sync Deadline
+
+`useSyncStatus(configured).syncNow()` has one eight-second deadline covering credential
+reads, connection and status waiting. Attach the timeout race before awaiting
+any stage: awaiting `connect()` before `Promise.race()` leaves a stalled connect
+outside the deadline and can produce an unhandled rejection.
+
+Pass an `AbortSignal` to `waitForStatus(predicate, signal)` and abort it on
+completion, timeout or unmount. Check cancellation after earlier awaits before
+starting the next stage. Cancellation stops this attempt's wait; it does not
+disconnect the shared background sync connection. Concurrent calls share one
+active attempt. Regression coverage lives in `use-sync-status.test.ts`.

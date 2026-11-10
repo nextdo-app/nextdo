@@ -17,7 +17,7 @@
  * version ≥ 1.24.0 — wiring it would make a UI feature depend on a deployment
  * upgrade, and it would throw against the current stack.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePowerSync, useStatus } from '@powersync/react';
 import {
   createPowerSyncConnector,
@@ -26,11 +26,7 @@ import {
   type StoredBackendConfig,
 } from '@nextdo/db';
 import { logger } from '@nextdo/core';
-import {
-  deriveSyncDisplay,
-  type ManualSyncState,
-  type SyncDisplay,
-} from '@/lib/sync-status';
+import { deriveSyncDisplay, type ManualSyncState, type SyncDisplay } from '@/lib/sync-status';
 
 /**
  * Bound on 「立即同步」 waiting for the stream to settle. The SDK retries a
@@ -58,6 +54,15 @@ export function useSyncStatus(configured: boolean): UseSyncStatusResult {
   const status = useStatus();
   const [pendingUploads, setPendingUploads] = useState(0);
   const [manual, setManual] = useState<ManualSyncState>(null);
+  const activeSyncRef = useRef<AbortController | null>(null);
+
+  useEffect(
+    () => () => {
+      activeSyncRef.current?.abort();
+      activeSyncRef.current = null;
+    },
+    [],
+  );
 
   // Queue depth, re-read on every SDK status change: a local write enqueueing
   // an upload and the queue draining afterwards both surface as status
@@ -102,55 +107,58 @@ export function useSyncStatus(configured: boolean): UseSyncStatusResult {
   );
 
   const syncNow = useCallback(async (): Promise<void> => {
+    if (activeSyncRef.current !== null) return;
+    const controller = new AbortController();
+    activeSyncRef.current = controller;
     setManual({ kind: 'running' });
 
-    let token: string | null = null;
-    let config: StoredBackendConfig | null = null;
-    try {
-      token = await getOwnerToken();
-      if (token !== null) config = await getStoredBackendConfig();
-    } catch (error) {
-      // `token` and `config` keep their initial nulls — the guard below is
-      // what reports the failure.
-      logger.warn(
-        'sync now: auth read failed',
-        error instanceof Error ? error : new Error(String(error)),
-      );
-    }
-    if (token === null || config === null) {
-      setManual({ kind: 'failed', reason: NOT_CONNECTED_MESSAGE });
-      return;
-    }
+    const sync = async (): Promise<void> => {
+      let token: string | null = null;
+      let config: StoredBackendConfig | null = null;
+      try {
+        token = await getOwnerToken();
+        if (controller.signal.aborted) return;
+        if (token !== null) config = await getStoredBackendConfig();
+      } catch (error) {
+        logger.warn(
+          'sync now: auth read failed',
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      }
+      if (controller.signal.aborted) return;
+      if (token === null || config === null) throw new Error(NOT_CONNECTED_MESSAGE);
 
-    const timerRef: { id: ReturnType<typeof setTimeout> | null } = { id: null };
-    try {
-      const timedOut = new Promise<never>((_resolve, reject) => {
-        timerRef.id = setTimeout(() => {
-          reject(new Error(SYNC_TIMEOUT_MESSAGE));
-        }, SYNC_NOW_TIMEOUT_MS);
-      });
       await powersync.connect(createPowerSyncConnector(config));
-      const settled = powersync.waitForStatus(
+      if (controller.signal.aborted) return;
+      await powersync.waitForStatus(
         (next) => next.connected && !next.downloading && !next.uploading,
+        controller.signal,
       );
-      // The timeout may win this race while `settled` is still pending (and it
-      // rejects later on a disconnect) — never leave that unhandled.
-      settled.catch(() => undefined);
-      await Promise.race([settled, timedOut]);
+    };
+    const cancelled = new Promise<never>((_resolve, reject) => {
+      controller.signal.addEventListener('abort', () => reject(new Error(SYNC_TIMEOUT_MESSAGE)), {
+        once: true,
+      });
+    });
+    const timer = setTimeout(() => controller.abort(), SYNC_NOW_TIMEOUT_MS);
+    try {
+      // Observe cancellation before awaiting any stage, including connect().
+      await Promise.race([sync(), cancelled]);
+      if (activeSyncRef.current !== controller) return;
+      // Connected and idle can still carry a failure from the last sync pass.
+      const after = powersync.currentStatus;
+      const failure = after.downloadError ?? after.uploadError;
+      setManual(failure ? { kind: 'failed', reason: failure.message } : { kind: 'ok' });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setManual({ kind: 'failed', reason: message });
-      return;
+      if (activeSyncRef.current === controller) {
+        const message = error instanceof Error ? error.message : String(error);
+        setManual({ kind: 'failed', reason: message });
+      }
     } finally {
-      if (timerRef.id !== null) clearTimeout(timerRef.id);
+      clearTimeout(timer);
+      controller.abort();
+      if (activeSyncRef.current === controller) activeSyncRef.current = null;
     }
-
-    // Connected and idle is not the same as "nothing went wrong": the SDK
-    // keeps the failure on the status until the next SUCCESSFUL pass, and a
-    // silent success report over a live failure is the one thing AC4 forbids.
-    const after = powersync.currentStatus;
-    const failure = after.downloadError ?? after.uploadError;
-    setManual(failure ? { kind: 'failed', reason: failure.message } : { kind: 'ok' });
   }, [powersync]);
 
   return { display, lastSyncedAt: status.lastSyncedAt, manual, syncNow };

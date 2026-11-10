@@ -1,7 +1,7 @@
 /**
  * Action-title loader (Re-clarify and Focus screens, design.md §4.3/§4.6):
  * the screen's header shows what is being worked on. Loads through the
- * canonical list query for the action's kind:
+ * indexed lookup for the action's kind:
  *
  * - next/calendar → the action row's title;
  * - habit → the HabitDay row (no title of its own) → the parent habit's
@@ -14,14 +14,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { usePowerSync } from '@powersync/react';
-import {
-  listCalendarActions,
-  listHabitDays,
-  listHabits,
-  listNextActions,
-  wrapDb,
-  type ActionKind,
-} from '@nextdo/db';
+import { getActionDetails, wrapDb, type ActionKind } from '@nextdo/db';
 import { logger } from '@nextdo/core';
 
 export interface UseActionTitleResult {
@@ -49,62 +42,28 @@ export function useActionTitle(
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (actionKind === null || actionId === null) return;
-    let cancelled = false;
     setTitle(null);
     setProjectId(null);
     setContextIds([]);
     setLoaded(false);
     setError(null);
+    if (actionKind === null || actionId === null) return;
+    let cancelled = false;
 
-    const settle = (
-      foundTitle: string | null,
-      foundProjectId: string | null = null,
-      foundContextIds: string[] = [],
-    ) => {
-      if (cancelled) return;
-      setTitle(foundTitle);
-      setProjectId(foundProjectId);
-      setContextIds(foundContextIds);
-      setLoaded(true);
-    };
-    const fail = (err: unknown) => {
-      if (cancelled) return;
-      logger.error('action title load failed', err instanceof Error ? err : new Error(String(err)));
-      setError(err instanceof Error ? err.message : String(err));
-      setLoaded(true);
-    };
-
-    if (actionKind === 'habit') {
-      // HabitDay has no title — resolve through the parent habit.
-      Promise.all([listHabitDays(db), listHabits(db)])
-        .then(([days, habits]) => {
-          const day = days.find((candidate) => candidate.id === actionId);
-          if (day === undefined) return settle(null);
-          const habit = habits.find((candidate) => candidate.id === day.habitId);
-          settle(habit?.title ?? null);
-        })
-        .catch(fail);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    if (actionKind === 'next') {
-      listNextActions(db)
-        .then((actions) => {
-          const found = actions.find((candidate) => candidate.id === actionId);
-          settle(found?.title ?? null, found?.projectId ?? null, found?.contextIds ?? []);
-        })
-        .catch(fail);
-    } else {
-      listCalendarActions(db)
-        .then((actions) => {
-          const found = actions.find((candidate) => candidate.id === actionId);
-          settle(found?.title ?? null, null, found?.contextIds ?? []);
-        })
-        .catch(fail);
-    }
+    getActionDetails(db, actionKind, actionId)
+      .then((details) => {
+        if (cancelled) return;
+        setTitle(details?.title ?? null);
+        setProjectId(details?.projectId ?? null);
+        setContextIds(details?.contextIds ?? []);
+        setLoaded(true);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        logger.error('action title load failed', err instanceof Error ? err : new Error(String(err)));
+        setError(err instanceof Error ? err.message : String(err));
+        setLoaded(true);
+      });
     return () => {
       cancelled = true;
     };

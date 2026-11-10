@@ -23,8 +23,7 @@ jest.mock('@nextdo/db', () => {
       compile: () => ({ sql: 'SELECT 1', parameters: [] }),
       execute: async () => [],
     }),
-    listNextActions: jest.fn(),
-    listCalendarActions: jest.fn(async () => []),
+    getActionDetails: jest.fn(),
     getStoredBackendConfig: async () => null,
     wrapDb: () => ({}),
   };
@@ -81,7 +80,7 @@ jest.mock('expo-router', () => ({
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { Platform } from 'react-native';
 import { ValidationNextdoError } from '@nextdo/core';
-import { applyClarify, listInboxItems, listNextActions, reclarifyAction } from '@nextdo/db';
+import { applyClarify, getActionDetails, listInboxItems, reclarifyAction } from '@nextdo/db';
 import { router } from 'expo-router';
 import { useProjects } from '@/hooks/use-projects';
 import { formatLocalDateTime } from '@/lib/format';
@@ -90,7 +89,7 @@ import { ClarifyWizard, WizardBody } from '../components/clarify-wizard';
 const mockedApplyClarify = applyClarify as jest.Mock;
 const mockedReclarifyAction = reclarifyAction as jest.Mock;
 const mockedListInboxItems = listInboxItems as jest.Mock;
-const mockedListNextActions = listNextActions as jest.Mock;
+const mockedGetActionDetails = getActionDetails as jest.Mock;
 const mockedUseProjects = useProjects as jest.Mock;
 
 const INBOX_ITEM = {
@@ -151,7 +150,7 @@ beforeEach(() => {
   mockInboxList.length = 0;
   mockedUseProjects.mockReturnValue({ data: [ACTIVE_PROJECT, ON_HOLD_PROJECT], error: null });
   mockedListInboxItems.mockResolvedValue([INBOX_ITEM]);
-  mockedListNextActions.mockResolvedValue([NEXT_ACTION]);
+  mockedGetActionDetails.mockResolvedValue(NEXT_ACTION);
   mockedApplyClarify.mockResolvedValue({ inboxId: 'inbox-1', outcome: { kind: 'next-action', source: 'clarified' }, createdIds: ['a1'] });
   mockedReclarifyAction.mockResolvedValue({ outcome: { kind: 'next-action', source: 'clarified' }, createdIds: ['a2'] });
 });
@@ -616,7 +615,7 @@ describe('ClarifyWizard — title loading', () => {
   });
 
   it('reclarify no longer shows a 场景 multi-select (#46: the feature is offline)', async () => {
-    mockedListNextActions.mockResolvedValue([{ ...NEXT_ACTION, contextIds: ['ctx-computer', 'ctx-phone'] }]);
+    mockedGetActionDetails.mockResolvedValue({ ...NEXT_ACTION, contextIds: ['ctx-computer', 'ctx-phone'] });
     render(<ClarifyWizard mode="reclarify" id="act-1" actionKind="next" />);
     await waitFor(() => expect(screen.getAllByText('这件事属于某个项目吗？').length).toBeGreaterThan(0));
     walkToActionForm();
