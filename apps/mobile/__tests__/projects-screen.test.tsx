@@ -34,6 +34,7 @@ const dataRef: {
 // below). Not a jest.fn: it must survive `jest.clearAllMocks()` so a test
 // can read the baseline taken AFTER mount.
 const habitReads = { habits: 0, days: 0 };
+const actionReads = { count: 0 };
 
 jest.mock('@nextdo/db', () => {
   const compilable = () => ({
@@ -86,7 +87,17 @@ jest.mock('@nextdo/db', () => {
       if (Number.isNaN(ms)) return false;
       return now.getTime() - ms >= 14 * 24 * 60 * 60 * 1000;
     },
-    listNextActions: async () => dataRef.nextActions,
+    listNextActions: async () => {
+      actionReads.count += 1;
+      return dataRef.nextActions;
+    },
+    getActionDetails: async (_db: unknown, kind: string, id: string) => {
+      const action = kind === 'next' ? dataRef.nextActions.find((row) => row.id === id) : null;
+      return action === null || action === undefined
+        ? null
+        : { title: action.title, projectId: action.projectId, contextIds: action.contextIds };
+    },
+    listFocusSessions: async () => [],
     listContexts: async () => dataRef.contexts,
     // The project's habit block (task 10-07) — `useProjectHabits` reads
     // both on every mount / reload. Without these the read throws inside
@@ -198,6 +209,7 @@ import {
   addNextAction,
   addProject,
   completeAction,
+  snoozeAction,
   startHabit,
   trashAction,
   trashHabit,
@@ -210,6 +222,7 @@ import { formatDeadline, localDateKey, ValidationNextdoError } from '@nextdo/cor
 const mockedAddProject = addProject as jest.Mock;
 const mockedAddNextAction = addNextAction as jest.Mock;
 const mockedCompleteAction = completeAction as jest.Mock;
+const mockedSnoozeAction = snoozeAction as jest.Mock;
 const mockedStartHabit = startHabit as jest.Mock;
 const mockedTrashAction = trashAction as jest.Mock;
 const mockedTrashProject = trashProject as jest.Mock;
@@ -274,6 +287,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   habitReads.habits = 0;
   habitReads.days = 0;
+  actionReads.count = 0;
   dataRef.contexts = [
     {
       id: 'c-1',
@@ -533,6 +547,7 @@ describe('Project detail', () => {
     expect(screen.queryByText('没有项目的行动')).toBeNull();
     expect(screen.queryByText('已完成的行动')).toBeNull();
     // Row actions.
+    expect(screen.getByText('专注')).toBeTruthy();
     expect(screen.getByText('完成')).toBeTruthy();
     expect(screen.getByText('稍后')).toBeTruthy();
     expect(screen.getByText('删除')).toBeTruthy();
@@ -573,6 +588,70 @@ describe('Project detail', () => {
         expect.objectContaining({ actionKind: 'next', actionId: 'a-1' }),
       ),
     );
+  });
+
+  it('opens the selected next action in focus and shows fresh actions on return', async () => {
+    const view = renderRouter('app', { initialUrl: '/projects/p-1' });
+    await waitFor(() => expect(screen.getByText('运行 baseline A')).toBeTruthy());
+
+    fireEvent.press(screen.getByRole('button', { name: '专注' }));
+
+    await waitFor(() => expect(view.getPathname()).toBe('/focus/a-1'));
+    await waitFor(() => expect(screen.getByText('选择本次专注时长')).toBeTruthy());
+    expect(screen.getByText('运行 baseline A')).toBeTruthy();
+
+    dataRef.nextActions = dataRef.nextActions.map((row) =>
+      row.id === 'a-1' ? { ...row, status: 'done' } : row,
+    );
+    fireEvent.press(screen.getByRole('button', { name: '← 返回' }));
+
+    // renderRouter remounts covered screens: this pins the return outcome,
+    // while the browser check verifies useFocusEffect on the retained screen.
+    await waitFor(() => expect(view.getPathname()).toBe('/projects/p-1'));
+    await waitFor(() => expect(screen.queryByText('运行 baseline A')).toBeNull());
+    expect(screen.getByText('论文实验')).toBeTruthy();
+  });
+
+  it.each([
+    ['完成', mockedCompleteAction],
+    ['归档', mockedUpdateProject],
+  ])('a failed %s leaves the action list intact without re-reading', async (label, mutation) => {
+    mutation.mockRejectedValueOnce(new Error('write rejected'));
+    renderRouter('app', { initialUrl: '/projects/p-1' });
+    await waitFor(() => expect(screen.getByText('运行 baseline A')).toBeTruthy());
+    const baseline = actionReads.count;
+
+    fireEvent.press(screen.getByRole('button', { name: label }));
+
+    await waitFor(() => expect(screen.getByText(/write rejected/)).toBeTruthy());
+    expect(actionReads.count).toBe(baseline);
+    expect(screen.getByText('运行 baseline A')).toBeTruthy();
+  });
+
+  it('keeps a failed snooze open and retries the same target before refreshing', async () => {
+    mockedSnoozeAction.mockRejectedValueOnce(new Error('snooze rejected'));
+    renderRouter('app', { initialUrl: '/projects/p-1' });
+    await waitFor(() => expect(screen.getByText('运行 baseline A')).toBeTruthy());
+    const baseline = actionReads.count;
+
+    fireEvent.press(screen.getByRole('button', { name: '稍后' }));
+    fireEvent.press(screen.getByRole('button', { name: /^10 分钟后/ }));
+
+    await waitFor(() => expect(screen.getByText('保存失败，请重试')).toBeTruthy());
+    expect(screen.getByText('稍后提醒')).toBeTruthy();
+    expect(actionReads.count).toBe(baseline);
+    expect(mockedSnoozeAction).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ actionKind: 'next', actionId: 'a-1' }),
+    );
+    const target = mockedSnoozeAction.mock.calls[0][1].snoozedUntil;
+
+    fireEvent.press(screen.getByRole('button', { name: '重试保存' }));
+
+    await waitFor(() => expect(screen.queryByText('稍后提醒')).toBeNull());
+    expect(mockedSnoozeAction).toHaveBeenCalledTimes(2);
+    expect(mockedSnoozeAction.mock.calls[1][1].snoozedUntil).toEqual(target);
+    expect(actionReads.count).toBeGreaterThan(baseline);
   });
 
   it('the add-action form submits with the projectId and the picked estimate', async () => {

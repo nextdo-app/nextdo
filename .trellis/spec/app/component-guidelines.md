@@ -80,6 +80,38 @@
   reminder. Reminders exist for ACTIONS only — `reminders.action_kind` has no
   `project`, so the project form shows the deadline alone.
 
+## Snooze Save and Retry
+
+- **Scope:** Both Now and project detail use the same `SnoozeSheet` save flow.
+- **Signature:** `onSelect(target: Date): Promise<boolean>` returns the local
+  transaction result. Only `true` closes the sheet; project reloads are also
+  conditional on success.
+- **Contract:** Keep the chosen target after failure and expose `重试保存`.
+  Retry uses that same target. Reopening the custom picker preserves its time.
+- **Errors:** `false` or rejection shows an inline save failure. Log unexpected
+  rejections. A target at or before injected `now` shows the past-time error
+  without calling the mutation.
+- **Cases:** A successful save closes; a failed save remains editable; repeated
+  taps while saving trigger one mutation. Disable dismissal until it settles.
+- **Tests:** `snooze-sheet.test.tsx` covers success, failure, rejected callbacks,
+  retained-target retries, elapsed targets and duplicate taps. Browser checks
+  must exercise both parent screens and verify the saved reminder time.
+- **Wrong vs correct:** Do not call `onClose()` immediately after a fire-and-forget
+  mutation. Await its result and preserve the user's selection on failure.
+
+## Project Focus and Completed Search
+
+- Project action rows offer `专注`, routing to `/focus/<id>?kind=next` through
+  the existing focus screen. The project reloads actions and habits on focus
+  return so completing an action there removes it from the open list.
+- Completed-action search filters the existing live rows by title or resolved
+  project name. Trim the query and compare case-insensitively; preserve the
+  completion-time order and each row's original kind/ID for restore.
+- An empty search result uses `没有匹配的已完成行动` and a clear-search action.
+  An empty underlying completion list keeps its existing onboarding message.
+- Tests: `projects-screen.test.tsx` covers focus routing, refresh and mutation
+  failures; `completed-screen.test.tsx` covers search and filtered restores.
+
 ## Clarify wizard (question steps)
 
 - **Answers carry equal visual weight.** Every answer to one question renders through

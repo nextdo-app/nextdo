@@ -1,6 +1,6 @@
 /**
  * The project detail route (design.md §4.4 — PRD R6): the project header
- * (title / status / value / outcome) + its OPEN next actions (complete /
+ * (title / status / value / outcome) + its OPEN next actions (focus / complete /
  * snooze / trash per row) + the inline add-action form (`addNextAction`
  * carrying the projectId).
  *
@@ -669,7 +669,7 @@ export default function ProjectDetailScreen() {
   const { data: actions, error: actionsError, reload } = useProjectActions(projectId);
   const now = useAppClock();
   const { data: habits, error: habitsError, reload: reloadHabits } = useProjectHabits(projectId, now);
-  useFocusEffect(useCallback(() => { reloadHabits(); }, [reloadHabits]));
+  useFocusEffect(useCallback(() => { reload(); reloadHabits(); }, [reload, reloadHabits]));
   const { error: addError } = useAddNextAction();
   const { complete, error: completeError } = useCompleteAction();
   const { snooze, error: snoozeError } = useSnoozeAction();
@@ -693,6 +693,7 @@ export default function ProjectDetailScreen() {
   const { update: updateProject, error: updateProjectError } = useUpdateProject();
   const insets = useAppInsets();
   const topPadding = Math.max(insets.top, 16);
+  const scrollViewRef = useRef<ScrollView>(null);
 
   if (projectId === null) {
     return (
@@ -720,8 +721,6 @@ export default function ProjectDetailScreen() {
     updateProjectError ??
     trashProjectError ??
     trashHabitError;
-
-  const scrollViewRef = useRef<ScrollView>(null);
 
   return (
     <KeyboardAvoidingView
@@ -778,13 +777,17 @@ export default function ProjectDetailScreen() {
                   <Button
                     label="归档"
                     variant="ghost"
-                    onPress={() => void updateProject({ project, patch: { status: 'on-hold' } }).then(reload)}
+                    onPress={() => void updateProject({ project, patch: { status: 'on-hold' } }).then((ok) => {
+                      if (ok) reload();
+                    })}
                   />
                 ) : (
                   <Button
                     label="恢复"
                     variant="ghost"
-                    onPress={() => void updateProject({ project, patch: { status: 'active' } }).then(reload)}
+                    onPress={() => void updateProject({ project, patch: { status: 'active' } }).then((ok) => {
+                      if (ok) reload();
+                    })}
                   />
                 )}
                 {armedProjectTrash ? (
@@ -872,11 +875,19 @@ export default function ProjectDetailScreen() {
                         <Tag label={`价值 ${action.value}`} />
                         <DeadlineChip deadline={action.deadline} now={now} />
                       </View>
-                      <View className="flex-row gap-2">
+                      <View className="flex-row flex-wrap gap-2">
+                        <Button
+                          className="min-h-11"
+                          label="专注"
+                          variant="secondary"
+                          onPress={() => router.push(`/focus/${action.id}?kind=next`)}
+                        />
                         <Button
                           label="完成"
                           variant="secondary"
-                          onPress={() => void complete({ actionKind: 'next', actionId: action.id }).then(reload)}
+                          onPress={() => void complete({ actionKind: 'next', actionId: action.id }).then((ok) => {
+                            if (ok) reload();
+                          })}
                         />
                         <Button label="稍后" variant="secondary" onPress={() => setSnoozeTarget(action.id)} />
                         <Button label="编辑" variant="ghost" onPress={() => setEditingActionId(action.id)} />
@@ -998,10 +1009,11 @@ export default function ProjectDetailScreen() {
         open={snoozeTarget !== null}
         now={now}
         onClose={() => setSnoozeTarget(null)}
-        onSelect={(target) => {
-          if (snoozeTarget !== null) {
-            void snooze({ actionKind: 'next', actionId: snoozeTarget, snoozedUntil: target }).then(reload);
-          }
+        onSelect={async (target) => {
+          if (snoozeTarget === null) return false;
+          const ok = await snooze({ actionKind: 'next', actionId: snoozeTarget, snoozedUntil: target });
+          if (ok) reload();
+          return ok;
         }}
       />
     </KeyboardAvoidingView>

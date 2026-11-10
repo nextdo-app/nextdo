@@ -9,8 +9,9 @@
  * row would fire within the desktop grace window / fail the native OS
  * schedule (R7: past rows are never (re)scheduled).
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, Text, View } from 'react-native';
+import { logger } from '@nextdo/core';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { Button } from '@nextdo/ui';
 import { DateTimePicker } from '@/components/datetime-picker';
@@ -18,13 +19,14 @@ import {
   commonSnoozeOption,
   customSnoozeSeed,
   parseLocalDateTimeString,
+  toLocalDateTimeString,
 } from '@/lib/snooze-options';
 
 export interface SnoozeSheetProps {
   open: boolean;
   /** Wall clock used for seed & common shortcut (hook-guidelines Rule 4). */
   now: Date;
-  onSelect: (target: Date) => void;
+  onSelect: (target: Date) => Promise<boolean>;
   onClose: () => void;
 }
 
@@ -54,6 +56,9 @@ export function SnoozeSheet({ open, now, onSelect, onClose }: SnoozeSheetProps) 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerValue, setPickerValue] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [selectedTarget, setSelectedTarget] = useState<Date | null>(null);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
 
   // The sheet stays mounted (the parent flips `open`) — reset the
   // transient picker state every time it opens fresh.
@@ -62,33 +67,58 @@ export function SnoozeSheet({ open, now, onSelect, onClose }: SnoozeSheetProps) 
       setPickerOpen(false);
       setPickerValue('');
       setError(null);
+      setSelectedTarget(null);
     }
   }, [open]);
 
   const common = commonSnoozeOption(now);
 
   function openCustomPicker() {
+    if (savingRef.current) return;
     setError(null);
-    setPickerValue(customSnoozeSeed(now));
+    setPickerValue(pickerValue || customSnoozeSeed(now));
     setPickerOpen(true);
   }
 
   function confirmCustom(value: string) {
     const target = parseLocalDateTimeString(value);
     if (target === null) return;
+    void save(target);
+  }
+
+  async function save(target: Date) {
+    if (savingRef.current) return;
     if (target.getTime() <= now.getTime()) {
       setError('所选时间已过，请选晚于现在的时间');
+      setSelectedTarget(null);
       return;
     }
-    onSelect(target);
-    onClose();
+    savingRef.current = true;
+    setSaving(true);
+    setError(null);
+    setSelectedTarget(target);
+    setPickerValue(toLocalDateTimeString(target));
+    try {
+      if (await onSelect(target)) onClose();
+      else setError('保存失败，请重试');
+    } catch (error) {
+      logger.error('snooze selection save failed', error instanceof Error ? error : new Error(String(error)));
+      setError('保存失败，请重试');
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }
+
+  function close() {
+    if (!savingRef.current) onClose();
   }
 
   return (
     <>
-      <Modal visible={open} transparent animationType="slide" onRequestClose={onClose}>
+      <Modal visible={open} transparent animationType="slide" onRequestClose={close}>
         <View className="flex-1 justify-end bg-black/40 md:items-center md:justify-center md:p-6">
-          <Pressable className="flex-1" onPress={onClose} />
+          <Pressable accessibilityLabel="关闭稍后提醒" accessibilityRole="button" disabled={saving} className="flex-1" onPress={close} />
           <View className="w-full items-center md:contents">
             <View
               style={{ paddingBottom: bottomPadding }}
@@ -109,8 +139,10 @@ export function SnoozeSheet({ open, now, onSelect, onClose }: SnoozeSheetProps) 
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="关闭"
-                  onPress={onClose}
-                  className="h-8 w-8 items-center justify-center rounded-full bg-surface-container/60 active:bg-surface-container dark:bg-surface-container-dark/60"
+                  accessibilityState={{ disabled: saving }}
+                  disabled={saving}
+                  onPress={close}
+                  className="h-11 w-11 items-center justify-center rounded-full bg-surface-container/60 active:bg-surface-container dark:bg-surface-container-dark/60"
                 >
                   <Text className="font-sans text-xs font-semibold text-muted dark:text-muted-dark">
                     ✕
@@ -123,11 +155,10 @@ export function SnoozeSheet({ open, now, onSelect, onClose }: SnoozeSheetProps) 
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={`${common.label}（${formatTargetTime(common.target, now)}）`}
+                  accessibilityState={{ disabled: saving }}
+                  disabled={saving}
                   className="flex-row items-center justify-between rounded-2xl border border-border/70 bg-surface-container/40 p-4 active:bg-surface-container/80 dark:border-border-dark/70 dark:bg-surface-container-dark/40 dark:active:bg-surface-container-dark/80"
-                  onPress={() => {
-                    onSelect(common.target);
-                    onClose();
-                  }}
+                  onPress={() => void save(common.target)}
                 >
                   <View className="flex-row items-center gap-3.5">
                     <View className="h-10 w-10 items-center justify-center rounded-xl bg-accent/10 dark:bg-accent-dark/15">
@@ -153,6 +184,8 @@ export function SnoozeSheet({ open, now, onSelect, onClose }: SnoozeSheetProps) 
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="自定义时间"
+                  accessibilityState={{ disabled: saving }}
+                  disabled={saving}
                   className="flex-row items-center justify-between rounded-2xl border border-border/70 bg-surface-container/40 p-4 active:bg-surface-container/80 dark:border-border-dark/70 dark:bg-surface-container-dark/40 dark:active:bg-surface-container-dark/80"
                   onPress={openCustomPicker}
                 >
@@ -177,16 +210,31 @@ export function SnoozeSheet({ open, now, onSelect, onClose }: SnoozeSheetProps) 
                 </Pressable>
               </View>
 
+              {selectedTarget !== null ? (
+                <View className="gap-2">
+                  <Text className="font-sans text-sm text-muted dark:text-muted-dark">
+                    提醒时间：{formatTargetTime(selectedTarget, now)}
+                  </Text>
+                  {saving ? (
+                    <Text accessibilityLiveRegion="polite" className="font-sans text-sm text-muted dark:text-muted-dark">
+                      正在保存…
+                    </Text>
+                  ) : (
+                    <Button label="重试保存" className="min-h-11" onPress={() => void save(selectedTarget)} />
+                  )}
+                </View>
+              ) : null}
+
               {error !== null ? (
                 <View className="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3">
-                  <Text className="font-sans text-sm font-semibold text-danger dark:text-danger-dark">
+                  <Text accessibilityRole="alert" className="font-sans text-sm font-semibold text-danger dark:text-danger-dark">
                     {error}
                   </Text>
                 </View>
               ) : null}
 
               <View className="pt-1">
-                <Button label="取消" variant="secondary" onPress={onClose} />
+                <Button label="取消" variant="secondary" className="min-h-11" disabled={saving} onPress={close} />
               </View>
             </View>
           </View>
