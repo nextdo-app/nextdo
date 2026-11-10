@@ -1,14 +1,15 @@
 /**
  * Component tests — the 「已完成行动」 window (issue 27).
  *
- * The screen has exactly two jobs, and both are pinned here: it lists what
- * the user completed (with WHEN), and its per-row 恢复 runs the restore
- * transaction with that row's own kind + id. A focus session ending must
- * never land here on its own — the focus-screen tests cover that half.
+ * The screen lists and searches what the user completed (with WHEN), and
+ * its per-row 恢复 runs the restore transaction with that row's own kind + id.
+ * A focus session ending must never land here on its own — the focus-screen
+ * tests cover that half.
  */
 
 /** The mutable local "database" of completed actions. */
 const mockCompletedRef: { current: unknown[] } = { current: [] };
+const mockCompletedListeners = new Set<() => void>();
 
 /** Tracking calls to reopenAction, with a failure switch. */
 const reopenCalls: { args: unknown[]; shouldFail: boolean } = { args: [], shouldFail: false };
@@ -77,13 +78,22 @@ jest.mock('@powersync/react', () => {
   return {
     PowerSyncContext: React.createContext(powersync),
     usePowerSync: () => powersync,
-    useQuery: () => ({
-      data: mockCompletedRef.current,
-      isLoading: false,
-      isFetching: false,
-      error: undefined,
-      refresh: async () => undefined,
-    }),
+    useQuery: () => {
+      const data = React.useSyncExternalStore(
+        (listener: () => void) => {
+          mockCompletedListeners.add(listener);
+          return () => mockCompletedListeners.delete(listener);
+        },
+        () => mockCompletedRef.current,
+      );
+      return {
+        data,
+        isLoading: false,
+        isFetching: false,
+        error: undefined,
+        refresh: async () => undefined,
+      };
+    },
     useStatus: () => ({ status: 'synced', isSynced: true }),
   };
 });
@@ -166,6 +176,89 @@ describe('已完成行动 window (issue 27)', () => {
     expect(reopenCalls.args[0]).toHaveProperty('now');
   });
 
+  it('searches titles without case or surrounding spaces and restores the filtered row', async () => {
+    renderRouter('app', { initialUrl: '/completed' });
+    await flush();
+
+    fireEvent.changeText(screen.getByLabelText('搜索已完成行动'), '  BASELINE  ');
+
+    expect(screen.getByText('跑 baseline A')).toBeTruthy();
+    expect(screen.queryByText('组会')).toBeNull();
+    expect(screen.getByText('显示 1 / 2 条')).toBeTruthy();
+
+    fireEvent.press(screen.getByRole('button', { name: '恢复为未完成' }));
+    await flush();
+
+    expect(reopenCalls.args).toHaveLength(1);
+    expect(reopenCalls.args[0]).toMatchObject({ actionKind: 'next', actionId: 'a-1' });
+  });
+
+  it('searches by the resolved project name', async () => {
+    renderRouter('app', { initialUrl: '/completed' });
+    await flush();
+
+    fireEvent.changeText(screen.getByLabelText('搜索已完成行动'), '论文');
+
+    expect(screen.getByText('跑 baseline A')).toBeTruthy();
+    expect(screen.queryByText('组会')).toBeNull();
+    expect(screen.getByText('显示 1 / 2 条')).toBeTruthy();
+  });
+
+  it('distinguishes no matches from no history and clears back to newest-first order', async () => {
+    renderRouter('app', { initialUrl: '/completed' });
+    await flush();
+
+    const search = screen.getByLabelText('搜索已完成行动');
+    fireEvent.changeText(search, '没有这个标题');
+
+    expect(screen.getByText('没有匹配的已完成行动')).toBeTruthy();
+    expect(screen.queryByText('还没有已完成的行动')).toBeNull();
+    expect(screen.getByText('显示 0 / 2 条')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '恢复为未完成' })).toBeNull();
+
+    fireEvent.press(screen.getByRole('button', { name: '清除搜索' }));
+
+    expect(search.props.value).toBe('');
+    expect(screen.getByText('跑 baseline A')).toBeTruthy();
+    expect(screen.getByText('组会')).toBeTruthy();
+    expect(screen.getByText('显示 2 / 2 条')).toBeTruthy();
+
+    fireEvent.changeText(search, '   ');
+    expect(screen.getByText('显示 2 / 2 条')).toBeTruthy();
+    fireEvent.press(screen.getAllByRole('button', { name: '恢复为未完成' })[0]!);
+    await flush();
+
+    expect(reopenCalls.args[0]).toMatchObject({ actionKind: 'calendar', actionId: 'c-1' });
+  });
+
+  it('keeps the query while watched completions change and allows clearing after the last removal', async () => {
+    renderRouter('app', { initialUrl: '/completed' });
+    await flush();
+
+    const search = screen.getByLabelText('搜索已完成行动');
+    fireEvent.changeText(search, 'baseline');
+
+    act(() => {
+      mockCompletedRef.current = [completed({ id: 'a-2', title: '跑 baseline B' })];
+      mockCompletedListeners.forEach((listener) => listener());
+    });
+
+    expect(search.props.value).toBe('baseline');
+    expect(screen.queryByText('跑 baseline A')).toBeNull();
+    expect(screen.getByText('跑 baseline B')).toBeTruthy();
+    expect(screen.getByText('显示 1 / 1 条')).toBeTruthy();
+
+    act(() => {
+      mockCompletedRef.current = [];
+      mockCompletedListeners.forEach((listener) => listener());
+    });
+
+    expect(screen.getByText('还没有已完成的行动')).toBeTruthy();
+    expect(screen.getByText('显示 0 / 0 条')).toBeTruthy();
+    fireEvent.press(screen.getByRole('button', { name: '清除搜索' }));
+    expect(search.props.value).toBe('');
+  });
+
   it('lists a habit 打卡 and restores it with kind=habit', async () => {
     mockCompletedRef.current = [
       completed({
@@ -194,11 +287,14 @@ describe('已完成行动 window (issue 27)', () => {
     await flush();
     await waitFor(() => expect(screen.getByText('跑 baseline A')).toBeTruthy());
 
-    fireEvent.press(screen.getAllByRole('button', { name: '恢复为未完成' })[0]!);
+    fireEvent.changeText(screen.getByLabelText('搜索已完成行动'), 'baseline');
+    fireEvent.press(screen.getByRole('button', { name: '恢复为未完成' }));
     await flush();
 
     expect(reopenCalls.args).toHaveLength(1);
     await waitFor(() => expect(screen.getByText('restore rejected')).toBeTruthy());
+    expect(screen.getByLabelText('搜索已完成行动').props.value).toBe('baseline');
+    expect(screen.getByText('跑 baseline A')).toBeTruthy();
   });
 
   it('the empty state explains where completions come from', async () => {

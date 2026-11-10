@@ -65,6 +65,53 @@ export async function loadActionRow(
 // Reads
 // ---------------------------------------------------------------------------
 
+export type ActionDetails = {
+  title: string;
+  projectId: string | null;
+  contextIds: string[];
+};
+
+/** The focus header and re-clarify prefill need one live action, not the whole pool. */
+export async function getActionDetails(
+  db: NextdoDb,
+  actionKind: ActionKind,
+  actionId: string,
+): Promise<ActionDetails | null> {
+  if (actionKind === 'habit') {
+    const row = await db
+      .selectFrom('habit_days')
+      .innerJoin('habits', 'habits.id', 'habit_days.habit_id')
+      .select('habits.title')
+      .where('habit_days.id', '=', actionId)
+      .where('habit_days.deleted_at', 'is', null)
+      .where('habits.deleted_at', 'is', null)
+      .executeTakeFirst();
+    return row === undefined ? null : { title: row.title ?? '', projectId: null, contextIds: [] };
+  }
+
+  const row = actionKind === 'next'
+    ? await db
+        .selectFrom('next_actions')
+        .select(['title', 'project_id', 'context_ids'])
+        .where('id', '=', actionId)
+        .where('deleted_at', 'is', null)
+        .executeTakeFirst()
+    : await db
+        .selectFrom('calendar_actions')
+        .select(['title', 'context_ids'])
+        .select(sql<null>`NULL`.as('project_id'))
+        .where('id', '=', actionId)
+        .where('deleted_at', 'is', null)
+        .executeTakeFirst();
+  return row === undefined
+    ? null
+    : {
+        title: row.title ?? '',
+        projectId: row.project_id,
+        contextIds: parseJson<string[]>(row.context_ids, []),
+      };
+}
+
 export async function listNextActions(
   db: NextdoDb,
   options?: { includeDeleted?: boolean },

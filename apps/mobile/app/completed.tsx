@@ -16,7 +16,8 @@
  * the entries the user taps most often. Their title/estimate/project come
  * from the parent Habit — the day row itself carries none.
  */
-import { FlatList, Text, View } from 'react-native';
+import { useState } from 'react';
+import { FlatList, Text, TextInput, View } from 'react-native';
 import { Button, Card, EmptyState, Tag } from '@nextdo/ui';
 import type { CompletedAction } from '@nextdo/db';
 import { useAppInsets } from '@/lib/use-app-insets';
@@ -27,6 +28,7 @@ import { errorMessage } from '@/lib/error-messages';
 import { formatLocalDateTime } from '@/lib/format';
 import { KIND_LABELS } from '@/lib/kind-labels';
 import { goBack } from '@/lib/go-back';
+import { FormField } from '@/components/form-field';
 
 /** One completed action + the 恢复 that takes it back. */
 function CompletedRow({
@@ -76,9 +78,14 @@ export default function CompletedScreen() {
   const { data, error } = useCompletedActions();
   const { reopen, error: reopenError } = useReopenAction();
   const projectTitles = useProjectTitles();
+  const [search, setSearch] = useState('');
   const insets = useAppInsets();
   const topPadding = Math.max(insets.top, 16);
-  const rows = data;
+  const query = search.trim().toLowerCase();
+  const rows = query === '' ? data : data.filter((entry) =>
+    entry.title.toLowerCase().includes(query) ||
+    (entry.projectId !== null && projectTitles[entry.projectId]?.toLowerCase().includes(query)),
+  );
   const errorMessageText = error ?? reopenError;
 
   return (
@@ -101,16 +108,46 @@ export default function CompletedScreen() {
           <Text className="mb-2 font-sans text-sm text-danger">{errorMessage(errorMessageText)}</Text>
         ) : null}
 
-        {rows.length === 0 ? (
+        <View className="mb-3 gap-2">
+          <FormField label="搜索已完成行动">
+            <View className="flex-row items-center gap-2">
+              <TextInput
+                accessibilityLabel="搜索已完成行动"
+                placeholder="输入行动标题或项目名称"
+                value={search}
+                onChangeText={setSearch}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="search"
+                className="min-h-11 flex-1 rounded-xl border border-border bg-surface px-3 py-2 font-sans text-base text-ink placeholder:text-muted dark:border-border-dark dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark"
+              />
+              {search !== '' ? (
+                <Button label="清除搜索" variant="ghost" className="min-h-11" onPress={() => setSearch('')} />
+              ) : null}
+            </View>
+          </FormField>
+          <Text className="font-sans text-xs text-muted dark:text-muted-dark">
+            显示 {rows.length} / {data.length} 条
+          </Text>
+        </View>
+
+        {data.length === 0 ? (
           <EmptyState
             className="flex-initial py-8"
             title="还没有已完成的行动"
             hint="在「现在」页点完成，或专注结束后确认行动完成，就会出现在这里。"
           />
+        ) : rows.length === 0 ? (
+          <EmptyState
+            className="flex-initial py-8"
+            title="没有匹配的已完成行动"
+            hint="请更换关键词，或清除搜索。"
+          />
         ) : (
           <FlatList
             data={rows}
             keyExtractor={(item) => `${item.kind}:${item.id}`}
+            keyboardShouldPersistTaps="handled"
             contentContainerClassName="gap-2.5 pb-8"
             renderItem={({ item }) => (
               <CompletedRow

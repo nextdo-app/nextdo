@@ -73,22 +73,10 @@ jest.mock('@nextdo/db', () => {
     completeAction: (...args: unknown[]) => mockDb.completeAction(...args),
     // The focus page's quick capture (issue #58) — resolves to the item.
     addInboxItem: (...args: unknown[]) => mockDb.addInboxItem(...args),
-    listNextActions: async () => [
-      {
-        id: 'f-1',
-        createdAt: '2026-09-20T01:00:00.000Z',
-        updatedAt: '2026-09-20T01:00:00.000Z',
-        deletedAt: null,
-        title: '写季度总结',
-        projectId: null,
-        contextIds: [],
-        estMinutes: 30,
-        value: 3,
-        consecutiveSkips: 0,
-        status: 'open',
-      },
-    ],
-    listCalendarActions: async () => [],
+    getActionDetails: async (_db: unknown, kind: string, id: string) =>
+      kind === 'next' && id === 'f-1'
+        ? { title: '写季度总结', projectId: null, contextIds: [] }
+        : null,
     listHabitDays: async () => [],
     listHabits: async () => [],
     // The /now fallback target (goBack on 完成/放弃 in a deep-loaded stack)

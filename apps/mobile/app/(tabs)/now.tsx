@@ -1134,14 +1134,13 @@ export default function NowScreen() {
         open={snoozeTarget !== null}
         now={now}
         onClose={() => setSnoozeTarget(null)}
-        onSelect={(target) => {
-          if (snoozeTarget !== null) {
-            void snooze({
-              actionKind: snoozeTarget.kind,
-              actionId: snoozeTarget.id,
-              snoozedUntil: target,
-            });
-          }
+        onSelect={async (target) => {
+          if (snoozeTarget === null) return false;
+          return snooze({
+            actionKind: snoozeTarget.kind,
+            actionId: snoozeTarget.id,
+            snoozedUntil: target,
+          });
         }}
       />
 

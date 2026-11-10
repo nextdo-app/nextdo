@@ -260,3 +260,42 @@ Accepted focus island with one main-window session owner, isolated desktop contr
 ### Next Steps
 
 - Build distribution packages with GitHub Actions. Long-background, sleep/wake, tray/Dock, native keyboard, and Windows/Linux runtime checks remain unverified.
+
+
+## Session 71: Action workflow and runtime optimizations
+<!-- trellis-session: v=2 fp=30989643bba53bea -->
+
+**Date**: 2026-11-10
+**Task**: Action workflow and runtime optimizations
+**Branch**: `feat/workflow-optimizations`
+
+### Summary
+
+Add project focus and completed-action search; preserve failed snoozes for retry; load action metadata by ID; bound manual sync to eight seconds; prepare v0.1.9-beta.22.
+
+### Main Changes
+
+- Added focus entry and refresh-on-return to project actions, searchable completed actions, and reminder retry that preserves the selected time.
+- Replaced whole-table header reads with ID queries and bounded all manual-sync stages with cancellable waits.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ba5f8ec` | perf(actions): load action details by ID and bound manual sync waits |
+| `e61f37c` | feat(actions): add project focus, completed search and snooze retry |
+| `225c67c` | chore(release): bump version to 0.1.9-beta.22 |
+
+### Testing
+
+- [OK] pnpm verify:web passed lint, workspace typechecks, 103 suites / 1584 tests and Web build. The local gate includes six pre-existing server changes that are excluded from these commits; PR CI will verify the committed tree.
+- [OK] Browser checks passed: eight runtime groups and six workflow groups against synthetic local PowerSync data. Evidence: .verify/runtime-optimization/ and .verify/functional-workflows/. Native devices and real cloud roundtrips were not exercised.
+- [OK] node scripts/check-release-version.mjs --tag v0.1.9-beta.22 passed across all six version sources; Cargo.lock was updated too.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Push the PR, require green CI, merge, and publish beta.22 through GitHub Actions.
