@@ -8858,11 +8858,10 @@ function createApp(config) {
   );
   const api = new Hono2();
   api.get("/", async (c) => {
+    c.header("Cache-Control", "no-store");
     const isClaimed = config.claimState ? config.claimState.isClaimed() : config.ownerToken != null && config.ownerToken.trim() !== "";
-    const currentToken = config.claimState ? config.claimState.getOwnerToken() : config.ownerToken ?? null;
     const accept = c.req.header("accept") || "";
     if (accept.includes("text/html")) {
-      const tokenJson = JSON.stringify(currentToken);
       return c.html(`<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -9009,21 +9008,23 @@ function createApp(config) {
   <div class="container">
     <div class="badge">
       <span class="badge-dot"></span>
-      <span id="badgeText">${currentToken ? "\u670D\u52A1\u6B63\u5E38\u8FD0\u884C \xB7 \u5DF2\u751F\u6210\u4E13\u5C5E\u8FDE\u63A5\u4E32" : "\u670D\u52A1\u6B63\u5E38\u8FD0\u884C \xB7 \u6570\u636E\u5E93\u5DF2\u81EA\u52A8\u5C31\u7EEA"}</span>
+      <span id="badgeText">${isClaimed ? "\u670D\u52A1\u6B63\u5E38\u8FD0\u884C \xB7 \u5DF2\u5B8C\u6210\u9996\u6B21\u914D\u7F6E" : "\u670D\u52A1\u6B63\u5E38\u8FD0\u884C \xB7 \u6570\u636E\u5E93\u5DF2\u81EA\u52A8\u5C31\u7EEA"}</span>
     </div>
     <h1>Nextdo \u4E91\u540C\u6B65\u670D\u52A1</h1>
     <p>\u4F60\u7684 Cloudflare Workers \u540E\u7AEF\u5DF2\u5C31\u7EEA\u3002\u6240\u6709 14 \u5F20\u6838\u5FC3\u6570\u636E\u8868\u5DF2\u81EA\u52A8\u521D\u59CB\u5316\u5B8C\u6210\uFF0C\u65E0\u9700\u624B\u52A8\u5EFA\u8868\u3002</p>
     
     <div class="box">
-      <div class="box-title" id="boxTitle">${currentToken ? "\u4F60\u7684\u540C\u6B65\u8FDE\u63A5\u4E32\uFF08\u5305\u542B\u670D\u52A1\u5668\u7F51\u5740\u4E0E\u5BC6\u94A5\uFF09" : "\u4F60\u7684\u540C\u6B65\u670D\u52A1\u5668\u7F51\u5740"}</div>
+      <div class="box-title" id="boxTitle">\u4F60\u7684\u540C\u6B65\u670D\u52A1\u5668\u7F51\u5740</div>
       <div class="url-row">
-        <input class="url-input" id="srvUrl" readonly />
+        <input class="url-input" id="srvUrl" aria-labelledby="boxTitle" readonly />
         <button id="copyBtn" onclick="handleCopy()">\u590D\u5236</button>
       </div>
       <div class="btn-group" id="btnGroup">
         <a id="deepLinkBtn" class="link-btn secondary" style="display:none;" href="#">\u{1F680} \u5728 Nextdo App \u4E2D\u6253\u5F00</a>
-        <button id="claimBtn" class="secondary" style="display:none;" onclick="handleGenerateToken()">\u26A1 \u751F\u6210\u4E13\u5C5E\u8FDE\u63A5\u4E32</button>
+        <button id="claimBtn" class="secondary" style="display:${isClaimed ? "none" : "inline-flex"};" onclick="handleGenerateToken()">\u26A1 \u751F\u6210\u4E13\u5C5E\u8FDE\u63A5\u4E32</button>
       </div>
+      <p id="connectionNotice" style="margin:12px 0 0;">${isClaimed ? "\u6B64\u9875\u9762\u4E0D\u663E\u793A\u5DF2\u6709\u5BC6\u94A5\u3002\u8BF7\u4ECE\u5DF2\u8FDE\u63A5\u8BBE\u5907\u590D\u5236\u8FDE\u63A5\u4E32\uFF0C\u6216\u8054\u7CFB\u7BA1\u7406\u5458\u83B7\u53D6\u914D\u7F6E\u7684\u5BC6\u94A5\u3002" : "\u751F\u6210\u7684\u8FDE\u63A5\u4E32\u5305\u542B\u5BC6\u94A5\uFF0C\u4EC5\u5728\u5F53\u524D\u9875\u9762\u663E\u793A\u3002\u8BF7\u5728\u5237\u65B0\u6216\u5173\u95ED\u9875\u9762\u524D\u4FDD\u5B58\u3002"}</p>
+      <p id="claimError" role="alert" hidden style="margin:12px 0 0;"></p>
     </div>
 
     <div class="box">
@@ -9036,7 +9037,7 @@ function createApp(config) {
         <div class="step-item">
           <div class="step-num">2</div>
           <div id="step2Text">
-            ${currentToken ? "\u627E\u5230 <strong>\u4E91\u540C\u6B65</strong> \u5361\u7247\uFF0C\u76F4\u63A5\u5728 <strong>\u300C\u8FDE\u63A5\u4E32\u914D\u5BF9\u300D</strong> \u4E2D\u7C98\u8D34\u4E0A\u65B9\u590D\u5236\u7684\u6574\u884C\u8FDE\u63A5\u4E32\u3002" : "\u627E\u5230 <strong>\u4E91\u540C\u6B65</strong> \u5361\u7247\uFF0C\u5728 <strong>\u300C\u81EA\u5EFA\u670D\u52A1\u5668\u300D</strong> \u4E2D\u586B\u5165\u4E0A\u65B9\u7F51\u5740\uFF0C\u6216\u70B9\u51FB\u4E0A\u65B9\u6309\u94AE\u751F\u6210\u8FDE\u63A5\u4E32\u3002"}
+            ${isClaimed ? "\u4ECE\u5DF2\u8FDE\u63A5\u8BBE\u5907\u7684 <strong>\u4E91\u540C\u6B65</strong> \u5361\u7247\u590D\u5236\u8FDE\u63A5\u4E32\uFF0C\u5728\u65B0\u8BBE\u5907\u7684 <strong>\u300C\u8FDE\u63A5\u4E32\u914D\u5BF9\u300D</strong> \u4E2D\u7C98\u8D34\u3002" : "\u627E\u5230 <strong>\u4E91\u540C\u6B65</strong> \u5361\u7247\uFF0C\u5728 <strong>\u300C\u81EA\u5EFA\u670D\u52A1\u5668\u300D</strong> \u4E2D\u586B\u5165\u4E0A\u65B9\u7F51\u5740\uFF0C\u6216\u70B9\u51FB\u4E0A\u65B9\u6309\u94AE\u751F\u6210\u8FDE\u63A5\u4E32\u3002"}
           </div>
         </div>
         <div class="step-item">
@@ -9053,67 +9054,68 @@ function createApp(config) {
     </div>
   </div>
   <script>
-    var token = ${tokenJson};
     var origin = window.location.origin;
-    var connStr = token ? (origin + '|' + token) : origin;
-    var deepLink = token ? ('nextdo://sync?s=' + encodeURIComponent(origin) + '&t=' + encodeURIComponent(token)) : '';
 
     var srvUrlInput = document.getElementById('srvUrl');
     var deepLinkBtn = document.getElementById('deepLinkBtn');
     var claimBtn = document.getElementById('claimBtn');
     var copyBtn = document.getElementById('copyBtn');
+    var claimError = document.getElementById('claimError');
 
-    if (srvUrlInput) srvUrlInput.value = connStr;
+    if (srvUrlInput) srvUrlInput.value = origin;
 
-    if (token) {
-      if (deepLinkBtn) {
-        deepLinkBtn.href = deepLink;
-        deepLinkBtn.style.display = 'inline-flex';
-      }
-    } else {
-      if (claimBtn) {
-        claimBtn.style.display = 'inline-flex';
-      }
-    }
-
-    function handleCopy() {
-      var val = (srvUrlInput && srvUrlInput.value) || connStr;
-      navigator.clipboard.writeText(val);
-      if (copyBtn) {
+    async function handleCopy() {
+      var val = (srvUrlInput && srvUrlInput.value) || origin;
+      try {
+        await navigator.clipboard.writeText(val);
+        claimError.hidden = true;
         copyBtn.innerText = '\u5DF2\u590D\u5236';
         setTimeout(function() { copyBtn.innerText = '\u590D\u5236'; }, 2000);
+      } catch {
+        copyBtn.innerText = '\u590D\u5236';
+        claimError.textContent = '\u590D\u5236\u5931\u8D25\u3002\u5DF2\u9009\u4E2D\u5185\u5BB9\uFF0C\u8BF7\u624B\u52A8\u590D\u5236\u5E76\u4FDD\u5B58\u3002';
+        claimError.hidden = false;
+        srvUrlInput.focus();
+        srvUrlInput.select();
       }
     }
 
-    function handleGenerateToken() {
-      if (claimBtn) {
-        claimBtn.innerText = '\u6B63\u5728\u751F\u6210\u2026';
-        claimBtn.disabled = true;
-      }
-      fetch('/api/claim', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: '{}'
-      })
-      .then(function(res) { return res.json(); })
-      .then(function(data) {
-        if (data && data.ownerToken) {
-          window.location.reload();
-        } else {
-          alert('\u751F\u6210\u8FDE\u63A5\u4E32\u5931\u8D25: ' + (data && data.error ? data.error : '\u672A\u77E5\u9519\u8BEF'));
-          if (claimBtn) {
-            claimBtn.innerText = '\u26A1 \u751F\u6210\u4E13\u5C5E\u8FDE\u63A5\u4E32';
-            claimBtn.disabled = false;
+    async function handleGenerateToken() {
+      claimError.hidden = true;
+      claimBtn.innerText = '\u6B63\u5728\u751F\u6210\u2026';
+      claimBtn.disabled = true;
+      try {
+        var res = await fetch('/api/claim', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: '{}'
+        });
+        if (res.status === 403) {
+          claimError.textContent = '\u6B64\u670D\u52A1\u5668\u9700\u8981\u8BA4\u9886\u5BC6\u94A5\u3002\u8BF7\u8054\u7CFB\u7BA1\u7406\u5458\u901A\u8FC7\u53D7\u4FDD\u62A4\u7684\u8BA4\u9886\u63A5\u53E3\u5B8C\u6210\u9996\u6B21\u914D\u7F6E\u3002';
+        } else if (res.status === 409) {
+          claimError.textContent = '\u6B64\u670D\u52A1\u5668\u5DF2\u5B8C\u6210\u9996\u6B21\u914D\u7F6E\u3002\u8BF7\u4ECE\u5DF2\u8FDE\u63A5\u8BBE\u5907\u590D\u5236\u8FDE\u63A5\u4E32\uFF0C\u6216\u8054\u7CFB\u7BA1\u7406\u5458\u3002';
+        } else if (res.ok) {
+          var data = await res.json();
+          if (!data || typeof data.ownerToken !== 'string' || !data.ownerToken) {
+            throw new Error('Invalid claim response');
           }
+          srvUrlInput.value = origin + '|' + data.ownerToken;
+          deepLinkBtn.href = 'nextdo://sync?s=' + encodeURIComponent(origin) + '&t=' + encodeURIComponent(data.ownerToken);
+          deepLinkBtn.style.display = 'inline-flex';
+          claimBtn.style.display = 'none';
+          document.getElementById('badgeText').textContent = '\u670D\u52A1\u6B63\u5E38\u8FD0\u884C \xB7 \u5DF2\u5B8C\u6210\u9996\u6B21\u914D\u7F6E';
+          document.getElementById('boxTitle').textContent = '\u4F60\u7684\u540C\u6B65\u8FDE\u63A5\u4E32\uFF08\u5305\u542B\u670D\u52A1\u5668\u7F51\u5740\u4E0E\u5BC6\u94A5\uFF09';
+          document.getElementById('step2Text').textContent = '\u627E\u5230\u4E91\u540C\u6B65\u5361\u7247\uFF0C\u5728\u300C\u8FDE\u63A5\u4E32\u914D\u5BF9\u300D\u4E2D\u7C98\u8D34\u4E0A\u65B9\u590D\u5236\u7684\u6574\u884C\u8FDE\u63A5\u4E32\u3002';
+          return;
+        } else {
+          claimError.textContent = '\u751F\u6210\u8FDE\u63A5\u4E32\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002';
         }
-      })
-      .catch(function(err) {
-        alert('\u8BF7\u6C42\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5');
-        if (claimBtn) {
-          claimBtn.innerText = '\u26A1 \u751F\u6210\u4E13\u5C5E\u8FDE\u63A5\u4E32';
-          claimBtn.disabled = false;
-        }
-      });
+      } catch {
+        claimError.textContent = '\u8BF7\u6C42\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC\u540E\u91CD\u8BD5\u3002\u82E5\u670D\u52A1\u5668\u5DF2\u5B8C\u6210\u9996\u6B21\u914D\u7F6E\uFF0C\u8BF7\u8054\u7CFB\u7BA1\u7406\u5458\u3002';
+      }
+      claimError.hidden = false;
+      claimBtn.innerText = '\u26A1 \u751F\u6210\u4E13\u5C5E\u8FDE\u63A5\u4E32';
+      claimBtn.disabled = false;
     }
   <\/script>
 </body>
@@ -9139,6 +9141,7 @@ function createApp(config) {
     return c.json({ claimed, requiresSecret });
   });
   api.post("/claim", async (c) => {
+    c.header("Cache-Control", "no-store");
     if (!config.claimState) {
       return c.json({ error: "already_claimed", code: "claim.already_claimed" }, 409);
     }
@@ -9494,16 +9497,20 @@ async function recordOutcome(pool, reminderId, channel, status, attempts, nowIso
   );
 }
 __name(recordOutcome, "recordOutcome");
-async function alreadyDelivered(pool, reminderId) {
+async function deliveredForMoment(pool, reminder) {
   const result = await pool.query(
-    `SELECT 1 FROM reminder_deliveries
-      WHERE reminder_id = $1 AND status = 'sent'
+    `SELECT 1 FROM reminder_deliveries d
+       JOIN reminders r ON r.id = d.reminder_id
+      WHERE d.status = 'sent'
+        AND r.action_kind = $1
+        AND r.action_id = $2
+        AND r.fires_at = $3
       LIMIT 1`,
-    [reminderId]
+    [reminder.actionKind, reminder.actionId, reminder.firesAt]
   );
   return result.rows.length > 0;
 }
-__name(alreadyDelivered, "alreadyDelivered");
+__name(deliveredForMoment, "deliveredForMoment");
 async function dispatchDueReminders(deps) {
   const fetchFn = deps.fetchFn ?? fetch;
   const maxAttempts = deps.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
@@ -9513,7 +9520,7 @@ async function dispatchDueReminders(deps) {
   const due = await listDueReminders(deps.pool, deps.now, limit);
   summary.due = due.length;
   for (const reminder of due) {
-    if (await alreadyDelivered(deps.pool, reminder.id)) {
+    if (await deliveredForMoment(deps.pool, reminder)) {
       summary.skipped += 1;
       continue;
     }

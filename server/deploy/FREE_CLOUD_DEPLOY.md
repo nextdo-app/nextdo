@@ -233,6 +233,17 @@ npx wrangler secret put NEXTDO_TIME_ZONE   # 例如 Asia/Shanghai；不设则默
 - 在已连接的首台设备上，点击 **扫码配对** 或 **复制连接串**；
 - 在第二台设备（如手机）的设置中直接扫码或粘贴连接串，点击 **连接** 即可瞬间加入同一数据账本！
 
+The public Worker homepage never displays an existing owner token. If you
+generate a connection string on an unclaimed homepage, save it before
+refreshing or closing the page; it is shown only after that successful claim.
+Afterwards, use a connected device to copy the connection string.
+
+**Updating an older deployment:** replace the Worker code with the fixed
+version. If its public homepage exposed your token, set a fresh
+`NEXTDO_OWNER_TOKEN` Secret in Worker settings and redeploy. This overrides
+the old database token. Reconnect every device using the new connection
+string. Previously issued sync JWTs can remain valid for up to 15 minutes.
+
 ---
 
 ## 进阶技巧 (可选)

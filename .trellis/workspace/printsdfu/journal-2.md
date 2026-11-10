@@ -299,3 +299,41 @@ Add project focus and completed-action search; preserve failed snoozes for retry
 ### Next Steps
 
 - Push the PR, require green CI, merge, and publish beta.22 through GitHub Actions.
+
+
+## Session 72: Owner token homepage security release
+<!-- trellis-session: v=2 fp=253ca2b055e03420 -->
+
+**Date**: 2026-11-10
+**Task**: Owner token homepage security release
+**Branch**: `fix/owner-token-homepage`
+
+### Summary
+
+Prepare beta.23 with the six previously uncommitted server security files; user requests release trigger only, without waiting for artifacts.
+
+### Main Changes
+
+- Public homepages do not serialize existing owner tokens. First claim displays its connection once; responses disable caching. Copy denial and claim errors have visible guidance.
+- Updated regression tests, deployable Worker bundle, operator documentation and security contract; bumped app versions to 0.1.9-beta.23.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9b556d0` | fix(server): keep owner tokens out of public homepages |
+| `229ee2f` | chore(release): bump version to 0.1.9-beta.23 |
+
+### Testing
+
+- [OK] pnpm verify:web passed lint, all workspace typechecks, 103 suites / 1584 tests and Web build.
+- [OK] node .verify/release-beta23/check.mjs passed five browser groups, nine screenshots and no uncaught exceptions: token confidentiality, claim, reload, network/403/409 errors, copy denial and settings.
+- [OK] pnpm --filter @nextdo/server bundle:worker dry-run passed; cmp confirmed the generated Worker exactly matches server/deploy/worker.js. Version consistency and git diff --check passed.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Merge after PR CI passes and trigger release for beta.23; do not wait for installer builds. Operators update private deployments and rotate previously exposed tokens separately.

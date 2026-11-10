@@ -1,3 +1,4 @@
+import { runInNewContext } from 'node:vm';
 import { createApp } from '../src/app.js';
 import { ServerClaimManager } from '../src/claim.js';
 import {
@@ -9,6 +10,88 @@ import {
 } from './helpers.js';
 
 describe('server claim and pairing protocol', () => {
+  describe('homepage connection string copy', () => {
+    async function setupCopy(writeText: (text: string) => Promise<void>) {
+      const { pool } = createMockPool();
+      const app = createApp({ pool, jwtSecret: JWT_SECRET, syncEndpoint: SYNC_ENDPOINT });
+      const response = await app.request('/', { headers: { accept: 'text/html' } });
+      const script = (await response.text()).match(/<script>([\s\S]*?)<\/script>/)?.[1];
+      expect(script).toBeDefined();
+      const elements = {
+        srvUrl: { value: '', focus: jest.fn(), select: jest.fn() },
+        deepLinkBtn: {},
+        claimBtn: {},
+        copyBtn: { innerText: '复制' },
+        claimError: { hidden: true, textContent: '' },
+      };
+      const copy = runInNewContext(`${script}\nhandleCopy`, {
+        document: { getElementById: (id: keyof typeof elements) => elements[id] },
+        window: { location: { origin: 'https://nextdo.example.test' } },
+        navigator: { clipboard: { writeText } },
+        setTimeout: jest.fn(),
+      }) as () => Promise<void>;
+      elements.srvUrl.value = `https://nextdo.example.test|${OWNER_TOKEN}`;
+      return { copy, elements };
+    }
+
+    it('reports success only after the clipboard write completes', async () => {
+      let finishWrite!: () => void;
+      const write = new Promise<void>((resolve) => { finishWrite = resolve; });
+      const writeText = jest.fn(() => write);
+      const { copy, elements } = await setupCopy(writeText);
+      const copying = copy();
+      expect(elements.copyBtn.innerText).toBe('复制');
+      expect(writeText).toHaveBeenCalledWith(elements.srvUrl.value);
+      finishWrite();
+      await copying;
+      expect(elements.copyBtn.innerText).toBe('已复制');
+      expect(elements.claimError.hidden).toBe(true);
+    });
+
+    it('handles clipboard denial and selects the connection string for manual copy', async () => {
+      const write = Promise.reject(new Error('Clipboard permission denied'));
+      // Keep the pre-fix test from leaking a rejection before asserting its UI failure.
+      void write.catch(() => {});
+      const { copy, elements } = await setupCopy(() => write);
+      await copy();
+      expect(elements.copyBtn.innerText).toBe('复制');
+      expect(elements.claimError.hidden).toBe(false);
+      expect(elements.claimError.textContent).toContain('手动复制');
+      expect(elements.srvUrl.focus).toHaveBeenCalled();
+      expect(elements.srvUrl.select).toHaveBeenCalled();
+      expect(elements.srvUrl.value).toContain(OWNER_TOKEN);
+    });
+  });
+
+  describe.each(['static', 'persisted'] as const)('%s token confidentiality', (mode) => {
+    it.each(['/', '/api'])('does not disclose the owner token through %s', async (path) => {
+      const { pool } = createMockPool();
+      const app = createApp({
+        pool,
+        ...(mode === 'static'
+          ? { ownerToken: OWNER_TOKEN }
+          : {
+              claimState: new ServerClaimManager({
+                pool,
+                initialDynamicToken: OWNER_TOKEN,
+              }),
+            }),
+        jwtSecret: JWT_SECRET,
+        syncEndpoint: SYNC_ENDPOINT,
+        now: () => NOW,
+      });
+
+      for (const accept of ['text/html', 'application/json']) {
+        for (const authorization of ['', `Bearer ${OWNER_TOKEN}`]) {
+          const response = await app.request(path, { headers: { accept, authorization } });
+          expect(response.status).toBe(200);
+          expect(await response.text()).not.toContain(OWNER_TOKEN);
+          expect(response.headers.get('cache-control')).toBe('no-store');
+        }
+      }
+    });
+  });
+
   describe('static mode (NEXTDO_OWNER_TOKEN configured)', () => {
     it('GET /claim/status reports claimed=true', async () => {
       const { pool } = createMockPool();
@@ -111,10 +194,18 @@ describe('server claim and pairing protocol', () => {
       // 3. POST /claim generates a secure 64-hex token
       const claimRes = await app.request('/claim', { method: 'POST' });
       expect(claimRes.status).toBe(200);
+      expect(claimRes.headers.get('cache-control')).toBe('no-store');
       const claimBody = (await claimRes.json()) as { ok: boolean; ownerToken: string };
       expect(claimBody.ok).toBe(true);
       expect(typeof claimBody.ownerToken).toBe('string');
       expect(claimBody.ownerToken).toMatch(/^[0-9a-f]{64}$/);
+
+      for (const path of ['/', '/api']) {
+        const homepage = await app.request(path, { headers: { accept: 'text/html' } });
+        expect(homepage.status).toBe(200);
+        expect(await homepage.text()).not.toContain(claimBody.ownerToken);
+        expect(homepage.headers.get('cache-control')).toBe('no-store');
+      }
 
       // 4. Status is now claimed
       const statusRes2 = await app.request('/claim/status');
@@ -124,6 +215,7 @@ describe('server claim and pairing protocol', () => {
       // 5. Subsequent POST /claim is rejected with 409
       const secondClaim = await app.request('/claim', { method: 'POST' });
       expect(secondClaim.status).toBe(409);
+      expect(secondClaim.headers.get('cache-control')).toBe('no-store');
       expect(await secondClaim.json()).toEqual({
         error: 'already_claimed',
         code: 'claim.already_claimed',
@@ -207,6 +299,7 @@ describe('server claim and pairing protocol', () => {
       const { app } = setupProtectedApp();
       const res = await app.request('/claim', { method: 'POST' });
       expect(res.status).toBe(403);
+      expect(res.headers.get('cache-control')).toBe('no-store');
       expect(await res.json()).toEqual({
         error: 'forbidden',
         code: 'claim.invalid_secret',
