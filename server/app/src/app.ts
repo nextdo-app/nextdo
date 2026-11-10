@@ -105,17 +105,13 @@ export function createApp(config: ServerConfig): Hono {
   const api = new Hono();
 
   api.get('/', async (c) => {
+    c.header('Cache-Control', 'no-store');
     const isClaimed = config.claimState
       ? config.claimState.isClaimed()
       : config.ownerToken != null && config.ownerToken.trim() !== '';
 
-    const currentToken = config.claimState
-      ? config.claimState.getOwnerToken()
-      : (config.ownerToken ?? null);
-
     const accept = c.req.header('accept') || '';
     if (accept.includes('text/html')) {
-      const tokenJson = JSON.stringify(currentToken);
       return c.html(`<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -262,21 +258,25 @@ export function createApp(config: ServerConfig): Hono {
   <div class="container">
     <div class="badge">
       <span class="badge-dot"></span>
-      <span id="badgeText">${currentToken ? '服务正常运行 · 已生成专属连接串' : '服务正常运行 · 数据库已自动就绪'}</span>
+      <span id="badgeText">${isClaimed ? '服务正常运行 · 已完成首次配置' : '服务正常运行 · 数据库已自动就绪'}</span>
     </div>
     <h1>Nextdo 云同步服务</h1>
     <p>你的 Cloudflare Workers 后端已就绪。所有 14 张核心数据表已自动初始化完成，无需手动建表。</p>
     
     <div class="box">
-      <div class="box-title" id="boxTitle">${currentToken ? '你的同步连接串（包含服务器网址与密钥）' : '你的同步服务器网址'}</div>
+      <div class="box-title" id="boxTitle">你的同步服务器网址</div>
       <div class="url-row">
-        <input class="url-input" id="srvUrl" readonly />
+        <input class="url-input" id="srvUrl" aria-labelledby="boxTitle" readonly />
         <button id="copyBtn" onclick="handleCopy()">复制</button>
       </div>
       <div class="btn-group" id="btnGroup">
         <a id="deepLinkBtn" class="link-btn secondary" style="display:none;" href="#">🚀 在 Nextdo App 中打开</a>
-        <button id="claimBtn" class="secondary" style="display:none;" onclick="handleGenerateToken()">⚡ 生成专属连接串</button>
+        <button id="claimBtn" class="secondary" style="display:${isClaimed ? 'none' : 'inline-flex'};" onclick="handleGenerateToken()">⚡ 生成专属连接串</button>
       </div>
+      <p id="connectionNotice" style="margin:12px 0 0;">${isClaimed
+        ? '此页面不显示已有密钥。请从已连接设备复制连接串，或联系管理员获取配置的密钥。'
+        : '生成的连接串包含密钥，仅在当前页面显示。请在刷新或关闭页面前保存。'}</p>
+      <p id="claimError" role="alert" hidden style="margin:12px 0 0;"></p>
     </div>
 
     <div class="box">
@@ -289,8 +289,8 @@ export function createApp(config: ServerConfig): Hono {
         <div class="step-item">
           <div class="step-num">2</div>
           <div id="step2Text">
-            ${currentToken
-              ? '找到 <strong>云同步</strong> 卡片，直接在 <strong>「连接串配对」</strong> 中粘贴上方复制的整行连接串。'
+            ${isClaimed
+              ? '从已连接设备的 <strong>云同步</strong> 卡片复制连接串，在新设备的 <strong>「连接串配对」</strong> 中粘贴。'
               : '找到 <strong>云同步</strong> 卡片，在 <strong>「自建服务器」</strong> 中填入上方网址，或点击上方按钮生成连接串。'}
           </div>
         </div>
@@ -308,67 +308,68 @@ export function createApp(config: ServerConfig): Hono {
     </div>
   </div>
   <script>
-    var token = ${tokenJson};
     var origin = window.location.origin;
-    var connStr = token ? (origin + '|' + token) : origin;
-    var deepLink = token ? ('nextdo://sync?s=' + encodeURIComponent(origin) + '&t=' + encodeURIComponent(token)) : '';
 
     var srvUrlInput = document.getElementById('srvUrl');
     var deepLinkBtn = document.getElementById('deepLinkBtn');
     var claimBtn = document.getElementById('claimBtn');
     var copyBtn = document.getElementById('copyBtn');
+    var claimError = document.getElementById('claimError');
 
-    if (srvUrlInput) srvUrlInput.value = connStr;
+    if (srvUrlInput) srvUrlInput.value = origin;
 
-    if (token) {
-      if (deepLinkBtn) {
-        deepLinkBtn.href = deepLink;
-        deepLinkBtn.style.display = 'inline-flex';
-      }
-    } else {
-      if (claimBtn) {
-        claimBtn.style.display = 'inline-flex';
-      }
-    }
-
-    function handleCopy() {
-      var val = (srvUrlInput && srvUrlInput.value) || connStr;
-      navigator.clipboard.writeText(val);
-      if (copyBtn) {
+    async function handleCopy() {
+      var val = (srvUrlInput && srvUrlInput.value) || origin;
+      try {
+        await navigator.clipboard.writeText(val);
+        claimError.hidden = true;
         copyBtn.innerText = '已复制';
         setTimeout(function() { copyBtn.innerText = '复制'; }, 2000);
+      } catch {
+        copyBtn.innerText = '复制';
+        claimError.textContent = '复制失败。已选中内容，请手动复制并保存。';
+        claimError.hidden = false;
+        srvUrlInput.focus();
+        srvUrlInput.select();
       }
     }
 
-    function handleGenerateToken() {
-      if (claimBtn) {
-        claimBtn.innerText = '正在生成…';
-        claimBtn.disabled = true;
-      }
-      fetch('/api/claim', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: '{}'
-      })
-      .then(function(res) { return res.json(); })
-      .then(function(data) {
-        if (data && data.ownerToken) {
-          window.location.reload();
-        } else {
-          alert('生成连接串失败: ' + (data && data.error ? data.error : '未知错误'));
-          if (claimBtn) {
-            claimBtn.innerText = '⚡ 生成专属连接串';
-            claimBtn.disabled = false;
+    async function handleGenerateToken() {
+      claimError.hidden = true;
+      claimBtn.innerText = '正在生成…';
+      claimBtn.disabled = true;
+      try {
+        var res = await fetch('/api/claim', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: '{}'
+        });
+        if (res.status === 403) {
+          claimError.textContent = '此服务器需要认领密钥。请联系管理员通过受保护的认领接口完成首次配置。';
+        } else if (res.status === 409) {
+          claimError.textContent = '此服务器已完成首次配置。请从已连接设备复制连接串，或联系管理员。';
+        } else if (res.ok) {
+          var data = await res.json();
+          if (!data || typeof data.ownerToken !== 'string' || !data.ownerToken) {
+            throw new Error('Invalid claim response');
           }
+          srvUrlInput.value = origin + '|' + data.ownerToken;
+          deepLinkBtn.href = 'nextdo://sync?s=' + encodeURIComponent(origin) + '&t=' + encodeURIComponent(data.ownerToken);
+          deepLinkBtn.style.display = 'inline-flex';
+          claimBtn.style.display = 'none';
+          document.getElementById('badgeText').textContent = '服务正常运行 · 已完成首次配置';
+          document.getElementById('boxTitle').textContent = '你的同步连接串（包含服务器网址与密钥）';
+          document.getElementById('step2Text').textContent = '找到云同步卡片，在「连接串配对」中粘贴上方复制的整行连接串。';
+          return;
+        } else {
+          claimError.textContent = '生成连接串失败，请稍后重试。';
         }
-      })
-      .catch(function(err) {
-        alert('请求失败，请稍后重试');
-        if (claimBtn) {
-          claimBtn.innerText = '⚡ 生成专属连接串';
-          claimBtn.disabled = false;
-        }
-      });
+      } catch {
+        claimError.textContent = '请求失败，请检查网络后重试。若服务器已完成首次配置，请联系管理员。';
+      }
+      claimError.hidden = false;
+      claimBtn.innerText = '⚡ 生成专属连接串';
+      claimBtn.disabled = false;
     }
   </script>
 </body>
@@ -400,6 +401,7 @@ export function createApp(config: ServerConfig): Hono {
   });
 
   api.post('/claim', async (c) => {
+    c.header('Cache-Control', 'no-store');
     if (!config.claimState) {
       return c.json({ error: 'already_claimed', code: 'claim.already_claimed' }, 409);
     }

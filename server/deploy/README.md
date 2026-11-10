@@ -206,6 +206,12 @@ from `NEXTDO_SYNC_ENDPOINT`, so it does not need to be typed at all.
 
 ### Generate a connection string
 
+A configured server's public homepage shows only its address and setup status.
+It never returns an existing owner token. Copy a connection string from a
+connected device's Settings, or build it from your deployment secret below.
+For an unclaimed server, the homepage's generate button displays the new
+connection string once: save it before refreshing or closing the page.
+
 A connection string carries both halves — the server address and the
 owner token — so a device only ever pastes one value. Two forms, both
 accepted by the same field in the Settings tab:

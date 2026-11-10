@@ -498,6 +498,12 @@ PowerSync Rules).
   - When the server is deployed without a pre-set `NEXTDO_OWNER_TOKEN`, it starts in an unclaimed state.
   - The first client connecting with an empty token automatically triggers `/claim/claim`. The server generates a cryptographically secure 32-byte hex token, persists it into the `system_settings` table, and returns it to the client.
   - Subsequent connection attempts without the correct token are rejected with 401.
+  - Public homepages (`/` and `/api`) must never serialize an existing owner token,
+    including tokens loaded from `system_settings`. They expose setup status only.
+    A successful `POST /claim` returns the new token once; the page displays that
+    response directly without reloading or persisting it in browser storage.
+    Homepages and claim responses use `Cache-Control: no-store`. Later devices
+    obtain a connection string from an already connected device or the deployer.
 - **Client Adaptive Address Detection (`apps/mobile/app/(tabs)/settings.tsx`)**:
   - `isPlainHttpUrl(token)` inspects the primary input in the default "连接串配对" tab.
   - If a user pastes a bare `http://` or `https://` Workers URL directly, the client adaptively treats it as a server address with an empty token, immediately enabling the connect button and executing the auto-claim handshake without forcing manual mode switching.
