@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 71
+- **Total Sessions**: 72
 - **Last Active**: 2026-11-10
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~301 | Active |
+| `journal-2.md` | ~339 | Active |
 | `journal-1.md` | ~1990 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 72 | 2026-11-10 | Owner token homepage security release | `9b556d0`, `229ee2f` | `fix/owner-token-homepage` |
 | 71 | 2026-11-10 | Action workflow and runtime optimizations | `ba5f8ec`, `e61f37c`, `225c67c` | `feat/workflow-optimizations` |
 | 70 | 2026-11-10 | Ship compact desktop focus island | `ad5ae8c` | `fix/ime-enter` |
 | 69 | 2026-11-08 | Commit habit history and actionable review repairs | `ca7efe0` | `fix/habit-review-repairs` |
