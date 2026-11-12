@@ -337,3 +337,25 @@ Prepare beta.23 with the six previously uncommitted server security files; user 
 ### Next Steps
 
 - Merge after PR CI passes and trigger release for beta.23; do not wait for installer builds. Operators update private deployments and rotate previously exposed tokens separately.
+
+
+## Session 73: Now 与专注视图交互及按键优化
+<!-- trellis-session: v=2 fp=d514970c74d3b973 -->
+
+**Date**: 2026-11-12
+**Task**: Now 与专注视图交互及按键优化
+**Branch**: `feature/now-focus-ux`
+
+### Summary
+
+重构 Now 列表卡片为整卡进入专注、右侧轻量打勾与右上角更多操作菜单，移除底部 4 占位按钮；重构 Focus 页面为 Idle 一键直启、Running 暂停主控与结算完成流转；全量门禁与浏览器实测通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0de228e` | feat(now,focus): optimize action card interactions and focus control hierarchy |
+
+### Status
+
+[OK] **Completed**

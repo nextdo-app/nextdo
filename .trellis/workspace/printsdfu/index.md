@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 72
-- **Last Active**: 2026-11-10
+- **Total Sessions**: 73
+- **Last Active**: 2026-11-12
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~339 | Active |
+| `journal-2.md` | ~361 | Active |
 | `journal-1.md` | ~1990 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 73 | 2026-11-12 | Now 与专注视图交互及按键优化 | `0de228e` | `feature/now-focus-ux` |
 | 72 | 2026-11-10 | Owner token homepage security release | `9b556d0`, `229ee2f` | `fix/owner-token-homepage` |
 | 71 | 2026-11-10 | Action workflow and runtime optimizations | `ba5f8ec`, `e61f37c`, `225c67c` | `feat/workflow-optimizations` |
 | 70 | 2026-11-10 | Ship compact desktop focus island | `ad5ae8c` | `fix/ime-enter` |
