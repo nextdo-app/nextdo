@@ -98,10 +98,14 @@ invoking webview label in the dispatcher; a caller-supplied label is not identit
   respecting scale factor and negative coordinates. On macOS, anchor the top
   to the physical screen top with zero gap; other platforms retain
   the work-area top plus 8 logical pixels. The native collapsed window is
-  240x32 logical pixels with no client outer padding; do not leave an invisible
-  72pt minimum window after shrinking the content. This desktop pointer/keyboard
-  header is the deliberate 32pt target exception; the regular in-app island
-  and expanded command controls retain 44pt minimum targets. Clamp the bottom to the work area. Verify the actual
+  320x34 logical pixels with no client outer padding; do not leave an invisible
+  72pt minimum window after shrinking the content. The compact pill is opaque
+  black with white text, a phase-colored dot/clock, and the reference's
+  rounded-rect progress ring (reference: ipfred/focus-island
+  `CapsuleFocus.vue`); never theme it with `bg-surface`, which is what made it
+  disappear against the menu bar. This desktop
+  pointer/keyboard header is the deliberate 34pt target exception; the regular
+  in-app island and expanded command controls retain 44pt minimum targets. Clamp the bottom to the work area. Verify the actual
   native frame because AppKit can constrain requested coordinates. Set the macOS
   capsule's native status-window level (25) once after creation, through
   `with_webview` on the main thread, so it can occupy the menu-bar band. Do not

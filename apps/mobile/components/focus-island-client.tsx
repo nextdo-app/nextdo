@@ -126,9 +126,11 @@ export function FocusIslandClient() {
   }, [fail, reconnect]);
 
   useEffect(() => {
-    if (snapshot === null) return;
-    setColorScheme(snapshot.isDark ? 'dark' : 'light');
-  }, [snapshot?.isDark, setColorScheme]);
+    // The capsule is an opaque black pill; a light expanded panel would flash
+    // white on every click. Keep the whole desktop island dark, like the
+    // reference island, and leave the main window's theme untouched.
+    setColorScheme('dark');
+  }, [setColorScheme]);
 
   const send = (command: FocusIslandCommand) => {
     const current = latest.current;
@@ -173,8 +175,8 @@ export function FocusIslandClient() {
     <ScrollView style={{ maxHeight: MAX_PANEL_HEIGHT }} contentContainerStyle={{ flexGrow: 0 }}>
       <View className="w-full" onLayout={(event) => resize(event.nativeEvent.layout.height)}>
         {!fontsReady || snapshot === null ? (
-          <View className="h-8 justify-center rounded-b-xl bg-surface px-3 dark:bg-surface-dark">
-            <Text className="text-xs text-ink dark:text-ink-dark">连接专注岛…</Text>
+          <View className="h-[34px] justify-center rounded-full bg-black/75 px-4">
+            <Text className="text-xs text-white/90">连接专注岛…</Text>
           </View>
         ) : (
           <FocusIsland
@@ -183,6 +185,8 @@ export function FocusIslandClient() {
             stateLabel={FOCUS_PHASE_LABELS[phase]}
             expanded={expanded}
             isCompact
+            tone={phase === 'break' || phase === 'break-complete' ? 'break' : 'focus'}
+            paused={phase !== 'running' && phase !== 'break'}
             progress={display.progress}
             onToggle={() => setExpanded((value) => !value)}
           >
