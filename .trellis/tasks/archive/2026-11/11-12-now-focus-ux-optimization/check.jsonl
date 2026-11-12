@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/app/component-guidelines.md", "reason": "Verify hit slop, accessibility roles, and styling standards"}
+{"file": ".trellis/spec/app/focus-island.md", "reason": "Verify focus phase transitions and desktop capsule compatibility"}
+{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "Verify web gate, tests, and linting rules"}

@@ -46,6 +46,7 @@ export default function FocusScreen() {
   const [expanded, setExpanded] = useState(true);
   const [customDraft, setCustomDraft] = useState<string | null>(null);
   const [customError, setCustomError] = useState<string | null>(null);
+  const [chosenMinutes, setChosenMinutes] = useState<number | null | undefined>(undefined);
   const [showQuickCapture, setShowQuickCapture] = useState(false);
   const [capturedHint, setCapturedHint] = useState(false);
   const [completingAction, setCompletingAction] = useState(false);
@@ -111,7 +112,12 @@ export default function FocusScreen() {
       if (ok && minutes !== null) void updateFocusSettings({ lastMinutes: minutes });
     });
   };
+  const presetMinutes = preset ? normalizeFocusMinutes(Number(preset)) : null;
   const lastMinutes = focusSettings?.lastMinutes ?? null;
+  const activeMinutes =
+    chosenMinutes !== undefined
+      ? chosenMinutes
+      : (presetMinutes ?? lastMinutes ?? 25);
   const lastIsPreset = lastMinutes !== null && STANDARD_PRESETS.includes(lastMinutes);
   const presets = lastIsPreset
     ? [lastMinutes, ...STANDARD_PRESETS.filter((minutes) => minutes !== lastMinutes)]
@@ -175,46 +181,73 @@ export default function FocusScreen() {
               </View>
               {view.phase === 'idle' ? (
                 <View className="gap-4">
-                  <Text className="text-center text-sm text-muted dark:text-muted-dark">
-                    选择本次专注时长
-                  </Text>
-                  <View className="flex-row flex-wrap justify-center gap-2">
-                    {preset === '2' ? (
-                      <Button
-                        className="min-h-11"
-                        label="2 分钟"
-                        variant="secondary"
-                        disabled={busy}
-                        onPress={() => startSession(2)}
-                      />
-                    ) : null}
-                    {lastMinutes !== null && !lastIsPreset ? (
-                      <Button
-                        className="min-h-11"
-                        label={`${lastMinutes} 分钟`}
-                        disabled={busy}
-                        onPress={() => startSession(lastMinutes)}
-                      />
-                    ) : null}
-                    {presets.map((minutes) => (
-                      <Button
-                        key={minutes}
-                        className="min-h-11"
-                        label={`${minutes} 分钟`}
-                        variant={minutes === lastMinutes ? 'primary' : 'secondary'}
-                        disabled={busy}
-                        onPress={() => startSession(minutes)}
-                      />
-                    ))}
-                    <Button
-                      className="min-h-11"
-                      label="自由计时"
-                      variant="secondary"
-                      disabled={busy}
-                      onPress={() => startSession(null)}
-                    />
-                  </View>
+                  {/* Primary 1-tap start button */}
+                  <Button
+                    size="lg"
+                    className="min-h-12 w-full shadow-sm"
+                    label={
+                      activeMinutes === null
+                        ? '开始自由专注'
+                        : `开始专注 (${activeMinutes} 分钟)`
+                    }
+                    disabled={busy}
+                    onPress={() => startSession(activeMinutes)}
+                  />
                   <View className="gap-2">
+                    <Text className="text-center font-sans text-xs font-medium text-muted dark:text-muted-dark">
+                      选择本次专注时长
+                    </Text>
+                    <View className="flex-row flex-wrap justify-center gap-2">
+                      {preset === '2' ? (
+                        <Button
+                          className="min-h-11"
+                          label="2 分钟"
+                          variant={activeMinutes === 2 ? 'primary' : 'secondary'}
+                          disabled={busy}
+                          onPress={() => {
+                            setChosenMinutes(2);
+                            startSession(2);
+                          }}
+                        />
+                      ) : null}
+                      {lastMinutes !== null && !lastIsPreset ? (
+                        <Button
+                          className="min-h-11"
+                          label={`${lastMinutes} 分钟`}
+                          variant={activeMinutes === lastMinutes ? 'primary' : 'secondary'}
+                          disabled={busy}
+                          onPress={() => {
+                            setChosenMinutes(lastMinutes);
+                            startSession(lastMinutes);
+                          }}
+                        />
+                      ) : null}
+                      {presets.map((minutes) => (
+                        <Button
+                          key={minutes}
+                          className="min-h-11"
+                          label={`${minutes} 分钟`}
+                          variant={minutes === activeMinutes ? 'primary' : 'secondary'}
+                          disabled={busy}
+                          onPress={() => {
+                            setChosenMinutes(minutes);
+                            startSession(minutes);
+                          }}
+                        />
+                      ))}
+                      <Button
+                        className="min-h-11"
+                        label="自由计时"
+                        variant={activeMinutes === null ? 'primary' : 'secondary'}
+                        disabled={busy}
+                        onPress={() => {
+                          setChosenMinutes(null);
+                          startSession(null);
+                        }}
+                      />
+                    </View>
+                  </View>
+                  <View className="gap-2 border-t border-border/40 pt-3 dark:border-border-dark/40">
                     <Text className="text-xs text-muted dark:text-muted-dark">
                       自定义时长（分钟）
                     </Text>
@@ -261,7 +294,8 @@ export default function FocusScreen() {
                   </Text>
                   <View className="flex-row flex-wrap gap-2">
                     <Button
-                      className="min-h-11"
+                      size="lg"
+                      className="min-h-12 flex-1 shadow-sm"
                       label="完成行动"
                       disabled={busy}
                       onPress={() => {
@@ -279,29 +313,32 @@ export default function FocusScreen() {
                       }}
                     />
                     <Button
-                      className="min-h-11"
+                      size="lg"
+                      className="min-h-12 flex-1"
                       label="先不完成"
                       variant="secondary"
                       disabled={busy}
                       onPress={leave}
                     />
                   </View>
-                  <Text className="text-xs text-muted dark:text-muted-dark">先休息一下？</Text>
-                  <View className="flex-row gap-2">
-                    <Button
-                      className="min-h-11"
-                      label="5 分钟"
-                      variant="secondary"
-                      disabled={busy}
-                      onPress={() => void focus.run('break-5')}
-                    />
-                    <Button
-                      className="min-h-11"
-                      label="10 分钟"
-                      variant="secondary"
-                      disabled={busy}
-                      onPress={() => void focus.run('break-10')}
-                    />
+                  <View className="border-t border-border/40 pt-2 dark:border-border-dark/40">
+                    <Text className="mb-2 text-xs font-medium text-muted dark:text-muted-dark">先休息一下？</Text>
+                    <View className="flex-row gap-2">
+                      <Button
+                        className="min-h-11 flex-1"
+                        label="5 分钟"
+                        variant="secondary"
+                        disabled={busy}
+                        onPress={() => void focus.run('break-5')}
+                      />
+                      <Button
+                        className="min-h-11 flex-1"
+                        label="10 分钟"
+                        variant="secondary"
+                        disabled={busy}
+                        onPress={() => void focus.run('break-10')}
+                      />
+                    </View>
                   </View>
                 </View>
               ) : view.phase === 'break' ? (
@@ -356,14 +393,14 @@ export default function FocusScreen() {
                   <View className="flex-row gap-2">
                     <Button
                       label={view.phase === 'paused' ? '继续' : '暂停'}
-                      className="flex-1 min-h-11"
-                      variant="secondary"
+                      className="min-h-12 flex-1 shadow-sm"
                       disabled={busy}
                       onPress={() => void focus.run(view.phase === 'paused' ? 'resume' : 'pause')}
                     />
                     <Button
                       label="结束专注"
-                      className="flex-1 min-h-11"
+                      className="min-h-12 flex-1"
+                      variant="secondary"
                       disabled={busy}
                       onPress={() => void focus.run('complete')}
                     />
