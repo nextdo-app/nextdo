@@ -299,10 +299,11 @@ describe('Now screen', () => {
     expect(screen.getByText('2/2 项')).toBeTruthy();
     expect(screen.getByText('55 分钟')).toBeTruthy();
     expect(screen.getByText('轻')).toBeTruthy();
-    // The list is ALWAYS expanded: the second title is visible, and each
-    // row carries its own 稍后 (hero button + 2 rows = 3).
+    // The list is ALWAYS expanded: the second title is visible, the hero
+    // carries 稍后, and each row carries its own 更多操作.
     expect(screen.getByText('整理桌面')).toBeTruthy();
-    expect(screen.getAllByText('稍后')).toHaveLength(3);
+    expect(screen.getByText('稍后')).toBeTruthy();
+    expect(screen.getAllByLabelText(/更多操作/)).toHaveLength(2);
     // The condition bar is 可用时间-only now (#46 removed the scenes).
     expect(screen.getByText(/可用时间/)).toBeTruthy();
     expect(screen.queryByText('当前场景')).toBeNull();
@@ -411,10 +412,8 @@ describe('Now screen', () => {
     // secret.
     expect(screen.getByText('✓ 完成')).toBeTruthy();
 
-    // …and the same action is reachable by tap, so the gesture is an
-    // accelerator rather than the only path (the row's 完成 is the only
-    // button with that label on this screen).
-    fireEvent.press(screen.getByText('完成'));
+    // …and the same action is reachable by tap on the checkmark button
+    fireEvent.press(screen.getByRole('button', { name: '完成行动：整理桌面' }));
     await waitFor(() => expect(completeCalls.count).toBe(1));
     expect(completeCalls.args[0]).toMatchObject({ actionKind: 'next', actionId: 'a-1' });
   });
@@ -871,10 +870,10 @@ describe('Now screen', () => {
       };
       renderRouter('app', { initialUrl: '/(tabs)/now' });
       await waitFor(() => expect(screen.getByText('今天习惯 0/1')).toBeTruthy());
-      await waitFor(() => expect(screen.getByRole('button', { name: '完成' })).toBeTruthy());
+      await waitFor(() => expect(screen.getByRole('button', { name: '完成行动：写季度总结' })).toBeTruthy());
 
       habitDaysRef.current = [habitDayFixture({ status: 'done' })];
-      fireEvent.press(screen.getByRole('button', { name: '完成' }));
+      fireEvent.press(screen.getByRole('button', { name: '完成行动：写季度总结' }));
 
       await waitFor(() => expect(screen.getByText('今天习惯 1/1')).toBeTruthy());
       expect(screen.queryByRole('button', { name: '完成习惯：阅读' })).toBeNull();
@@ -959,10 +958,10 @@ describe('Now screen', () => {
 
       await waitFor(() => expect(screen.getAllByText('写需求文档').length).toBeGreaterThan(0));
 
-      // Tap 编辑 button in the action row or hero
-      const editButtons = screen.getAllByRole('button', { name: '编辑' });
-      expect(editButtons.length).toBeGreaterThan(0);
-      fireEvent.press(editButtons[0]!);
+      // Open action menu from the list row and choose 编辑行动
+      fireEvent.press(screen.getByRole('button', { name: '更多操作：写需求文档' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: '编辑行动' })).toBeTruthy());
+      fireEvent.press(screen.getByRole('button', { name: '编辑行动' }));
       await flushRenders();
 
       // Modal is visible with action details

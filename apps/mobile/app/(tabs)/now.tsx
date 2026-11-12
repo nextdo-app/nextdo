@@ -39,6 +39,7 @@ import { SnoozeSheet } from '@/components/snooze-sheet';
 import { useSwipeReveal } from '@/hooks/use-swipe-reveal';
 import { DeadlineChip } from '@/components/deadline-chip';
 import { EditActionModal } from '@/components/edit-action-modal';
+import { ActionMenuModal } from '@/components/action-menu-modal';
 import { HabitWindowConfirmModal } from '@/components/habit-window-confirm-modal';
 import { useAppTheme } from '@/lib/theme';
 
@@ -319,11 +320,12 @@ const ActionRow = memo(function ActionRow({
   onEdit: (candidate: NextCandidate) => void;
 }) {
   const action = entry.action;
+  const { isDark } = useAppTheme();
+  const [showMenu, setShowMenu] = useState(false);
   // Swipe right reveals the 完成 button (issue #17, reworked by issue 27):
   // the gesture is a shortcut to the CONFIRMATION, never past it — the
   // action is completed only when that revealed button is pressed. The
-  // button below is the same action, and on web it is the ONLY path (the
-  // gesture is not registered there at all), so no platform needs a swipe.
+  // button in the card header is the same action.
   const swipe = useSwipeReveal(() => onComplete(action.kind, action.id));
   return (
     <View className="overflow-hidden rounded-2xl">
@@ -351,71 +353,101 @@ const ActionRow = memo(function ActionRow({
           </View>
         )}
       </View>
-      <Pressable
-        accessibilityRole={action.kind === 'next' ? 'button' : undefined}
-        accessibilityLabel={action.kind === 'next' ? `编辑：${action.title}` : undefined}
-        accessibilityHint={action.kind === 'next' ? '双击打开编辑面板，可补充备注' : undefined}
-        onPress={() => {
-          // Tapping the row dismisses the exposed button first; a second tap
-          // (or a tap on an unswiped row) opens the editor — the TickTick-style
-          // "tap an item to jot down what it is actually about" gesture.
-          if (swipe.revealed) {
-            swipe.close();
-            return;
-          }
-          if (action.kind === 'next') onEdit(action as NextCandidate);
-        }}
+      <Animated.View
+        testID={`swipe-row-${action.id}`}
+        {...swipe.panHandlers}
+        style={{ transform: [{ translateX: swipe.translateX }] }}
       >
-        <Animated.View
-          testID={`swipe-row-${action.id}`}
-          {...swipe.panHandlers}
-          style={{ transform: [{ translateX: swipe.translateX }] }}
-        >
-          <Card variant="outlined" className="gap-2.5 p-3.5 rounded-2xl border-border/70 bg-surface dark:border-border-dark/70 dark:bg-surface-dark shadow-2xs">
-            <View className="flex-row items-start gap-2.5">
-              <View className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-accent/80 dark:bg-accent-dark/80" />
-              <Text className="flex-1 font-sans text-base font-medium leading-snug text-ink dark:text-ink-dark">
-                {action.title}
-              </Text>
-            </View>
-            {action.kind === 'next' && (action as NextCandidate).note !== undefined ? (
-              // The note rides along on the candidate (issue #63) so the list
-              // shows the detail without opening the editor. Rendered as ONE
-              // truncated run (task 10-22): the note is Markdown, but a list
-              // row must not grow to the size of the document behind it.
-              <MarkdownNote
-                mode="inline"
-                numberOfLines={2}
-                value={(action as NextCandidate).note ?? ''}
-              />
-            ) : null}
-            <View className="flex-row flex-wrap items-center gap-1.5">
-              {projectName !== undefined ? <Tag label={projectName} tone="neutral" /> : null}
-              <View className="ml-auto flex-row items-center gap-1">
-                {action.kind === 'calendar' && action.startsAt !== undefined ? (
-                  <Text className="font-sans text-xs text-muted dark:text-muted-dark">
-                    开始 {formatLocalDateTime(action.startsAt)}
-                  </Text>
-                ) : action.deadline !== undefined ? (
-                  /* Same chip the project screens use (issue #16) — the 待办
-                     view must say 已逾期 / 今天截止 / 还剩 N 天, not a bare date. */
-                  <DeadlineChip deadline={action.deadline} now={now} />
-                ) : (
-                  <Text className="font-sans text-xs text-muted dark:text-muted-dark">随时</Text>
-                )}
+        <Card variant="outlined" className="p-3.5 rounded-2xl border-border/70 bg-surface dark:border-border-dark/70 dark:bg-surface-dark shadow-2xs">
+          <View className="flex-row items-start justify-between gap-2">
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`开始专注：${action.title}`}
+              accessibilityHint="点击进入专注模式"
+              onPress={() => {
+                if (swipe.revealed) {
+                  swipe.close();
+                  return;
+                }
+                const presetParam = action.estMinutes ? `&preset=${action.estMinutes}` : '';
+                router.push(`/focus/${action.id}?kind=${action.kind}${presetParam}`);
+              }}
+              className="flex-1 gap-2 active:opacity-75"
+            >
+              <View className="flex-row items-start gap-2.5">
+                <View className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-accent/80 dark:bg-accent-dark/80" />
+                <Text className="flex-1 font-sans text-base font-medium leading-snug text-ink dark:text-ink-dark">
+                  {action.title}
+                </Text>
               </View>
-            </View>
-            <View className="flex-row items-center justify-end gap-1.5 pt-1.5 border-t border-border/40 dark:border-border-dark/40">
-              <Button size="sm" label="完成" variant="tinted" onPress={() => onComplete(action.kind, action.id)} />
-              <Button size="sm" label="稍后" variant="ghost" onPress={() => onSnooze(action.kind, action.id)} />
-              {action.kind === 'next' ? (
-                <Button size="sm" label="编辑" variant="ghost" onPress={() => onEdit(action as NextCandidate)} />
+              {action.kind === 'next' && (action as NextCandidate).note !== undefined ? (
+                // The note rides along on the candidate (issue #63) so the list
+                // shows the detail without opening the editor. Rendered as ONE
+                // truncated run (task 10-22): the note is Markdown, but a list
+                // row must not grow to the size of the document behind it.
+                <MarkdownNote
+                  mode="inline"
+                  numberOfLines={2}
+                  value={(action as NextCandidate).note ?? ''}
+                />
               ) : null}
-              <Button size="sm" label="删除" variant="ghost" onPress={() => onTrash(action.kind, action.id)} />
+              <View className="flex-row flex-wrap items-center gap-1.5">
+                {projectName !== undefined ? <Tag label={projectName} tone="neutral" /> : null}
+                <View className="ml-auto flex-row items-center gap-1">
+                  {action.kind === 'calendar' && action.startsAt !== undefined ? (
+                    <Text className="font-sans text-xs text-muted dark:text-muted-dark">
+                      开始 {formatLocalDateTime(action.startsAt)}
+                    </Text>
+                  ) : action.deadline !== undefined ? (
+                    /* Same chip the project screens use (issue #16) — the 待办
+                       view must say 已逾期 / 今天截止 / 还剩 N 天, not a bare date. */
+                    <DeadlineChip deadline={action.deadline} now={now} />
+                  ) : (
+                    <Text className="font-sans text-xs text-muted dark:text-muted-dark">随时</Text>
+                  )}
+                </View>
+              </View>
+            </Pressable>
+            <View className="-mr-1 -mt-1 flex-row items-center gap-1">
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`完成行动：${action.title}`}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                onPress={() => onComplete(action.kind, action.id)}
+                className="h-8 w-8 items-center justify-center rounded-full border border-border/80 bg-surface active:scale-95 dark:border-border-dark dark:bg-surface-dark"
+              >
+                <Ionicons
+                  name="checkmark"
+                  size={15}
+                  color={isDark ? colors.accentDark : colors.accent}
+                />
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`更多操作：${action.title}`}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
+                onPress={() => setShowMenu(true)}
+                className="h-8 w-8 items-center justify-center rounded-full border border-border/80 bg-surface active:scale-95 dark:border-border-dark dark:bg-surface-dark"
+              >
+                <Ionicons
+                  name="ellipsis-horizontal"
+                  size={14}
+                  color={isDark ? colors.mutedDark : colors.muted}
+                />
+              </Pressable>
             </View>
-          </Card>
-        </Animated.View>
-      </Pressable>
+          </View>
+        </Card>
+      </Animated.View>
+      <ActionMenuModal
+        visible={showMenu}
+        actionTitle={action.title}
+        canEdit={action.kind === 'next'}
+        onClose={() => setShowMenu(false)}
+        onEdit={() => onEdit(action as NextCandidate)}
+        onSnooze={() => onSnooze(action.kind, action.id)}
+        onTrash={() => onTrash(action.kind, action.id)}
+      />
     </View>
   );
 });
@@ -1091,7 +1123,7 @@ export default function NowScreen() {
                                 ? projectTitles[entry.action.projectId]
                                 : undefined
                             }
-                            onComplete={() => handleComplete(entry.action.kind, entry.action.id)}
+                            onComplete={handleComplete}
                             onSnooze={handleSnooze}
                             onTrash={handleTrash}
                             onEdit={handleEdit}
