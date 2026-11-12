@@ -5,9 +5,9 @@ use tauri::{AppHandle, Emitter, EventTarget, Manager, WebviewWindow};
 
 pub const LABEL: &str = "focus-island";
 const MAIN: &str = "main";
-const COLLAPSED_WIDTH: f64 = 240.0;
+const COLLAPSED_WIDTH: f64 = 320.0;
 const EXPANDED_WIDTH: f64 = 420.0;
-const MIN_HEIGHT: f64 = 32.0;
+const MIN_HEIGHT: f64 = 34.0;
 const MAX_HEIGHT: f64 = 900.0;
 const TOP_GAP: f64 = if cfg!(target_os = "macos") { 0.0 } else { 8.0 };
 const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
@@ -481,10 +481,10 @@ mod tests {
             position: tauri::PhysicalPosition::new(-2560, -1392),
             size: tauri::PhysicalSize::new(2560, 1392),
         };
-        let (position, size) = bounds(&work, -1440, 2.0, false, 32.0).unwrap();
-        assert_eq!(size, tauri::PhysicalSize::new(480, 64));
+        let (position, size) = bounds(&work, -1440, 2.0, false, 34.0).unwrap();
+        assert_eq!(size, tauri::PhysicalSize::new(640, 68));
         let expected_top = if cfg!(target_os = "macos") { -1440 } else { -1424 };
-        assert_eq!(position, tauri::PhysicalPosition::new(-1520, expected_top));
+        assert_eq!(position, tauri::PhysicalPosition::new(-1600, expected_top));
         let (expanded, _) = bounds(&work, -1440, 2.0, true, 400.0).unwrap();
         assert_eq!(expanded.x, -1700);
         assert_eq!(expanded.y, position.y);

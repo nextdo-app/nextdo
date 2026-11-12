@@ -14,13 +14,15 @@
   "peerDependencies": {
     "nativewind": "4.2.7",
     "react": "19.2.3",
-    "react-native": "0.86.3"
+    "react-native": "0.86.3",
+    "react-native-svg": "15.15.4"
   },
   "devDependencies": {
     "@types/react": "19.2.2",
     "nativewind": "4.2.7",
     "react": "19.2.3",
     "react-native": "0.86.3",
+    "react-native-svg": "15.15.4",
     "typescript": "6.0.3"
   }
 }

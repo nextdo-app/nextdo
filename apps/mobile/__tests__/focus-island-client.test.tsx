@@ -84,7 +84,6 @@ it('keeps compact state accessible and reveals full text when expanded', async (
   const description = view.getByText(`${title}，专注进行中，25:00`);
   expect(toggle.props['aria-describedby']).toBe(description.props.nativeID);
   expect(view.getByText(title).props.numberOfLines).toBe(1);
-  expect(view.getByText('专注进行中')).toBeTruthy();
   act(() => {
     mockListeners.get('focus-island:snapshot')!({
       ...snapshot,
@@ -95,7 +94,6 @@ it('keeps compact state accessible and reveals full text when expanded', async (
     });
   });
   expect(view.getByText(`${title}，已暂停，25:00`)).toBeTruthy();
-  expect(view.getByText('已暂停')).toBeTruthy();
   fireEvent.press(toggle);
   expect(view.getByText('已暂停')).toBeTruthy();
   expect(view.getByText(title).props.numberOfLines).toBeUndefined();
@@ -115,6 +113,33 @@ it('keeps the in-app capsule state visible without opting into compact mode', ()
   );
   expect(view.getByText('专注进行中')).toBeTruthy();
   expect(view.getByLabelText('展开专注岛').props['aria-describedby']).toBeUndefined();
+});
+
+it('marks the compact pill as paused without hiding the clock', () => {
+  const view = render(
+    <FocusIsland
+      title="Current action"
+      clock="25:00"
+      stateLabel="已暂停"
+      expanded={false}
+      isCompact
+      paused
+      onToggle={() => undefined}
+    />,
+  );
+  expect(view.getByText('⏸')).toBeTruthy();
+  expect(view.getByText('25:00')).toBeTruthy();
+  view.rerender(
+    <FocusIsland
+      title="Current action"
+      clock="25:00"
+      stateLabel="专注进行中"
+      expanded={false}
+      isCompact
+      onToggle={() => undefined}
+    />,
+  );
+  expect(view.queryByText('⏸')).toBeNull();
 });
 
 it('does not claim an unacknowledged pause or retry it after timeout', async () => {

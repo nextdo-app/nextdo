@@ -257,6 +257,8 @@ pnpm dev
 
 特别感谢 **[TopBook](https://topbook.cc/)** 团队长期以来在高效工作流、个人知识管理与 GTD 哲学普及上的卓越分享，为 Nextdo 的产品理念与心流设计提供了深刻的启发。
 
+桌面端「专注岛」的胶囊形态、专注/休息相位配色与环形进度参考了 **[ipfred/focus-island](https://github.com/ipfred/focus-island)**（Apache-2.0），在此致谢。
+
 ---
 
 ## 📄 开源协议
