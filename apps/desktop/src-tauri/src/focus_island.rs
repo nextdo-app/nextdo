@@ -7,6 +7,12 @@ pub const LABEL: &str = "focus-island";
 const MAIN: &str = "main";
 const COLLAPSED_WIDTH: f64 = 320.0;
 const EXPANDED_WIDTH: f64 = 420.0;
+/// Notched Macs get a wider capsule so the center gap can cover the cutout.
+const NOTCHED_WIDTH: f64 = 480.0;
+/// Logical notch width with slack for wider models (13" Air measures 179).
+const NOTCH_RESERVE: f64 = 200.0;
+/// Notched Macs raise the menu-bar band to cover the cutout (33pt vs 24pt).
+const NOTCH_MIN_INSET: f64 = 30.0;
 const MIN_HEIGHT: f64 = 34.0;
 const MAX_HEIGHT: f64 = 900.0;
 const TOP_GAP: f64 = if cfg!(target_os = "macos") { 0.0 } else { 8.0 };
@@ -183,24 +189,50 @@ pub fn permits_command(caller: &str, command: &str) -> bool {
     }
 }
 
-fn bounds(
-    work: &tauri::PhysicalRect<i32, u32>,
-    anchor_top: i32,
-    scale: f64,
-    expanded: bool,
-    height: f64,
-) -> Result<(tauri::PhysicalPosition<i32>, tauri::PhysicalSize<u32>), String> {
-    if !scale.is_finite() || scale <= 0.0 || work.size.width == 0 || work.size.height == 0 {
-        return Err("focus-island.invalid-monitor".into());
+fn notch_reserve(monitor: &tauri::Monitor) -> f64 {
+    if !cfg!(target_os = "macos") {
+        return 0.0;
     }
-    let width = if expanded {
+    // ponytail: menu-bar inset stands in for NSScreen.safeAreaInsets. It fails
+    // when the menu bar is auto-hidden; read safeAreaInsets if that matters.
+    let inset =
+        f64::from(monitor.work_area().position.y - monitor.position().y) / monitor.scale_factor();
+    if inset >= NOTCH_MIN_INSET {
+        NOTCH_RESERVE
+    } else {
+        0.0
+    }
+}
+
+fn island_width(expanded: bool, reserve: f64) -> f64 {
+    if reserve > 0.0 {
+        NOTCHED_WIDTH
+    } else if expanded {
         EXPANDED_WIDTH
     } else {
         COLLAPSED_WIDTH
-    };
-    let width = (width * scale).round().min(f64::from(work.size.width)) as u32;
+    }
+}
+
+fn bounds(
+    work: &tauri::PhysicalRect<i32, u32>,
+    center: &tauri::PhysicalRect<i32, u32>,
+    anchor_top: i32,
+    scale: f64,
+    width: f64,
+    height: f64,
+) -> Result<(tauri::PhysicalPosition<i32>, tauri::PhysicalSize<u32>), String> {
+    if !scale.is_finite()
+        || scale <= 0.0
+        || work.size.width == 0
+        || work.size.height == 0
+        || center.size.width == 0
+    {
+        return Err("focus-island.invalid-monitor".into());
+    }
+    let width = (width * scale).round().min(f64::from(center.size.width)) as u32;
     let height = (height * scale).round().min(f64::from(work.size.height)) as u32;
-    let x = f64::from(work.position.x) + f64::from(work.size.width - width) / 2.0;
+    let x = f64::from(center.position.x) + f64::from(center.size.width - width) / 2.0;
     let y = (f64::from(anchor_top) + TOP_GAP * scale)
         .min(f64::from(work.position.y) + f64::from(work.size.height - height));
     Ok((
@@ -209,9 +241,10 @@ fn bounds(
     ))
 }
 
-pub fn position_window(app: &AppHandle, prefer_main: bool) -> Result<(), String> {
+/// Returns the notch reserve so the webview can lay out its center gap.
+pub fn position_window(app: &AppHandle, prefer_main: bool) -> Result<f64, String> {
     let Some(window) = app.get_webview_window(LABEL) else {
-        return Ok(());
+        return Ok(0.0);
     };
     let state = app.state::<FocusIslandState>();
     let (expanded, height) = {
@@ -231,35 +264,43 @@ pub fn position_window(app: &AppHandle, prefer_main: bool) -> Result<(), String>
             .primary_monitor()
             .map_err(|error| error.to_string())?);
     if let Some(monitor) = monitor {
-        // Only macOS places the island in the menu-bar band; other OSes reserve it.
+        let work = monitor.work_area();
+        let screen = tauri::PhysicalRect {
+            position: *monitor.position(),
+            size: *monitor.size(),
+        };
+        let reserve = notch_reserve(&monitor);
+        // The cutout is centered on the physical screen, so a side Dock must
+        // not shift the notch gap. Other platforms keep the work-area center.
+        let center = if cfg!(target_os = "macos") {
+            &screen
+        } else {
+            &work
+        };
         let anchor_top = if cfg!(target_os = "macos") {
             monitor.position().y
         } else {
-            monitor.work_area().position.y
+            work.position.y
         };
         let (position, size) = bounds(
-            monitor.work_area(),
+            &work,
+            center,
             anchor_top,
             monitor.scale_factor(),
-            expanded,
+            island_width(expanded, reserve),
             height,
         )?;
         window.set_size(size).map_err(|error| error.to_string())?;
         window
             .set_position(position)
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        Ok(reserve)
     } else {
         window
-            .set_size(tauri::LogicalSize::new(
-                if expanded {
-                    EXPANDED_WIDTH
-                } else {
-                    COLLAPSED_WIDTH
-                },
-                height,
-            ))
+            .set_size(tauri::LogicalSize::new(island_width(expanded, 0.0), height))
             .map_err(|error| error.to_string())?;
-        window.center().map_err(|error| error.to_string())
+        window.center().map_err(|error| error.to_string())?;
+        Ok(0.0)
     }
 }
 
@@ -305,6 +346,12 @@ pub async fn focus_island_show(app: AppHandle) -> Result<(), String> {
         }
     }
     if app.get_webview_window(LABEL).is_none() {
+        // Seed the webview's notch gap; ready/resize replies keep it current.
+        let reserve = app
+            .get_webview_window(MAIN)
+            .and_then(|window| window.current_monitor().ok().flatten())
+            .map(|monitor| notch_reserve(&monitor))
+            .unwrap_or(0.0);
         // No parent: minimizing an owner would hide the capsule on Windows.
         let created = tauri::WebviewWindowBuilder::new(
             &app,
@@ -312,7 +359,7 @@ pub async fn focus_island_show(app: AppHandle) -> Result<(), String> {
             tauri::WebviewUrl::App("focus-island".into()),
         )
         .title("Nextdo 专注岛")
-        .inner_size(COLLAPSED_WIDTH, MIN_HEIGHT)
+        .inner_size(island_width(false, reserve), MIN_HEIGHT)
         .decorations(false)
         .always_on_top(true)
         .transparent(true)
@@ -324,9 +371,10 @@ pub async fn focus_island_show(app: AppHandle) -> Result<(), String> {
         .skip_taskbar(true)
         .focused(false)
         .visible(false)
-        .initialization_script(
-            "Object.defineProperty(window, '__NEXTDO_FOCUS_ISLAND__', { value: true });",
-        )
+        .initialization_script(format!(
+            "Object.defineProperty(window, '__NEXTDO_FOCUS_ISLAND__', {{ value: true }});\
+             window.__NEXTDO_FOCUS_NOTCH_RESERVE__ = {reserve};"
+        ))
         .on_page_load(|window, payload| {
             if payload.event() == tauri::webview::PageLoadEvent::Started {
                 match window.state::<FocusIslandState>().lock() {
@@ -344,7 +392,7 @@ pub async fn focus_island_show(app: AppHandle) -> Result<(), String> {
         #[cfg(target_os = "macos")]
         _window
             .with_webview(|webview| unsafe {
-                // NSStatusWindowLevel allows this island to occupy the menu-bar band.
+                // NSStatusWindowLevel keeps the island above other floating windows.
                 let native = &*webview.ns_window().cast::<objc2::runtime::AnyObject>();
                 let _: () = objc2::msg_send![native, setLevel: 25_isize];
             })
@@ -364,7 +412,7 @@ pub fn focus_island_hide(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn focus_island_resize(app: AppHandle, expanded: bool, height: f64) -> Result<(), String> {
+pub fn focus_island_resize(app: AppHandle, expanded: bool, height: f64) -> Result<f64, String> {
     if !height.is_finite() || height <= 0.0 || height > MAX_HEIGHT {
         return Err("focus-island.invalid-size".into());
     }
@@ -481,13 +529,32 @@ mod tests {
             position: tauri::PhysicalPosition::new(-2560, -1392),
             size: tauri::PhysicalSize::new(2560, 1392),
         };
-        let (position, size) = bounds(&work, -1440, 2.0, false, 34.0).unwrap();
+        let screen = tauri::PhysicalRect {
+            position: tauri::PhysicalPosition::new(-2560, -1440),
+            size: tauri::PhysicalSize::new(2560, 1440),
+        };
+        let (position, size) = bounds(&work, &screen, -1440, 2.0, COLLAPSED_WIDTH, 34.0).unwrap();
         assert_eq!(size, tauri::PhysicalSize::new(640, 68));
-        let expected_top = if cfg!(target_os = "macos") { -1440 } else { -1424 };
+        let expected_top = if cfg!(target_os = "macos") {
+            -1440
+        } else {
+            -1424
+        };
         assert_eq!(position, tauri::PhysicalPosition::new(-1600, expected_top));
-        let (expanded, _) = bounds(&work, -1440, 2.0, true, 400.0).unwrap();
+        let (expanded, _) = bounds(&work, &screen, -1440, 2.0, EXPANDED_WIDTH, 400.0).unwrap();
         assert_eq!(expanded.x, -1700);
         assert_eq!(expanded.y, position.y);
+        let (notched, _) = bounds(&work, &screen, -1440, 2.0, NOTCHED_WIDTH, 34.0).unwrap();
+        assert_eq!(notched.x, -1760);
+        assert_eq!(notched.y, position.y);
+    }
+
+    #[test]
+    fn notched_displays_reserve_the_center_gap() {
+        assert_eq!(island_width(false, 0.0), COLLAPSED_WIDTH);
+        assert_eq!(island_width(true, 0.0), EXPANDED_WIDTH);
+        assert_eq!(island_width(false, NOTCH_RESERVE), NOTCHED_WIDTH);
+        assert_eq!(island_width(true, NOTCH_RESERVE), NOTCHED_WIDTH);
     }
 
     #[test]
@@ -496,10 +563,10 @@ mod tests {
             position: tauri::PhysicalPosition::new(20, 40),
             size: tauri::PhysicalSize::new(320, 480),
         };
-        let (position, size) = bounds(&work, 40, 1.0, true, 900.0).unwrap();
+        let (position, size) = bounds(&work, &work, 40, 1.0, NOTCHED_WIDTH, 900.0).unwrap();
         assert_eq!(size, work.size);
         assert_eq!(position, work.position);
-        assert!(bounds(&work, 40, f64::NAN, false, 80.0).is_err());
+        assert!(bounds(&work, &work, 40, f64::NAN, COLLAPSED_WIDTH, 80.0).is_err());
     }
 
     #[test]

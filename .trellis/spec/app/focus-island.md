@@ -29,7 +29,7 @@ The ordinary app clock's last minute tick is not a command timestamp.
 | --- | --- | --- |
 | `focus_island_show` | `main` | none |
 | `focus_island_hide` | `main`, `focus-island` | none |
-| `focus_island_resize` | `focus-island` | `expanded: boolean`, finite `height: number` |
+| `focus_island_resize` | `focus-island` | `expanded: boolean`, finite `height: number`; returns the current notch reserve in logical pixels |
 | `focus_island_open_main` | `focus-island` | none |
 | `focus_island_ready` | `focus-island` | none |
 | `focus_island_publish` | `main` | `{ snapshot }` |
@@ -62,6 +62,9 @@ invoking webview label in the dispatcher; a caller-supplied label is not identit
 - `window.__NEXTDO_FOCUS_ISLAND__` is a native-injected UI routing marker only.
   It selects the lightweight root and transparent backgrounds before normal
   providers mount. It does not authorize native calls.
+- `window.__NEXTDO_FOCUS_NOTCH_RESERVE__` seeds the notch gap width in logical
+  pixels (0 when absent). Native window creation sets it; the resize reply
+  keeps it current after display changes. It is presentation data only.
 - Expo `web.output='single'` uses the shell modified by
   `apps/mobile/scripts/post-export-web.mjs`, not `app/+html.tsx`. Put the marker
   bootstrap, scoped `html`/`body`/`#root` transparency, and capsule service-worker
@@ -94,23 +97,34 @@ invoking webview label in the dispatcher; a caller-supplied label is not identit
 - Bad: mounting the normal root in the capsule duplicates PowerSync, reminder/
   calendar services, token checks, and update prompts.
 - Bad: parenting the capsule to main hides it with its owner on Windows.
-- Window bounds fit the visible panel. Center horizontally in the work area,
-  respecting scale factor and negative coordinates. On macOS, anchor the top
-  to the physical screen top with zero gap; other platforms retain
-  the work-area top plus 8 logical pixels. The native collapsed window is
-  320x34 logical pixels with no client outer padding; do not leave an invisible
-  72pt minimum window after shrinking the content. The compact pill is opaque
-  black with white text, a phase-colored dot/clock, and the reference's
-  rounded-rect progress ring (reference: ipfred/focus-island
+- Window bounds fit the visible panel and respect scale factor and negative
+  coordinates. On macOS, anchor the top to the physical screen top with zero
+  gap (the chosen menu-bar position); other platforms use the work-area top
+  plus 8 logical pixels. When the macOS work-area top inset is at least 30
+  logical points, treat the display as notched: reserve 200 logical pixels in
+  the capsule's center for the cutout and widen the collapsed and expanded
+  window to 480 logical pixels. A centered 320pt capsule at y=0 loses its
+  title behind the cutout. The notch is centered on the physical screen, so
+  center on the screen on macOS (a side Dock must not shift the gap); other
+  platforms center in the work area. The 200pt reserve covers current notch
+  widths (13" Air measures 179pt); change the constant if a wider model
+  appears. The detection depends on a visible menu bar; verify the inset if
+  the menu bar is auto-hidden. The native collapsed window is
+  320x34 logical pixels (480x34 when notched) with no client outer padding; do not leave an invisible
+  72pt minimum window after shrinking the content. Title and clock stay in
+  the side segments, so the gap must not be used for content. The compact pill
+  is opaque black with white text, a phase-colored dot/clock, and the
+  reference's rounded-rect progress ring (reference: ipfred/focus-island
   `CapsuleFocus.vue`); never theme it with `bg-surface`, which is what made it
-  disappear against the menu bar. This desktop
+  disappear against the menu bar. The ring spans the full window width; its
+  top stroke behind the cutout is invisible. This desktop
   pointer/keyboard header is the deliberate 34pt target exception; the regular
   in-app island and expanded command controls retain 44pt minimum targets. Clamp the bottom to the work area. Verify the actual
   native frame because AppKit can constrain requested coordinates. Set the macOS
   capsule's native status-window level (25) once after creation, through
-  `with_webview` on the main thread, so it can occupy the menu-bar band. Do not
-  repeat this native-handle callback on each resize: pinned Tauri retains its
-  platform handles. Hide is not abandon. Dock/tray restore main
+  `with_webview` on the main thread, so it stays above other floating windows.
+  Do not repeat this native-handle callback on each resize: pinned Tauri retains
+  its platform handles. Hide is not abandon. Dock/tray restore main
   even while the capsule is visible.
 - Resize from the visible, bounded panel height, not unbounded scroll content;
   long titles/errors must remain scrollable without breaking the connection.
@@ -130,7 +144,8 @@ invoking webview label in the dispatcher; a caller-supplied label is not identit
 - Bridge: malformed inputs, stale/concurrent commands, result correlation,
   timeout without auto-retry, reconnect and owner-generation changes.
 - Root isolation: capsule mount creates zero normal DB/startup services.
-- Native boundary: caller allowlist, payload validation, work-area geometry.
+- Native boundary: caller allowlist, payload validation, work-area geometry,
+  notched width selection, and screen-centered notch placement.
 - Final `pnpm verify:web` plus browser interaction screenshots. Native app
   switching, main hide/minimize, topmost, transparency, bounds, focus, and tray/
   Dock behavior need native observations with OS/version recorded. Browser

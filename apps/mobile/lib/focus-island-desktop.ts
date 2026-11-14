@@ -3,6 +3,7 @@ import { logger } from '@nextdo/core';
 interface DesktopHost {
   window?: {
     __NEXTDO_FOCUS_ISLAND__?: boolean;
+    __NEXTDO_FOCUS_NOTCH_RESERVE__?: number;
     __TAURI_INTERNALS__?: {
       invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
     };
@@ -11,6 +12,12 @@ interface DesktopHost {
 
 export function isFocusIslandWindow(): boolean {
   return (globalThis as DesktopHost).window?.__NEXTDO_FOCUS_ISLAND__ === true;
+}
+
+/** Center gap the native window reserved for a macOS cutout; 0 elsewhere. */
+export function focusIslandNotchReserve(): number {
+  const value = (globalThis as DesktopHost).window?.__NEXTDO_FOCUS_NOTCH_RESERVE__;
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
 }
 
 export function isDesktopFocusAvailable(): boolean {
