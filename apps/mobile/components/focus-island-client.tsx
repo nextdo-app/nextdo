@@ -13,6 +13,7 @@ import {
   type FocusIslandSnapshot,
 } from '@/lib/focus-island-contract';
 import {
+  focusIslandNotchReserve,
   invokeFocusDesktop,
   listenFocusDesktop,
   reportFocusDesktopError,
@@ -48,6 +49,7 @@ export function FocusIslandClient() {
   const latest = useRef<FocusIslandSnapshot | null>(null);
   const retiredGenerations = useRef(new Set<string>());
   const [expanded, setExpanded] = useState(false);
+  const [notchReserve, setNotchReserve] = useState(focusIslandNotchReserve);
   const [pending, setPending] = useState(false);
   const request = useRef<{
     id: string;
@@ -164,10 +166,16 @@ export function FocusIslandClient() {
   };
   const busy = pending || !connected || snapshot?.busy === true;
   const resize = (height: number) => {
-    void invokeFocusDesktop('focus_island_resize', {
+    void invokeFocusDesktop<number>('focus_island_resize', {
       expanded,
       height: Math.ceil(Math.min(height, MAX_PANEL_HEIGHT)),
-    }).catch(fail);
+    })
+      .then((reserve) => {
+        if (typeof reserve === 'number' && Number.isFinite(reserve) && reserve >= 0) {
+          setNotchReserve(reserve);
+        }
+      })
+      .catch(fail);
   };
   const phase = snapshot?.phase ?? 'idle';
   const visibleError = error ?? snapshot?.error ?? null;
@@ -185,6 +193,7 @@ export function FocusIslandClient() {
             stateLabel={FOCUS_PHASE_LABELS[phase]}
             expanded={expanded}
             isCompact
+            notchReserve={notchReserve}
             tone={phase === 'break' || phase === 'break-complete' ? 'break' : 'focus'}
             paused={phase !== 'running' && phase !== 'break'}
             progress={display.progress}

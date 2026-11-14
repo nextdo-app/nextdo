@@ -11,6 +11,7 @@ const mockSetScheme = jest.fn();
 jest.mock('nativewind', () => ({ useColorScheme: () => ({ setColorScheme: mockSetScheme }) }));
 jest.mock('@/hooks/use-app-fonts', () => ({ useAppFonts: () => true }));
 jest.mock('@/lib/focus-island-desktop', () => ({
+  focusIslandNotchReserve: () => 0,
   invokeFocusDesktop: (command: string, args?: Record<string, unknown>) =>
     mockInvoke(command, args),
   listenFocusDesktop: async (event: string, receive: (value: unknown) => void) => {
@@ -113,6 +114,23 @@ it('keeps the in-app capsule state visible without opting into compact mode', ()
   );
   expect(view.getByText('专注进行中')).toBeTruthy();
   expect(view.getByLabelText('展开专注岛').props['aria-describedby']).toBeUndefined();
+});
+
+it('keeps the title and clock beside the notch gap on notched displays', () => {
+  const view = render(
+    <FocusIsland
+      title="Current action"
+      clock="25:00"
+      stateLabel="专注进行中"
+      expanded={false}
+      isCompact
+      notchReserve={200}
+      onToggle={() => undefined}
+    />,
+  );
+  expect(view.getByText('Current action')).toBeTruthy();
+  expect(view.getByText('25:00')).toBeTruthy();
+  expect(view.getByTestId('focus-island-notch-spacer').props.style).toEqual({ width: 200 });
 });
 
 it('marks the compact pill as paused without hiding the clock', () => {
