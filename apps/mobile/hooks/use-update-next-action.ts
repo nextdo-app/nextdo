@@ -1,10 +1,11 @@
 /**
  * Next-action edit mutation (project detail row's [编辑], task 09-28 R4):
- * a patch-style full-row update — `{ ...action, ...patch, updatedAt }` —
- * delegated to the packages/db `updateNextAction` query. Redefining the
- * action (title or estimate changed) resets `consecutiveSkips` to 0 in
- * the db layer (engine spec "Skip & Re-clarify"). `now` from the single
- * app clock (hook-guidelines Rule 4).
+ * a patch-style update — `{ ...action, ...patch, updatedAt }` — delegated to
+ * the packages/db `updateNextAction` query, which keeps every field the edit
+ * forms do not own (status, snooze state, skip streak) from the live row.
+ * Redefining the action (title or estimate changed) resets `consecutiveSkips`
+ * to 0 in the db layer (engine spec "Skip & Re-clarify"). `now` from the
+ * single app clock (hook-guidelines Rule 4).
  */
 import { useCallback, useMemo, useState } from 'react';
 import { usePowerSync } from '@powersync/react';
@@ -25,8 +26,6 @@ export interface UpdateNextActionPatch {
    * `ActionReminderInput` in packages/db).
    */
   reminderAt?: readonly string[] | null;
-  /** Context ids assigned to this action. */
-  contextIds?: string[];
   /**
    * Free-form note (issue #63). `''` clears it — stored as NULL, so an
    * emptied field never leaves a blank line in the calendar event.

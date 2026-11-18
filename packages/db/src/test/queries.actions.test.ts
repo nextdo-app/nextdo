@@ -410,6 +410,62 @@ describe('updateNextAction', () => {
     }
   });
 
+  it('a stale form keeps a snooze that landed while the editor was open', async () => {
+    const { db, close } = await open(true);
+    try {
+      // The form's snapshot is taken first; the other device snoozes after.
+      const stale = (await listNextActions(db)).find((item) => item.id === A.a) as NextAction;
+      const target = new Date(FIXTURE_NOW.getTime() + 3_600_000);
+      await snoozeAction(db, {
+        actionKind: 'next',
+        actionId: A.a,
+        snoozedUntil: target,
+        now: FIXTURE_NOW,
+      });
+
+      await updateNextAction(db, { ...stale, note: '只改备注', updatedAt: toIso(FIXTURE_NOW) });
+
+      const row = await db
+        .selectFrom('next_actions')
+        .selectAll()
+        .where('id', '=', A.a)
+        .executeTakeFirstOrThrow();
+      expect(row.note).toBe('只改备注');
+      // The snooze is newer than the form: its state and its reminder stand.
+      expect(row.snoozed_until).toBe(toIso(target));
+      expect(row.last_snoozed_at).toBe(toIso(FIXTURE_NOW));
+      expect(await listScheduledRemindersFor(db, 'next', A.a)).toEqual([toIso(target)]);
+    } finally {
+      await close();
+    }
+  });
+
+  it('a stale form cannot re-arm a reminder on an action completed meanwhile', async () => {
+    const { db, close } = await open(true);
+    try {
+      const stale = (await listNextActions(db)).find((item) => item.id === A.a) as NextAction;
+      await completeAction(db, { actionKind: 'next', actionId: A.a, now: FIXTURE_NOW });
+
+      const future = new Date(FIXTURE_NOW.getTime() + 3_600_000);
+      await updateNextAction(
+        db,
+        { ...stale, note: '迟到的备注', updatedAt: toIso(FIXTURE_NOW) },
+        { reminderAt: [toIso(future)], now: FIXTURE_NOW },
+      );
+
+      const row = await db
+        .selectFrom('next_actions')
+        .selectAll()
+        .where('id', '=', A.a)
+        .executeTakeFirstOrThrow();
+      expect(row.status).toBe('done');
+      expect(row.note).toBe('迟到的备注');
+      expect(await listScheduledRemindersFor(db, 'next', A.a)).toEqual([]);
+    } finally {
+      await close();
+    }
+  });
+
   it('throws not-found for a missing action', async () => {
     const { db, close } = await open(true);
     try {

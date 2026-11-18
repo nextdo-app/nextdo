@@ -355,12 +355,20 @@ export async function addNextAction(
 }
 
 /**
- * Full-row update. Resets `consecutiveSkips` to 0 when the user redefined
- * the action (title or estimate changed) — engine spec "Skip & Re-clarify".
+ * Edit-form update. Only the fields the edit forms own (title, estimate,
+ * value, deadline, note) are taken from the incoming row; everything else —
+ * status, snooze state, skip streak, ingest ids — is read from the CURRENT
+ * row inside the write transaction, because another device may have changed
+ * it while the form was open. Resets `consecutiveSkips` to 0 when the user
+ * redefined the action (title or estimate changed) — engine spec
+ * "Skip & Re-clarify".
  *
  * `reminder` (task 10-17) runs in the SAME transaction as the row update, so
  * a failed save can never leave an armed reminder behind (and a save that
- * only renames cannot touch a snooze reminder — pass nothing for that).
+ * only renames cannot touch a snooze reminder — pass nothing for that). A
+ * reminder is only armed while the current row is still `open`: a form
+ * opened before another device completed the action must not resurrect the
+ * scheduled reminders that completion cancelled.
  */
 export async function updateNextAction(
   db: NextdoDb,
@@ -368,34 +376,35 @@ export async function updateNextAction(
   reminder?: ActionReminderInput,
 ): Promise<NextAction> {
   assertValidNextAction(action);
-  const previous = await loadActionRow(db, 'next', action.id);
-  const previousAction = nextActionFromRow(previous as Database['next_actions']);
-  const redefined =
-    previousAction.title !== action.title || previousAction.estMinutes !== action.estMinutes;
-  const next = redefined
-    ? { ...action, consecutiveSkips: 0, lastSkippedAt: undefined }
-    : action;
-  // Fields the edit forms do not own. The Now screen rebuilds a row from a
-  // pool candidate (which carries none of these), so writing the incoming
-  // object verbatim would blank ingest-only columns — and resurrect `open`
-  // over a completion that landed while the editor was open.
-  const preserved: NextAction = {
-    ...next,
-    status: previousAction.status,
-    category: previousAction.category,
-    sourceInboxId: previousAction.sourceInboxId,
-    replacesActionId: previousAction.replacesActionId,
-  };
   const specs = reminder === undefined ? [] : resolveReminderSpecs(reminder);
-  await db.transaction().execute(async (tx) => {
+  return db.transaction().execute(async (tx) => {
+    // The read-modify-write must share one transaction: a stale outside read
+    // would win over a snooze / completion / skip that landed meanwhile.
+    const currentRow = await loadActionRow(tx, 'next', action.id);
+    const current = nextActionFromRow(currentRow as Database['next_actions']);
+    const redefined =
+      current.title !== action.title || current.estMinutes !== action.estMinutes;
+    const merged: NextAction = {
+      ...current,
+      title: action.title,
+      estMinutes: action.estMinutes,
+      value: action.value,
+      deadline: action.deadline,
+      note: action.note,
+      updatedAt: action.updatedAt,
+      consecutiveSkips: redefined ? 0 : current.consecutiveSkips,
+      lastSkippedAt: redefined ? undefined : current.lastSkippedAt,
+    };
     await tx
       .updateTable('next_actions')
-      .set({ ...nextActionToRow(preserved), updated_at: preserved.updatedAt })
+      .set({ ...nextActionToRow(merged), updated_at: merged.updatedAt })
       .where('id', '=', action.id)
       .execute();
-    if (reminder !== undefined) await reconcileReminder(tx, 'next', action.id, specs, reminder.now);
+    if (reminder !== undefined && merged.status === 'open') {
+      await reconcileReminder(tx, 'next', action.id, specs, reminder.now);
+    }
+    return merged;
   });
-  return preserved;
 }
 
 // ---------------------------------------------------------------------------
