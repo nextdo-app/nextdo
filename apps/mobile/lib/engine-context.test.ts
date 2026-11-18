@@ -113,6 +113,91 @@ describe('load/save round-trip', () => {
     });
   });
 
+  it('a selection made while the first load is in flight wins over the stale read', async () => {
+    let resolveRead!: (value: string | null) => void;
+    const map = new Map<string, string>();
+    __setEngineContextStoreForTests({
+      getItem: () =>
+        new Promise<string | null>((resolve) => {
+          resolveRead = resolve;
+        }),
+      async setItem(key: string, value: string) {
+        map.set(key, value);
+      },
+    });
+
+    const inFlight = loadEngineContext();
+    // The user taps 15 minutes before the first read settles; that read may
+    // still hand back the OLD blob (60), which must not win.
+    await saveEngineContext({ availableMinutes: 15 });
+    resolveRead(JSON.stringify({ availableMinutes: 60 }));
+
+    await expect(inFlight).resolves.toEqual({ availableMinutes: 15 });
+    await expect(loadEngineContext()).resolves.toEqual({ availableMinutes: 15 });
+  });
+
+  it('propagates a web localStorage write failure instead of reporting success', async () => {
+    const fakeLocalStorage = {
+      getItem: () => null,
+      setItem: (key: string) => {
+        // The availability probe writes another key; only the real write hits
+        // the simulated quota.
+        if (key === ENGINE_CONTEXT_KEY) throw new Error('QuotaExceededError');
+      },
+      removeItem: () => undefined,
+    };
+    Object.defineProperty(globalThis, 'window', {
+      value: { localStorage: fakeLocalStorage },
+      writable: true,
+      configurable: true,
+    });
+
+    try {
+      __setEngineContextStoreForTests(null);
+      await expect(saveEngineContext({ availableMinutes: 15 })).rejects.toThrow(
+        'QuotaExceededError',
+      );
+    } finally {
+      // @ts-expect-error cleanup global window
+      delete globalThis.window;
+      __setEngineContextStoreForTests(null);
+    }
+  });
+
+  it('reads a full-but-readable web localStorage and reports its write failures', async () => {
+    // Storage is full: every write throws (including any probe), but the
+    // stored blob is still readable. The session must use the real store —
+    // not a silent in-memory fallback that reports success and loses data.
+    const stored = new Map<string, string>([
+      [ENGINE_CONTEXT_KEY, JSON.stringify({ availableMinutes: 30 })],
+    ]);
+    Object.defineProperty(globalThis, 'window', {
+      value: {
+        localStorage: {
+          getItem: (key: string) => stored.get(key) ?? null,
+          setItem: () => {
+            throw new Error('QuotaExceededError');
+          },
+          removeItem: () => undefined,
+        },
+      },
+      writable: true,
+      configurable: true,
+    });
+
+    try {
+      __setEngineContextStoreForTests(null);
+      await expect(loadEngineContext()).resolves.toEqual({ availableMinutes: 30 });
+      await expect(saveEngineContext({ availableMinutes: 15 })).rejects.toThrow(
+        'QuotaExceededError',
+      );
+    } finally {
+      // @ts-expect-error cleanup global window
+      delete globalThis.window;
+      __setEngineContextStoreForTests(null);
+    }
+  });
+
   it('persists through web localStorage when available', async () => {
     const storageMap = new Map<string, string>();
     const fakeLocalStorage = {

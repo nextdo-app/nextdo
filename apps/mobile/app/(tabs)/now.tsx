@@ -16,7 +16,7 @@
  * Presentational only: data arrives from `useNow` (+ habit-days hooks);
  * every mutation goes through a mutation hook.
  */
-import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { router, useFocusEffect } from 'expo-router';
@@ -657,7 +657,15 @@ export default function NowScreen() {
   const [editingAction, setEditingAction] = useState<NextAction | null>(null);
   const [skippedViewIds, setSkippedViewIds] = useState<string[]>([]);
   const skipInFlightRef = useRef(false);
-  const [heroMenuOpen, setHeroMenuOpen] = useState(false);
+  /**
+   * Pinned hero action ID for the overflow sheet. `displayed` can change
+   * while the sheet is open (a time-chip change swaps the hero), so the id is
+   * captured at open time — otherwise 「删除行动」 would hit whichever action
+   * replaced it. The ACTION itself is always re-read from the latest
+   * `eligible` entry, so a refresh that rewrites the row (another device
+   * edits the note) feeds the editor the new value, not the open-time one.
+   */
+  const [heroMenuTargetId, setHeroMenuTargetId] = useState<string | null>(null);
   const [windowConfirm, setWindowConfirm] = useState<{
     habitDayId: string;
     habitTitle: string;
@@ -670,6 +678,16 @@ export default function NowScreen() {
   const mutationError = skipError ?? snoozeError ?? trashError ?? completeError ?? habitError;
 
   const eligible = data?.eligible ?? [];
+  const heroMenuEntry =
+    heroMenuTargetId === null
+      ? undefined
+      : eligible.find((entry) => entry.action.id === heroMenuTargetId);
+  // The pinned target left the eligible set (completed, snoozed, or filtered
+  // out by a time-chip change): close the sheet rather than leave it acting
+  // on an id that is no longer in the pool.
+  useEffect(() => {
+    if (heroMenuTargetId !== null && heroMenuEntry === undefined) setHeroMenuTargetId(null);
+  }, [heroMenuTargetId, heroMenuEntry]);
   const displayed = useMemo(() => {
     if (eligible.length === 0) return null;
     const unvisited = eligible.find((entry) => !skippedViewIds.includes(entry.action.id));
@@ -1004,7 +1022,7 @@ export default function NowScreen() {
                           accessibilityRole="button"
                           accessibilityLabel={`更多操作：${displayed.action.title}`}
                           hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
-                          onPress={() => setHeroMenuOpen(true)}
+                          onPress={() => setHeroMenuTargetId(displayed.action.id)}
                           className="h-8 w-8 items-center justify-center rounded-full border border-border/80 bg-surface active:scale-95 dark:border-border-dark dark:bg-surface-dark"
                         >
                           <Ionicons
@@ -1018,6 +1036,18 @@ export default function NowScreen() {
                     <Text className="font-display text-xl font-bold tracking-tight leading-snug text-ink dark:text-ink-dark sm:text-2xl">
                       {displayed.action.title}
                     </Text>
+                    {displayed.action.kind === 'next' &&
+                    (displayed.action as NextCandidate).note !== undefined ? (
+                      // The hero is the ONLY place this action renders (the
+                      // list excludes it), so its note preview must ride here
+                      // too — same two-line inline run as an alternative row.
+                      <MarkdownNote
+                        mode="inline"
+                        numberOfLines={2}
+                        className="mt-2"
+                        value={(displayed.action as NextCandidate).note ?? ''}
+                      />
+                    ) : null}
                     {subtitleParts.length > 0 ? (
                       <Text className="mt-1.5 font-sans text-xs text-muted dark:text-muted-dark">
                         {subtitleParts.join(' · ')}
@@ -1098,13 +1128,25 @@ export default function NowScreen() {
                   </View>
 
                   <ActionMenuModal
-                    visible={heroMenuOpen}
-                    actionTitle={displayed.action.title}
-                    canEdit={displayed.action.kind === 'next'}
-                    onClose={() => setHeroMenuOpen(false)}
-                    onEdit={() => handleEdit(displayed.action as NextCandidate)}
-                    onSnooze={() => handleSnooze(displayed.action.kind, displayed.action.id)}
-                    onTrash={() => handleTrash(displayed.action.kind, displayed.action.id)}
+                    visible={heroMenuEntry !== undefined}
+                    actionTitle={heroMenuEntry?.action.title ?? ''}
+                    canEdit={heroMenuEntry?.action.kind === 'next'}
+                    onClose={() => setHeroMenuTargetId(null)}
+                    onEdit={() => {
+                      if (heroMenuEntry !== undefined) {
+                        handleEdit(heroMenuEntry.action as NextCandidate);
+                      }
+                    }}
+                    onSnooze={() => {
+                      if (heroMenuEntry !== undefined) {
+                        handleSnooze(heroMenuEntry.action.kind, heroMenuEntry.action.id);
+                      }
+                    }}
+                    onTrash={() => {
+                      if (heroMenuEntry !== undefined) {
+                        handleTrash(heroMenuEntry.action.kind, heroMenuEntry.action.id);
+                      }
+                    }}
                   />
                 </>
               ) : (

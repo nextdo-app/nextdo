@@ -38,6 +38,9 @@ const skipCalls: { count: number; shouldFail: boolean; args: unknown[] } = {
   shouldFail: false,
   args: [],
 };
+// Counts `trashAction` calls — the hero overflow sheet must hit the action it
+// was opened for, never whichever action replaced it in the hero.
+const trashCalls: { count: number; args: unknown[] } = { count: 0, args: [] };
 // Counts the habit READS (`useHabits` re-reads on mount, on focus and on
 // `reload()`). The success-path test can assert the rendered counters
 // changed, but the FAILURE path renders identically whether or not a
@@ -116,7 +119,10 @@ jest.mock('@nextdo/db', () => {
       return action;
     },
     snoozeAction: async () => undefined,
-    trashAction: async () => undefined,
+    trashAction: async (_db: unknown, args: unknown) => {
+      trashCalls.count += 1;
+      trashCalls.args.push(args);
+    },
     listProjects: async () => projectsRef.current,
     listHabits: async () => {
       habitReads.habits += 1;
@@ -159,7 +165,7 @@ jest.mock('@powersync/react', () => {
     },
   };
   const queryResult = {
-    data: [],
+    data: [] as unknown[],
     isLoading: false,
     isFetching: false,
     error: undefined,
@@ -169,6 +175,12 @@ jest.mock('@powersync/react', () => {
     PowerSyncContext: React.createContext(powersync),
     usePowerSync: () => powersync,
     useQuery: () => queryResult,
+    // Test hook: a fresh `data` array is a fresh watch-trigger identity, so
+    // `useActionPool` re-reads the pool — the same invalidation a sync push
+    // causes (used to simulate another device rewriting a row).
+    __bumpQueryForTests: () => {
+      queryResult.data = [];
+    },
     useStatus: () => powersync.currentStatus,
   };
 });
@@ -252,6 +264,11 @@ async function flushRenders(rounds = 10): Promise<void> {
   await p;
 }
 
+/** Fire the mocked pool watch, forcing `useActionPool` to re-read `poolRef`. */
+function bumpPoolWatch(): void {
+  (jest.requireMock('@powersync/react') as { __bumpQueryForTests: () => void }).__bumpQueryForTests();
+}
+
 beforeEach(() => {
   setPool([]);
   ctxRef.current = [];
@@ -267,6 +284,8 @@ beforeEach(() => {
   skipCalls.count = 0;
   skipCalls.shouldFail = false;
   skipCalls.args = [];
+  trashCalls.count = 0;
+  trashCalls.args = [];
   habitReads.habits = 0;
   habitReads.days = 0;
   contextReads.count = 0;
@@ -672,6 +691,146 @@ describe('Now screen', () => {
     await flushRenders();
     expect(skipCalls.count).toBe(0);
     expect(screen.getByText('唯一行动')).toBeTruthy();
+  });
+
+  it('the hero carries the note preview when no alternative row would', async () => {
+    setPool([nextAction({ id: 'solo', title: '唯一行动', note: '联系王工确认细节' })]);
+    renderRouter('app', { initialUrl: '/(tabs)/now' });
+
+    await waitFor(() => expect(screen.getByText('唯一行动')).toBeTruthy());
+    // The alternative list is hidden for a single action, so without the
+    // hero's own preview the note would be invisible on this screen.
+    expect(screen.getByLabelText('联系王工确认细节')).toBeTruthy();
+  });
+
+  it('a hero menu opened for one action never acts on its replacement', async () => {
+    setPool([
+      nextAction({ id: 'long', title: '长任务', value: 5, estMinutes: 25 }),
+      nextAction({ id: 'short', title: '短任务', value: 1, estMinutes: 10 }),
+    ]);
+    renderRouter('app', { initialUrl: '/(tabs)/now' });
+    await waitFor(() => expect(screen.getByText('长任务')).toBeTruthy());
+
+    fireEvent.press(screen.getByRole('button', { name: '更多操作：长任务' }));
+    await waitFor(() => expect(screen.getByLabelText('行动操作：长任务')).toBeTruthy());
+
+    // The 15-minute slot filters 长任务 out; 短任务 takes the hero.
+    fireEvent.press(screen.getByRole('button', { name: '设置可用时间：15 分钟' }));
+    await waitFor(() => expect(screen.getByText('短任务')).toBeTruthy());
+
+    // The sheet closed with its target instead of re-pointing at the new hero
+    // (the old callbacks read `displayed` at press time).
+    expect(screen.queryByLabelText('行动操作：长任务')).toBeNull();
+    expect(screen.queryByRole('button', { name: '删除行动' })).toBeNull();
+    expect(trashCalls.count).toBe(0);
+  });
+
+  it('the open hero menu edits the row refreshed in the pool, not its open-time copy', async () => {
+    setPool([
+      nextAction({ id: 'hero', title: '长任务', value: 5, estMinutes: 25, note: '旧备注' }),
+      nextAction({ id: 'other', title: '短任务', value: 1, estMinutes: 10 }),
+    ]);
+    renderRouter('app', { initialUrl: '/(tabs)/now' });
+    await waitFor(() => expect(screen.getByText('长任务')).toBeTruthy());
+
+    fireEvent.press(screen.getByRole('button', { name: '更多操作：长任务' }));
+    await waitFor(() => expect(screen.getByLabelText('行动操作：长任务')).toBeTruthy());
+
+    // Another device rewrites the note; a sync refresh delivers a new row
+    // with the same id while the sheet stays open.
+    setPool([
+      nextAction({ id: 'hero', title: '长任务', value: 5, estMinutes: 25, note: '新备注' }),
+      nextAction({ id: 'other', title: '短任务', value: 1, estMinutes: 10 }),
+    ]);
+    bumpPoolWatch();
+    // A 30-minute slot keeps both actions eligible, so the sheet stays open.
+    fireEvent.press(screen.getByRole('button', { name: '设置可用时间：30 分钟' }));
+    await waitFor(() => expect(screen.getByLabelText('新备注')).toBeTruthy());
+
+    fireEvent.press(screen.getByRole('button', { name: '编辑行动' }));
+    await waitFor(() =>
+      expect(screen.getByLabelText('备注输入框').props.value).toBe('新备注'),
+    );
+  });
+
+  it('a failed settings write surfaces the store error on the Now screen', async () => {
+    // The web adapter now propagates quota / security failures; the screen
+    // must show that error instead of silently claiming the write landed.
+    __setEngineContextStoreForTests({
+      getItem: async () => null,
+      async setItem() {
+        throw new Error('QuotaExceededError');
+      },
+    });
+    setPool([nextAction({ id: 'only', title: '唯一行动' })]);
+    renderRouter('app', { initialUrl: '/(tabs)/now' });
+    await waitFor(() => expect(screen.getByText('唯一行动')).toBeTruthy());
+
+    fireEvent.press(screen.getByRole('button', { name: '设置可用时间：15 分钟' }));
+    await waitFor(() => expect(screen.getByText('QuotaExceededError')).toBeTruthy());
+  });
+
+  it('a selection saved before the mount read fails keeps the selection and no error', async () => {
+    let rejectRead!: (error: Error) => void;
+    __setEngineContextStoreForTests({
+      getItem: () =>
+        new Promise<string | null>((_resolve, reject) => {
+          rejectRead = reject;
+        }),
+      setItem: async () => undefined,
+    });
+    setPool([nextAction({ id: 'only', title: '唯一行动' })]);
+    renderRouter('app', { initialUrl: '/(tabs)/now' });
+    await waitFor(() => expect(screen.getByText('唯一行动')).toBeTruthy());
+
+    fireEvent.press(screen.getByRole('button', { name: '设置可用时间：15 分钟' }));
+    await flushRenders();
+    const chip = () => screen.getByRole('button', { name: '设置可用时间：15 分钟' });
+    expect(chip().props.accessibilityState?.selected).toBe(true);
+
+    // The mount-time read settles LATE and fails: it must not reset the
+    // screen or surface a failure the user's successful save replaced.
+    await act(async () => {
+      rejectRead(new Error('read failed'));
+      await Promise.resolve();
+    });
+    await flushRenders();
+
+    expect(chip().props.accessibilityState?.selected).toBe(true);
+    expect(screen.queryByText('read failed')).toBeNull();
+  });
+
+  it('a write error is not cleared by the mount read settling afterwards', async () => {
+    let resolveRead!: (value: string | null) => void;
+    __setEngineContextStoreForTests({
+      getItem: () =>
+        new Promise<string | null>((resolve) => {
+          resolveRead = resolve;
+        }),
+      async setItem() {
+        throw new Error('QuotaExceededError');
+      },
+    });
+    setPool([nextAction({ id: 'only', title: '唯一行动' })]);
+    renderRouter('app', { initialUrl: '/(tabs)/now' });
+    await waitFor(() => expect(screen.getByText('唯一行动')).toBeTruthy());
+
+    fireEvent.press(screen.getByRole('button', { name: '设置可用时间：15 分钟' }));
+    await waitFor(() => expect(screen.getByText('QuotaExceededError')).toBeTruthy());
+
+    await act(async () => {
+      resolveRead(JSON.stringify({ availableMinutes: 60 }));
+      await Promise.resolve();
+    });
+    await flushRenders();
+
+    // The stale read succeeded, but it is older than the failed write: the
+    // error must stay visible and the selection must not jump back to 60.
+    expect(screen.getByText('QuotaExceededError')).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: '设置可用时间：15 分钟' }).props.accessibilityState
+        ?.selected,
+    ).toBe(true);
   });
 
   it('the 为什么是它 block hides tautological / retired reasons', async () => {

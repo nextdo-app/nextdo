@@ -68,17 +68,8 @@ function getWebLocalStorage(): WebStorageLike | null {
   return g.window?.localStorage ?? g.localStorage ?? null;
 }
 
-function isLocalStorageAvailable(): boolean {
-  try {
-    const storage = getWebLocalStorage();
-    if (!storage) return false;
-    const testKey = '__nextdo_probe__';
-    storage.setItem(testKey, '1');
-    storage.removeItem(testKey);
-    return true;
-  } catch {
-    return false;
-  }
+function hasWebLocalStorage(): boolean {
+  return getWebLocalStorage() !== null;
 }
 
 function createLocalStorageStore(): KeyValue {
@@ -95,15 +86,14 @@ function createLocalStorageStore(): KeyValue {
       return null;
     },
     async setItem(key, value) {
-      try {
-        const storage = getWebLocalStorage();
-        if (storage) {
-          storage.setItem(key, value);
-          return;
-        }
-      } catch {
-        // Ignore quota / security errors
+      const storage = getWebLocalStorage();
+      if (!storage) {
+        throw new Error('localStorage is unavailable');
       }
+      // Quota / security errors must reach the caller: the settings hook
+      // surfaces them, and a silent success would make the UI claim a
+      // persisted selection the next load cannot read back.
+      storage.setItem(key, value);
     },
   };
 }
@@ -131,7 +121,10 @@ function getBackend(): KeyValue {
   if (backend === null) {
     if (isReactNativeRuntime()) {
       backend = createSecureStoreStore();
-    } else if (isLocalStorageAvailable()) {
+    } else if (hasWebLocalStorage()) {
+      // Presence, not a write probe: a full storage is still READABLE, and a
+      // failed probe must not demote the session to an in-memory store that
+      // silently loses the stored value (and every write).
       backend = createLocalStorageStore();
     } else {
       backend = createMemoryStore();
@@ -181,9 +174,13 @@ export async function loadEngineContext(): Promise<EngineContextSettings> {
     .getItem(ENGINE_CONTEXT_KEY)
     .then((raw) => {
       const parsed = parseEngineContext(raw);
-      cachedSettings = parsed;
+      // A save that landed while this read was in flight owns the value: the
+      // write queue may not have reached the backend yet, so the stale read
+      // must not clobber the newer selection (storage and UI would disagree).
+      const resolved = cachedSettings ?? parsed;
+      cachedSettings = resolved;
       pendingLoad = null;
-      return parsed;
+      return resolved;
     })
     .catch((err: unknown) => {
       pendingLoad = null;
@@ -220,19 +217,26 @@ export function useEngineContextSettings(): UseEngineContextSettingsResult {
   const [error, setError] = useState<string | null>(null);
   const settingsRef = useRef<EngineContextSettings | null>(cachedSettings);
   settingsRef.current = settings;
+  /**
+   * A selection made before the mount read settles owns the UI. The read is
+   * stale for BOTH outcomes: a late failure must not reset the value to the
+   * defaults, and a late success must not clear the write error the user is
+   * looking at.
+   */
+  const updatedSinceMountRef = useRef(false);
 
   // One load per mount — the value is cached in state thereafter.
   useEffect(() => {
     let cancelled = false;
     loadEngineContext()
       .then((loaded) => {
-        if (cancelled) return;
+        if (cancelled || updatedSinceMountRef.current) return;
         settingsRef.current = loaded;
         setSettings(loaded);
         setError(null);
       })
       .catch((err: unknown) => {
-        if (cancelled) return;
+        if (cancelled || updatedSinceMountRef.current) return;
         // A broken store must not take the Now screen down — fall back to
         // the scaffold defaults (writes will keep failing and re-surface).
         setSettings(DEFAULT_ENGINE_CONTEXT);
@@ -244,6 +248,7 @@ export function useEngineContextSettings(): UseEngineContextSettingsResult {
   }, []);
 
   const update = useCallback(async (patch: Partial<EngineContextSettings>) => {
+    updatedSinceMountRef.current = true;
     const current = settingsRef.current ?? DEFAULT_ENGINE_CONTEXT;
     // Clamp the way `parseEngineContext` does, so the live state and the
     // persisted blob agree (the store would otherwise hold 9999 while the
