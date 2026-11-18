@@ -31,6 +31,13 @@ const updateCalls: { count: number; actions: unknown[] } = {
   count: 0,
   actions: [],
 };
+// Counts `skipAction` calls and lets a test fail the write, so "换一个"
+// can be pinned both ways (persist once per action, stay put on failure).
+const skipCalls: { count: number; shouldFail: boolean; args: unknown[] } = {
+  count: 0,
+  shouldFail: false,
+  args: [],
+};
 // Counts the habit READS (`useHabits` re-reads on mount, on focus and on
 // `reload()`). The success-path test can assert the rendered counters
 // changed, but the FAILURE path renders identically whether or not a
@@ -92,7 +99,11 @@ jest.mock('@nextdo/db', () => {
     isReactNativeRuntime: () => false,
     queryEnginePool: async () => poolRef.current,
     poolTriggerWatchQuery: compilable,
-    skipAction: async () => undefined,
+    skipAction: async (_db: unknown, args: unknown) => {
+      skipCalls.count += 1;
+      skipCalls.args.push(args);
+      if (skipCalls.shouldFail) throw new Error('skip rejected');
+    },
     completeAction: async (_db: unknown, args: unknown) => {
       completeCalls.count += 1;
       completeCalls.args.push(args);
@@ -253,6 +264,9 @@ beforeEach(() => {
   completeCalls.args = [];
   updateCalls.count = 0;
   updateCalls.actions = [];
+  skipCalls.count = 0;
+  skipCalls.shouldFail = false;
+  skipCalls.args = [];
   habitReads.habits = 0;
   habitReads.days = 0;
   contextReads.count = 0;
@@ -261,7 +275,7 @@ beforeEach(() => {
 });
 
 describe('Now screen', () => {
-  it('shows the recommendation card, reasons, the stats row and the always-open list', async () => {
+  it('shows the recommendation card, reasons, the stats row and the alternative list', async () => {
     // The deadline-near, high-value action wins over the plain one.
     setPool([
       nextAction({
@@ -284,28 +298,29 @@ describe('Now screen', () => {
     ]);
     renderRouter('app', { initialUrl: '/(tabs)/now' });
 
-    // The title renders twice — the hero AND the always-open list row.
-    await waitFor(() => expect(screen.getAllByText('交周报')).toHaveLength(2));
+    // The recommendation title renders ONCE — the hero; the list carries
+    // only the alternatives.
+    await waitFor(() => expect(screen.getByText('交周报')).toBeTruthy());
     // The recommendation's subtitle + reasons render (Chinese labels).
     expect(screen.getByText('为什么是它？')).toBeTruthy();
     expect(screen.getByText(/截止时间快到了/)).toBeTruthy();
     // The three main buttons.
     expect(screen.getByText('开始')).toBeTruthy();
     expect(screen.getByText('换一个')).toBeTruthy();
-    // …and the deadline chip on both the hero and its list row, which core
-    // words by urgency rather than by calendar date (issue #16).
-    expect(screen.getAllByText('今天截止')).toHaveLength(2);
+    // The deadline chip appears once, on the hero only.
+    expect(screen.getByText('今天截止')).toBeTruthy();
     // Stats row: 2 eligible of 2 total · 30+25 = 55 分钟 · <60 → 轻.
     expect(screen.getByText('2/2 项')).toBeTruthy();
     expect(screen.getByText('55 分钟')).toBeTruthy();
     expect(screen.getByText('轻')).toBeTruthy();
-    // The list is ALWAYS expanded: the second title is visible, the hero
-    // carries 稍后, and each row carries its own 更多操作.
+    // The alternative list is expanded and carries the other action; the
+    // hero's 完成 / 更多操作 pair and the row's pair are both present.
     expect(screen.getByText('整理桌面')).toBeTruthy();
+    expect(screen.getByText('可执行备选事项 (1)')).toBeTruthy();
     expect(screen.getByText('稍后')).toBeTruthy();
     expect(screen.getAllByLabelText(/更多操作/)).toHaveLength(2);
     // The condition bar is 可用时间-only now (#46 removed the scenes).
-    expect(screen.getByText(/可用时间/)).toBeTruthy();
+    expect(screen.getAllByText(/可用时间/).length).toBeGreaterThan(0);
     expect(screen.queryByText('当前场景')).toBeNull();
   });
 
@@ -316,23 +331,23 @@ describe('Now screen', () => {
     ]);
     renderRouter('app', { initialUrl: '/(tabs)/now' });
 
-    await waitFor(() => expect(screen.getAllByText('主行动')).toHaveLength(2));
+    await waitFor(() => expect(screen.getByText('主行动')).toBeTruthy());
     expect(screen.getByText('次要行动')).toBeTruthy();
     expect(screen.getByText('收起清单')).toBeTruthy();
 
     // Click to collapse
     fireEvent.press(screen.getByText('收起清单'));
     await waitFor(() => expect(screen.getByText('展开清单')).toBeTruthy());
-    expect(screen.getByText(/已折叠 2 项备选事项/)).toBeTruthy();
-    // In collapsed mode, the list row for 次要行动 is hidden; hero stays intact.
+    expect(screen.getByText(/已折叠 1 项备选事项/)).toBeTruthy();
+    // In collapsed mode, the alternative row is hidden; hero stays intact.
     expect(screen.queryByText('次要行动')).toBeNull();
-    expect(screen.getAllByText('主行动')).toHaveLength(1);
+    expect(screen.getByText('主行动')).toBeTruthy();
 
     // Click to expand again
     fireEvent.press(screen.getByText('展开清单'));
     await waitFor(() => expect(screen.getByText('收起清单')).toBeTruthy());
     expect(screen.getByText('次要行动')).toBeTruthy();
-    expect(screen.getAllByText('主行动')).toHaveLength(2);
+    expect(screen.getByText('主行动')).toBeTruthy();
   });
 
   it('the stats row counts eligible vs filtered and bands the cognitive load', async () => {
@@ -376,7 +391,6 @@ describe('Now screen', () => {
         title: '快截止的事',
         value: 5,
         contextIds: ['c-1'],
-        projectId: 'p-9',
         // A date-only deadline: tomorrow's local end-of-day. A raw
         // `now + 24h` carries a clock time too, which the chip now spells
         // out (task 10-17) — that would make this label run-clock dependent.
@@ -386,26 +400,30 @@ describe('Now screen', () => {
           return day.toISOString();
         })(),
       }),
-      nextAction({ id: 'free', title: '不着急的事', contextIds: [] }),
+      nextAction({ id: 'free', title: '不着急的事', projectId: 'p-9', contextIds: [] }),
     ]);
     renderRouter('app', { initialUrl: '/(tabs)/now' });
 
-    // The title renders twice — the hero AND its list row.
-    await waitFor(() => expect(screen.getAllByText('快截止的事')).toHaveLength(2));
-    // Project chip (the hero subtitle is a joined string, not this exact text).
+    // The hero is the deadline action; its subtitle carries the due label.
+    await waitFor(() => expect(screen.getByText('快截止的事')).toBeTruthy());
+    expect(screen.getByText('明天截止')).toBeTruthy();
+    // The alternative row carries the project chip and the 随时 label.
     expect(screen.getByText('周报项目')).toBeTruthy();
+    expect(screen.getByText('随时')).toBeTruthy();
     // The scene chips are gone everywhere (bar, list filter, row).
     expect(screen.queryByText('电脑')).toBeNull();
-    // Due chips: tomorrow's deadline → 明天截止 (inside the 48h 「临近」
-    // window); the deadline-less row → 随时.
-    expect(screen.getByText('明天截止')).toBeTruthy();
-    expect(screen.getByText('随时')).toBeTruthy();
   });
 
-  it('each list row carries 完成 (the swipe gesture\'s button twin) plus the swipe hint', async () => {
-    setPool([nextAction({ id: 'a-1', title: '整理桌面', value: 2, contextIds: [] })]);
+  it('the alternative row carries 完成 (the swipe gesture\'s button twin) plus the swipe hint', async () => {
+    setPool([
+      nextAction({ id: 'a-hero', title: '主任务', value: 5, contextIds: [] }),
+      nextAction({ id: 'a-1', title: '整理桌面', value: 2, contextIds: [] }),
+    ]);
     renderRouter('app', { initialUrl: '/(tabs)/now' });
-    await waitFor(() => expect(screen.getAllByText('整理桌面')).toHaveLength(2));
+    await waitFor(() => expect(screen.getByText('整理桌面')).toBeTruthy());
+
+    // The hero carries the same control for the recommendation.
+    expect(screen.getByRole('button', { name: '完成行动：主任务' })).toBeTruthy();
 
     // The swipe reveals this hint from under the row (issue #17); it is
     // rendered up front, hidden behind the card, so the gesture is not a
@@ -424,9 +442,12 @@ describe('Now screen', () => {
   // calling `shouldReveal` is what makes this a promise about the SCREEN —
   // `shouldReveal`'s own tests cannot see `completeAction` at all.
   it('a committed swipe reveals the 完成 button without completing the action', async () => {
-    setPool([nextAction({ id: 'a-1', title: '整理桌面', value: 2, contextIds: [] })]);
+    setPool([
+      nextAction({ id: 'a-hero', title: '主任务', value: 5, contextIds: [] }),
+      nextAction({ id: 'a-1', title: '整理桌面', value: 2, contextIds: [] }),
+    ]);
     renderRouter('app', { initialUrl: '/(tabs)/now' });
-    await waitFor(() => expect(screen.getAllByText('整理桌面')).toHaveLength(2));
+    await waitFor(() => expect(screen.getByText('整理桌面')).toBeTruthy());
 
     // The row is the only view carrying the swipe responder (the testID is
     // how it is addressed — `ScrollView` and every `Pressable` under it
@@ -476,10 +497,13 @@ describe('Now screen', () => {
     expect(completeCalls.args[0]).toMatchObject({ actionKind: 'next', actionId: 'a-1' });
   });
 
-  it('the empty pool shows the capture hint', async () => {    setPool([]);
+  it('the empty pool shows the capture hint and keeps 已完成行动 reachable', async () => {
+    setPool([]);
     renderRouter('app', { initialUrl: '/(tabs)/now' });
     await waitFor(() => expect(screen.getByText('执行池是空的')).toBeTruthy());
     expect(screen.getByText(/去收件箱捕获一条/)).toBeTruthy();
+    // An empty execution pool must not make completed work unreachable.
+    expect(screen.getByText('已完成行动')).toBeTruthy();
   });
 
   it('an all-filtered pool explains why (rule labels, Chinese)', async () => {
@@ -492,6 +516,11 @@ describe('Now screen', () => {
     );
     expect(screen.getByText('被过滤的事项：')).toBeTruthy();
     expect(screen.getByText('• 写季度总结 — 预估时长超过可用时间')).toBeTruthy();
+    // With nothing eligible the stats row would read 0/N · 0 分钟 · 轻 —
+    // noise, not a summary. The completed-actions entry stays reachable.
+    expect(screen.queryByText('可执行')).toBeNull();
+    expect(screen.queryByText('认知负荷')).toBeNull();
+    expect(screen.getByText('已完成行动')).toBeTruthy();
   });
 
   it('the re-clarify banner appears at 3 consecutive skips with the count', async () => {
@@ -508,7 +537,7 @@ describe('Now screen', () => {
     setPool([nextAction({ id: 'once', consecutiveSkips: 2 })]);
     renderRouter('app', { initialUrl: '/(tabs)/now' });
 
-    await waitFor(() => expect(screen.getAllByText('写季度总结')).toHaveLength(2));
+    await waitFor(() => expect(screen.getByText('写季度总结')).toBeTruthy());
     expect(screen.queryByText(/连续跳过/)).toBeNull();
   });
 
@@ -535,7 +564,7 @@ describe('Now screen', () => {
     };
     renderRouter('app', { initialUrl: '/(tabs)/now' });
 
-    await waitFor(() => expect(screen.getAllByText('晨间拉伸')).toHaveLength(2));
+    await waitFor(() => expect(screen.getByText('晨间拉伸')).toBeTruthy());
     expect(screen.queryByText(/连续跳过/)).toBeNull();
     expect(screen.queryByText('重新明晰')).toBeNull();
   });
@@ -547,9 +576,9 @@ describe('Now screen', () => {
     ]);
     renderRouter('app', { initialUrl: '/(tabs)/now' });
 
-    // Default 60-minute slot: both stay eligible (the list is always open
-    // — each title renders in the hero and its row).
-    await waitFor(() => expect(screen.getAllByText('长任务')).toHaveLength(2));
+    // Default 60-minute slot: both stay eligible — the hero is 长任务 and
+    // the alternative list carries 短任务.
+    await waitFor(() => expect(screen.getByText('长任务')).toBeTruthy());
     expect(screen.getByText('短任务')).toBeTruthy();
     expect(screen.getByText('2/2 项')).toBeTruthy();
 
@@ -559,13 +588,18 @@ describe('Now screen', () => {
     // (the row's underline is the single-select state, not a chip).
     fireEvent.press(screen.getByRole('button', { name: '设置可用时间：15 分钟' }));
     await waitFor(() => {
-      expect(screen.getAllByText('短任务')).toHaveLength(2);
+      expect(screen.getByText('短任务')).toBeTruthy();
       expect(screen.queryByText('长任务')).toBeNull();
     });
     expect(screen.getByText('1/2 项')).toBeTruthy();
+    // Only one eligible item: the rotate button is disabled and says so.
+    expect(screen.getByText('暂无其他备选')).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: '换一个' }).props.accessibilityState?.disabled,
+    ).toBe(true);
   });
 
-  it('"换一个" rotates through the eligible list and wraps (AC3)', async () => {
+  it('"换一个" rotates through the eligible list, writes each skip once, and wraps (AC3)', async () => {
     setPool([
       nextAction({ id: 'top', title: '头任务', value: 5, estMinutes: 25 }),
       nextAction({ id: 'second', title: '次任务', value: 1, estMinutes: 10 }),
@@ -576,14 +610,102 @@ describe('Now screen', () => {
     // rows show no est, the stats row shows the Σ).
     await waitFor(() => expect(screen.getByText('25 分钟')).toBeTruthy());
 
-    // "换一个" persists the skip (mocked no-op) and the hero rotates.
+    // 1st: top → second; the skip is persisted once.
     fireEvent.press(screen.getByRole('button', { name: '换一个' }));
     await waitFor(() => expect(screen.getByText('10 分钟')).toBeTruthy());
     expect(screen.queryByText('25 分钟')).toBeNull();
+    expect(skipCalls.count).toBe(1);
+    expect(skipCalls.args[0]).toMatchObject({ actionKind: 'next', actionId: 'top' });
 
-    // Skipping again wraps back to the top (carousel semantics).
+    // 2nd: second → top (wrap); persisted once more.
     fireEvent.press(screen.getByRole('button', { name: '换一个' }));
     await waitFor(() => expect(screen.getByText('25 分钟')).toBeTruthy());
+    expect(skipCalls.count).toBe(2);
+    expect(skipCalls.args[1]).toMatchObject({ actionKind: 'next', actionId: 'second' });
+
+    // 3rd: both were already skipped this session — rotate, never write a
+    // second consecutiveSkips increment for the same action.
+    fireEvent.press(screen.getByRole('button', { name: '换一个' }));
+    await waitFor(() => expect(screen.getByText('10 分钟')).toBeTruthy());
+    expect(skipCalls.count).toBe(2);
+
+    // 4th: still no write.
+    fireEvent.press(screen.getByRole('button', { name: '换一个' }));
+    await waitFor(() => expect(screen.getByText('25 分钟')).toBeTruthy());
+    expect(skipCalls.count).toBe(2);
+  });
+
+  it('a failed skip stays on the current recommendation and surfaces the error', async () => {
+    setPool([
+      nextAction({ id: 'top', title: '头任务', value: 5, estMinutes: 25 }),
+      nextAction({ id: 'second', title: '次任务', value: 1, estMinutes: 10 }),
+    ]);
+    renderRouter('app', { initialUrl: '/(tabs)/now' });
+    await waitFor(() => expect(screen.getByText('25 分钟')).toBeTruthy());
+
+    skipCalls.shouldFail = true;
+    fireEvent.press(screen.getByRole('button', { name: '换一个' }));
+    await waitFor(() => expect(screen.getByText('skip rejected')).toBeTruthy());
+    // The card did not rotate and no id was recorded as visited.
+    expect(screen.getByText('25 分钟')).toBeTruthy();
+    expect(screen.queryByText('10 分钟')).toBeNull();
+    expect(skipCalls.count).toBe(1);
+
+    // Clearing the failure lets the same press rotate on the next attempt.
+    skipCalls.shouldFail = false;
+    fireEvent.press(screen.getByRole('button', { name: '换一个' }));
+    await waitFor(() => expect(screen.getByText('10 分钟')).toBeTruthy());
+    expect(skipCalls.count).toBe(2);
+  });
+
+  it('with a single eligible action, 换一个 is disabled and the alternative list is hidden', async () => {
+    setPool([nextAction({ id: 'only', title: '唯一行动', value: 3 })]);
+    renderRouter('app', { initialUrl: '/(tabs)/now' });
+    await waitFor(() => expect(screen.getByText('唯一行动')).toBeTruthy());
+
+    const swap = screen.getByRole('button', { name: '换一个' });
+    expect(swap.props.accessibilityState?.disabled).toBe(true);
+    expect(screen.getByText('暂无其他备选')).toBeTruthy();
+    expect(screen.queryByText(/可执行备选事项/)).toBeNull();
+
+    fireEvent.press(swap);
+    await flushRenders();
+    expect(skipCalls.count).toBe(0);
+    expect(screen.getByText('唯一行动')).toBeTruthy();
+  });
+
+  it('the 为什么是它 block hides tautological / retired reasons', async () => {
+    setPool([
+      nextAction({ id: 'strong', title: '交周报', value: 5, estMinutes: 30, contextIds: [] }),
+    ]);
+    renderRouter('app', { initialUrl: '/(tabs)/now' });
+
+    await waitFor(() => expect(screen.getByText('为什么是它？')).toBeTruthy());
+    // Retired scene reason and both always-true eligibility reasons.
+    expect(screen.queryByText(/符合你当前的场景/)).toBeNull();
+    expect(screen.queryByText(/放得进你现有的时间/)).toBeNull();
+    expect(screen.queryByText(/它依赖的事项已完成/)).toBeNull();
+    // A real score reason is still shown.
+    expect(screen.getByText(/价值高/)).toBeTruthy();
+  });
+
+  it('an action whose only reasons are eligibility shows no 为什么是它 block', async () => {
+    // A future createdAt and est == the whole slot zero every score signal;
+    // what remains are the tautological eligibility reasons.
+    setPool([
+      nextAction({
+        id: 'plain',
+        title: '普通行动',
+        value: 1,
+        estMinutes: 60,
+        contextIds: [],
+        createdAt: new Date(Date.now() + 86_400_000).toISOString(),
+      }),
+    ]);
+    renderRouter('app', { initialUrl: '/(tabs)/now' });
+
+    await waitFor(() => expect(screen.getByText('普通行动')).toBeTruthy());
+    expect(screen.queryByText('为什么是它？')).toBeNull();
   });
 
   // ── The 场景 (contexts) feature is offline (#46) ────────────────────
@@ -694,7 +816,7 @@ describe('Now screen', () => {
       expect(screen.getByRole('button', { name: '去创建习惯' })).toBeTruthy();
     });
 
-    it('with habit days → the count, the one-tap complete chips and the 管理 entry', async () => {
+    it('with habit days → the count, the progress summary and the 管理 entry', async () => {
       // TWO habits, one day row each — `(habitId, localDate)` is unique, so
       // one habit can never contribute two rows to today's count.
       habitListRef.current = [
@@ -709,14 +831,16 @@ describe('Now screen', () => {
       renderRouter('app', { initialUrl: '/(tabs)/now' });
 
       await waitFor(() => expect(screen.getByText('今天习惯 1/2')).toBeTruthy());
-      // The habit's own title comes from listHabits (the day row has no title).
-      expect(screen.getByRole('button', { name: '完成习惯：冥想' })).toBeTruthy();
+      // One summary line replaces the per-habit action rows.
+      expect(
+        screen.getByText(/进行中 2 个 · 21 天周期 · 本期累计 1 天/),
+      ).toBeTruthy();
       expect(screen.getByRole('button', { name: '管理' })).toBeTruthy();
       // The empty-state prompt is gone once there is something to show.
       expect(screen.queryByText('去创建习惯')).toBeNull();
-      // The done habit offers no check-in — `completeAction` would reject it.
-      expect(screen.queryByRole('button', { name: '完成习惯：阅读' })).toBeNull();
-      expect(screen.getByText('今天已完成')).toBeTruthy();
+      // Per-habit rows are gone from Now — the top strip owns the check-ins.
+      expect(screen.queryByRole('button', { name: '完成习惯：冥想' })).toBeNull();
+      expect(screen.queryByText('今天已完成')).toBeNull();
     });
 
     // PRD acceptance: "从习惯屏创建后返回 Now 屏，习惯条立即显示新习惯".
@@ -753,7 +877,7 @@ describe('Now screen', () => {
 
       // Focus fired → reload() → the new habit is on the strip.
       await waitFor(() => expect(screen.getByText('今天习惯 0/1')).toBeTruthy());
-      expect(screen.getByRole('button', { name: '完成习惯：阅读' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: '快速打卡：阅读' })).toBeTruthy();
     });
 
     // Regression (task 10-02): `trashHabit` is a SOFT delete — the habit's
@@ -769,7 +893,7 @@ describe('Now screen', () => {
       renderRouter('app', { initialUrl: '/(tabs)/now' });
 
       await waitFor(() => expect(screen.getByText('今天习惯 0/1')).toBeTruthy());
-      expect(screen.getByRole('button', { name: '完成习惯：已删除的习惯' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: '快速打卡：已删除的习惯' })).toBeTruthy();
 
       // The habit is deleted somewhere else: `listHabits` (which excludes
       // soft-deleted rows) no longer returns it; the day row is still there.
@@ -780,7 +904,7 @@ describe('Now screen', () => {
       await flushRenders();
 
       await waitFor(() => expect(screen.getByText('今天习惯 0/0')).toBeTruthy());
-      expect(screen.queryByRole('button', { name: '完成习惯：已删除的习惯' })).toBeNull();
+      expect(screen.queryByRole('button', { name: '快速打卡：已删除的习惯' })).toBeNull();
     });
 
     // The block's reason for existing over a bare check-in chip: the
@@ -813,10 +937,12 @@ describe('Now screen', () => {
       renderRouter('app', { initialUrl: '/(tabs)/now' });
 
       await waitFor(() => expect(screen.getByText('今天习惯 0/1')).toBeTruthy());
-      expect(screen.getByText('第 5/21 天')).toBeTruthy();
-      expect(screen.getByText('本期已完成 3 天')).toBeTruthy();
-      // Today's row is still open → the check-in is offered.
-      expect(screen.getByRole('button', { name: '完成习惯：阅读' })).toBeTruthy();
+      // The summary carries the cycle context the ranked list cannot show.
+      expect(
+        screen.getByText(/进行中 1 个 · 21 天周期 · 本期累计 3 天/),
+      ).toBeTruthy();
+      // Today's row is still open → the top strip offers the check-in.
+      expect(screen.getByRole('button', { name: '快速打卡：阅读' })).toBeTruthy();
     });
 
     // A habit whose weekday mask excluded today has NO HabitDay row — the
@@ -829,8 +955,8 @@ describe('Now screen', () => {
 
       // No row today → the habit is still listed (it is active), but the
       // today count only covers habits that generated one.
-      await waitFor(() => expect(screen.getByText('今天无安排')).toBeTruthy());
-      expect(screen.queryByRole('button', { name: '完成习惯：阅读' })).toBeNull();
+      await waitFor(() => expect(screen.getByText(/今天无安排 1 项/)).toBeTruthy());
+      expect(screen.queryByRole('button', { name: '快速打卡：阅读' })).toBeNull();
     });
 
     // Regression (found by running the app, 2026-10-07): the check-in
@@ -852,16 +978,15 @@ describe('Now screen', () => {
       // The write lands: the day's status flips to done.
       habitDaysRef.current = [habitDayFixture({ id: 'hd-1', status: 'done' })];
       const readsBeforePress = habitReads.habits;
-      fireEvent.press(screen.getByRole('button', { name: '完成习惯：阅读' }));
+      fireEvent.press(screen.getByRole('button', { name: '快速打卡：阅读' }));
 
       // ...and the block re-reads instead of waiting for a focus event.
       await waitFor(() => expect(screen.getByText('今天习惯 1/1')).toBeTruthy());
-      expect(screen.getByText('今天已完成')).toBeTruthy();
-      expect(screen.queryByRole('button', { name: '完成习惯：阅读' })).toBeNull();
+      expect(screen.queryByRole('button', { name: '快速打卡：阅读' })).toBeNull();
       expect(habitReads.habits).toBeGreaterThan(readsBeforePress);
     });
 
-    it('refreshes habit progress after completing its execution-list row', async () => {
+    it('refreshes the habit summary after completing its execution-pool row', async () => {
       habitListRef.current = [habitFixture()];
       habitDaysRef.current = [habitDayFixture()];
       poolRef.current = {
@@ -876,7 +1001,7 @@ describe('Now screen', () => {
       fireEvent.press(screen.getByRole('button', { name: '完成行动：写季度总结' }));
 
       await waitFor(() => expect(screen.getByText('今天习惯 1/1')).toBeTruthy());
-      expect(screen.queryByRole('button', { name: '完成习惯：阅读' })).toBeNull();
+      expect(screen.queryByRole('button', { name: '快速打卡：阅读' })).toBeNull();
     });
 
     it('shows a live window rejection when the displayed habit still has no window details', async () => {
@@ -885,7 +1010,7 @@ describe('Now screen', () => {
       completeCalls.error = new ValidationNextdoError('habit.checkin-outside-window', 'Outside window');
       renderRouter('app', { initialUrl: '/(tabs)/now' });
       await waitFor(() => expect(screen.getByText('今天习惯 0/1')).toBeTruthy());
-      fireEvent.press(screen.getByRole('button', { name: '完成习惯：阅读' }));
+      fireEvent.press(screen.getByRole('button', { name: '快速打卡：阅读' }));
 
       await waitFor(() => expect(screen.getByText('当前时间不在该习惯设定的时间窗口内')).toBeTruthy());
       expect(screen.queryByText('不在打卡窗口内')).toBeNull();
@@ -907,7 +1032,7 @@ describe('Now screen', () => {
       setPool([]);
       renderRouter('app', { initialUrl: '/(tabs)/now' });
       await waitFor(() => expect(screen.getByText('今天习惯 0/1')).toBeTruthy());
-      fireEvent.press(screen.getByRole('button', { name: '完成习惯：阅读' }));
+      fireEvent.press(screen.getByRole('button', { name: '快速打卡：阅读' }));
       await waitFor(() => expect(screen.getByText('不在打卡窗口内')).toBeTruthy());
       expect(completeCalls.count).toBe(1);
       completeCalls.error = null;
@@ -926,7 +1051,7 @@ describe('Now screen', () => {
 
       completeCalls.shouldFail = true;
       const readsBeforePress = habitReads.habits;
-      fireEvent.press(screen.getByRole('button', { name: '完成习惯：阅读' }));
+      fireEvent.press(screen.getByRole('button', { name: '快速打卡：阅读' }));
 
       // Wait for the REJECTION to surface first: its arrival proves the
       // `.then(ok => ...)` callback has already run, so any re-read it may
@@ -941,7 +1066,78 @@ describe('Now screen', () => {
       expect(habitReads.habits).toBe(readsBeforePress);
       // The row is unchanged and still checkable.
       expect(screen.getByText('今天习惯 0/1')).toBeTruthy();
-      expect(screen.getByRole('button', { name: '完成习惯：阅读' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: '快速打卡：阅读' })).toBeTruthy();
+    });
+
+    // The summary's catch-up chips replace the per-habit 补昨日卡 button.
+    it('offers a catch-up chip for yesterday and passes the day id', async () => {
+      const yesterdayKey = localDateKey(new Date(Date.now() - 86_400_000));
+      habitListRef.current = [
+        habitFixture({ startedAt: new Date(Date.now() - 2 * 86_400_000).toISOString() }),
+      ];
+      habitDaysRef.current = [
+        habitDayFixture({ id: 'hd-yesterday', localDate: yesterdayKey, status: 'open' }),
+        habitDayFixture({ id: 'hd-today', status: 'open' }),
+      ];
+      setPool([]);
+      renderRouter('app', { initialUrl: '/(tabs)/now' });
+
+      await waitFor(() => expect(screen.getByText('可补昨日')).toBeTruthy());
+      fireEvent.press(screen.getByRole('button', { name: '补打卡昨天：阅读' }));
+      await waitFor(() => expect(completeCalls.count).toBe(1));
+      expect(completeCalls.args[0]).toMatchObject({
+        actionKind: 'habit',
+        actionId: 'hd-yesterday',
+      });
+    });
+
+    // Regression: the execution pool's habit completion used to bypass the
+    // window confirmation that the habit strip performed.
+    it('asks for window confirmation when a windowed habit is completed from the hero', async () => {
+      poolRef.current = {
+        actions: [
+          {
+            id: 'hd-window',
+            kind: 'habit',
+            title: '晨间拉伸',
+            habitId: 'h-1',
+            cycleDay: 1,
+            cycleDays: 21,
+            contextIds: [],
+            estMinutes: 10,
+            value: 2,
+            consecutiveSkips: 0,
+            dependencyDone: true,
+            createdAt: '2026-09-20T01:00:00.000Z',
+            windowStart: '00:00',
+            windowEnd: '23:59',
+          },
+        ],
+        calendar: [],
+        projects: [],
+      };
+      completeCalls.error = new ValidationNextdoError('habit.checkin-outside-window', 'Outside window');
+      renderRouter('app', { initialUrl: '/(tabs)/now' });
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: '完成行动：晨间拉伸' })).toBeTruthy(),
+      );
+      fireEvent.press(screen.getByRole('button', { name: '完成行动：晨间拉伸' }));
+      await waitFor(() => expect(screen.getByText('不在打卡窗口内')).toBeTruthy());
+      expect(completeCalls.count).toBe(1);
+      expect(completeCalls.args[0]).toMatchObject({
+        actionKind: 'habit',
+        actionId: 'hd-window',
+      });
+
+      completeCalls.error = null;
+      fireEvent.press(screen.getByRole('button', { name: '确定打卡' }));
+      await waitFor(() => expect(completeCalls.count).toBe(2));
+      expect(completeCalls.args[1]).toMatchObject({
+        actionKind: 'habit',
+        actionId: 'hd-window',
+        overrideWindow: true,
+      });
     });
 
     it('opens EditActionModal on Now screen and saves action edits', async () => {
@@ -956,9 +1152,9 @@ describe('Now screen', () => {
       renderRouter('app', { initialUrl: '/(tabs)/now' });
       await flushRenders();
 
-      await waitFor(() => expect(screen.getAllByText('写需求文档').length).toBeGreaterThan(0));
+      await waitFor(() => expect(screen.getByText('写需求文档')).toBeTruthy());
 
-      // Open action menu from the list row and choose 编辑行动
+      // Single action → the hero's overflow menu is the only entry point.
       fireEvent.press(screen.getByRole('button', { name: '更多操作：写需求文档' }));
       await waitFor(() => expect(screen.getByRole('button', { name: '编辑行动' })).toBeTruthy());
       fireEvent.press(screen.getByRole('button', { name: '编辑行动' }));

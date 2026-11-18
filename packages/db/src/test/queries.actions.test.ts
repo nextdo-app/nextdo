@@ -212,6 +212,42 @@ describe('updateNextAction', () => {
     }
   });
 
+  it('keeps status and ingest-only fields the edit form does not own', async () => {
+    const { db, close } = await open();
+    try {
+      const action = makeAction({
+        category: 'health',
+        sourceInboxId: FIXTURE_IDS.inbox.plain,
+        replacesActionId: FIXTURE_IDS.actions.b,
+        // Simulates the action being completed while the editor was open:
+        // the form's rebuilt row still says `open`.
+        status: 'done',
+      });
+      await addNextAction(db, action);
+
+      const rebuilt = makeAction({
+        id: action.id,
+        createdAt: action.createdAt,
+        title: '改过的标题',
+        status: 'open',
+      });
+      await updateNextAction(db, rebuilt);
+
+      const row = await db
+        .selectFrom('next_actions')
+        .selectAll()
+        .where('id', '=', action.id)
+        .executeTakeFirstOrThrow();
+      expect(row.title).toBe('改过的标题');
+      expect(row.status).toBe('done');
+      expect(row.category).toBe('health');
+      expect(row.source_inbox_id).toBe(FIXTURE_IDS.inbox.plain);
+      expect(row.replaces_action_id).toBe(FIXTURE_IDS.actions.b);
+    } finally {
+      await close();
+    }
+  });
+
   it('redefining (title change) resets consecutiveSkips and lastSkippedAt', async () => {
     const { db, close } = await open(true);
     try {

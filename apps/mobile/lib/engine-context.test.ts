@@ -8,6 +8,7 @@
 import {
   __setEngineContextStoreForTests,
   DEFAULT_ENGINE_CONTEXT,
+  ENGINE_CONTEXT_KEY,
   loadEngineContext,
   parseEngineContext,
   saveEngineContext,
@@ -77,6 +78,39 @@ describe('load/save round-trip', () => {
     const store = memoryStore({ 'nextdo.settings.engine-context': '{broken' });
     __setEngineContextStoreForTests(store);
     await expect(loadEngineContext()).resolves.toEqual(DEFAULT_ENGINE_CONTEXT);
+  });
+
+  it('serializes overlapping saves so the last selection lands last', async () => {
+    const map = new Map<string, string>();
+    const written: string[] = [];
+    // The first save is slower than the second: without the write queue it
+    // would land last and clobber the newer selection.
+    const delays = [40, 5];
+    let calls = 0;
+    __setEngineContextStoreForTests({
+      async getItem(key: string) {
+        return map.get(key) ?? null;
+      },
+      async setItem(_key: string, value: string) {
+        const delay = delays[calls++] ?? 0;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        written.push(value);
+        map.set(ENGINE_CONTEXT_KEY, value);
+      },
+    });
+
+    await Promise.all([
+      saveEngineContext({ availableMinutes: 15 }),
+      saveEngineContext({ availableMinutes: 60 }),
+    ]);
+
+    expect(written.map((raw) => JSON.parse(raw))).toEqual([
+      { availableMinutes: 15 },
+      { availableMinutes: 60 },
+    ]);
+    expect(JSON.parse(map.get(ENGINE_CONTEXT_KEY) as string)).toEqual({
+      availableMinutes: 60,
+    });
   });
 
   it('persists through web localStorage when available', async () => {

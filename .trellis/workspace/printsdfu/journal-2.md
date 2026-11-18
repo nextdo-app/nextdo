@@ -359,3 +359,20 @@ Prepare beta.23 with the six previously uncommitted server security files; user 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 74: 现在页修复与换一个规则
+<!-- trellis-session: v=3 fp=77a5e1ed6922c14b -->
+
+**Date**: 2026-11-18
+**Task**: 现在页修复与换一个规则
+**Branch**: `main`
+
+### Summary
+
+完成 now 页 10 项缺陷修复：换一个仅在有备选且 skip 写入成功时切换（每行动每会话最多写一次）、备选列表排除当前推荐且空时隐藏、习惯块改为摘要、编辑保留 status/ingest 字段、设置写入串行化。pnpm verify:web 全绿，浏览器六状态截图验证。
+Topics: [.trellis/research/now-screen-presentation.md](../../research/now-screen-presentation.md)
+
+### Git Commits
+
+(No associated commits)

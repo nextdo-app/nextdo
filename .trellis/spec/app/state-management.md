@@ -31,8 +31,10 @@
    "waiting for sync" state on any write path — at most a global, non-blocking sync
    status indicator (PowerSync connection state).
 5. **Engine results are functions of (DB snapshot, context, now).** Re-run on relevant
-   changes; the Now screen's "换一个" (next candidate) just advances an index over the
+   changes; the Now screen's "换一个" (next candidate) advances an index over the
    eligible list the engine already returned — it does not re-rank with a different seed.
+   It writes the skip only when another eligible action exists, and advances only after
+   that write succeeds.
 6. Settings that the engine or sync cares about live in a `settings` table, not in
    `AsyncStorage`/`MMKV`. Key-value storage is only for UI cosmetics (e.g. last tab).
 7. Cross-device behavior: everything in the DB syncs; everything in a Zustand store is

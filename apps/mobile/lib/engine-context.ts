@@ -124,6 +124,8 @@ function createSecureStoreStore(): KeyValue {
 let backend: KeyValue | null = null;
 let cachedSettings: EngineContextSettings | null = null;
 let pendingLoad: Promise<EngineContextSettings> | null = null;
+/** Serializes `saveEngineContext` backend writes (last tap lands last). */
+let writeQueue: Promise<void> = Promise.resolve();
 
 function getBackend(): KeyValue {
   if (backend === null) {
@@ -143,6 +145,7 @@ export function __setEngineContextStoreForTests(store: KeyValue | null): void {
   backend = store;
   cachedSettings = null;
   pendingLoad = null;
+  writeQueue = Promise.resolve();
 }
 
 /**
@@ -191,10 +194,13 @@ export async function loadEngineContext(): Promise<EngineContextSettings> {
 
 export async function saveEngineContext(settings: EngineContextSettings): Promise<void> {
   cachedSettings = settings;
-  await getBackend().setItem(
-    ENGINE_CONTEXT_KEY,
-    JSON.stringify({ availableMinutes: settings.availableMinutes }),
-  );
+  const raw = JSON.stringify({ availableMinutes: settings.availableMinutes });
+  // Serialize backend writes: rapid chip taps fire overlapping saves, and
+  // without the chain the slower earlier write could land last. The caller
+  // still sees its own success/failure — the chain only orders the writes.
+  const write = writeQueue.then(() => getBackend().setItem(ENGINE_CONTEXT_KEY, raw));
+  writeQueue = write.catch(() => undefined);
+  await write;
 }
 
 // ---------------------------------------------------------------------------

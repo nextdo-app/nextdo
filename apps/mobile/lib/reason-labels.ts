@@ -26,6 +26,26 @@ export const REASON_LABELS: Record<ReasonCode, string> = {
 };
 
 /**
+ * The reason codes the Now card shows under 「为什么是它？」.
+ *
+ * `context-match` names the retired 场景 feature (#46), and `time-fits` /
+ * `dependency-clear` hold for every surviving candidate, so none of them
+ * explains why THIS action was picked. The labels stay in `REASON_LABELS`
+ * (the engine still emits the codes); only the display filters them.
+ */
+export const DISPLAY_REASON_CODES: ReadonlySet<ReasonCode> = new Set<ReasonCode>([
+  'deadline-urgency',
+  'goal-value',
+  'project-importance',
+  'time-fit',
+  'waiting-time',
+  'habit-commitment',
+  'health-protection',
+  'window-open',
+  'calendar-preempt',
+]);
+
+/**
  * Labels for the engine's filter rules (the "all filtered" empty state —
  * PRD R4: explainable exclusion, one line per rule).
  */
