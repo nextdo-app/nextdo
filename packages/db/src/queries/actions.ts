@@ -375,16 +375,27 @@ export async function updateNextAction(
   const next = redefined
     ? { ...action, consecutiveSkips: 0, lastSkippedAt: undefined }
     : action;
+  // Fields the edit forms do not own. The Now screen rebuilds a row from a
+  // pool candidate (which carries none of these), so writing the incoming
+  // object verbatim would blank ingest-only columns — and resurrect `open`
+  // over a completion that landed while the editor was open.
+  const preserved: NextAction = {
+    ...next,
+    status: previousAction.status,
+    category: previousAction.category,
+    sourceInboxId: previousAction.sourceInboxId,
+    replacesActionId: previousAction.replacesActionId,
+  };
   const specs = reminder === undefined ? [] : resolveReminderSpecs(reminder);
   await db.transaction().execute(async (tx) => {
     await tx
       .updateTable('next_actions')
-      .set({ ...nextActionToRow(next), updated_at: next.updatedAt })
+      .set({ ...nextActionToRow(preserved), updated_at: preserved.updatedAt })
       .where('id', '=', action.id)
       .execute();
     if (reminder !== undefined) await reconcileReminder(tx, 'next', action.id, specs, reminder.now);
   });
-  return next;
+  return preserved;
 }
 
 // ---------------------------------------------------------------------------

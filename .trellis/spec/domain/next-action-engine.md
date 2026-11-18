@@ -169,9 +169,11 @@ A `Reason` of `type: "score"` is emitted for every code with signal > 0, subject
 Reasons are **sorted descending by actual weighted score contribution** (`W[code] × signals[code]`). Equal contributions preserve the canonical `SCORE_CODES` index order.
 `type: "eligibility"` reasons record *why it can run right now* (`context-match`,
 `window-open`, `time-fits`, `dependency-clear`, `calendar-preempt`) — these are not
-weighted. **"Why this?"** renders the top 3 score reasons by weighted
-contribution (with the highest-ranked reason visually accented as the primary driver)
-plus the eligibility summary (Proposal §6.3).
+weighted. **"Why this?"** is a presentation concern: it renders up to 3 reasons from
+the score reasons plus `window-open` / `calendar-preempt`, drops `context-match`
+(the retired 场景 feature, #46) and the always-true `time-fits` / `dependency-clear`,
+and stars the first score reason (the primary driver). The block is hidden when no
+displayable reason remains. The engine output itself is unchanged.
 
 **Worked example (Proposal §6.2, `availableMinutes = 60`), a required regression test:**
 
