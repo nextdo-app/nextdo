@@ -27,12 +27,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { FlatList, Pressable, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAppInsets } from '@/lib/use-app-insets';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Button, Card, EmptyState, Tag, colors } from '@nextdo/ui';
 import { useInboxItems } from '@/hooks/use-inbox-items';
 import { useAddInboxItem } from '@/hooks/use-add-inbox-item';
 import { useTrashInboxItem } from '@/hooks/use-trash-inbox-item';
 import { useWaitingForItems } from '@/hooks/use-waiting-for';
+import { useSomedayItems } from '@/hooks/use-someday-items';
 import { useAppClock } from '@/hooks/use-app-clock';
 import { formatRelativeTime } from '@/lib/format';
 import { errorMessage } from '@/lib/error-messages';
@@ -152,6 +153,7 @@ function GtdTipCard({ defaultExpanded = false }: { defaultExpanded?: boolean }) 
 export default function InboxScreen() {
   const { data, error } = useInboxItems();
   const { data: waitingItems } = useWaitingForItems();
+  const { data: somedayItems } = useSomedayItems();
   const { add, error: captureError } = useAddInboxItem();
   const { trash, error: trashError } = useTrashInboxItem();
   const now = useAppClock();
@@ -178,6 +180,15 @@ export default function InboxScreen() {
       router.setParams({ recapture: undefined });
     }
   }, [recapture]);
+
+  // Leaving the Inbox closes the on-launch capture modal. The modal lives in
+  // this tab's tree, so a push to /waiting, /someday or the Clarify wizard
+  // would otherwise keep it covering the pushed screen.
+  useFocusEffect(
+    useCallback(() => {
+      return () => setShowQuickCapture(false);
+    }, []),
+  );
 
   const capture = async (mode: 'save' | 'clarify') => {
     const title = draft.trim();
@@ -251,9 +262,11 @@ export default function InboxScreen() {
         </View>
       ) : (
         <>
-          {/* Count row */}
-          <View className="mb-3 mt-4 flex-row items-center justify-between">
-            <View className="flex-row items-center gap-2">
+          {/* Count row. The two groups wrap on narrow screens: at 360px the
+              pending count + 开始澄清 and the two capsules do not fit on one
+              line, so the capsule group moves to its own row. */}
+          <View className="mb-3 mt-4 flex-row flex-wrap items-center justify-between gap-2">
+            <View className="flex-row flex-wrap items-center gap-2">
               <Tag label="待澄清" count={data.length} />
               {startClarifyId !== null ? (
                 <Button
@@ -264,17 +277,30 @@ export default function InboxScreen() {
                 />
               ) : null}
             </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="查看等待事项"
-              className="flex-row items-center gap-1 rounded-full border border-border/60 bg-surface/70 px-2.5 py-1 active:bg-surface-container dark:border-border-dark/60 dark:bg-surface-dark/70 dark:active:bg-surface-container-dark shadow-2xs"
-              onPress={() => router.push('/waiting')}
-            >
-              <Ionicons name="time-outline" size={13} color={isDark ? colors.accentDark : colors.accent} />
-              <Text className="font-sans text-xs font-medium text-accent dark:text-accent-dark">
-                等待事项 ({waitingItems.length}) →
-              </Text>
-            </Pressable>
+            <View className="flex-row flex-wrap items-center justify-end gap-1.5">
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="查看 Someday/Maybe"
+                className="flex-row items-center gap-1 rounded-full border border-border/60 bg-surface/70 px-2.5 py-1 active:bg-surface-container dark:border-border-dark/60 dark:bg-surface-dark/70 dark:active:bg-surface-container-dark shadow-2xs"
+                onPress={() => router.push('/someday')}
+              >
+                <Ionicons name="bookmark-outline" size={13} color={isDark ? colors.mutedDark : colors.muted} />
+                <Text className="font-sans text-xs font-medium text-muted dark:text-muted-dark">
+                  Someday ({somedayItems.length}) →
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="查看等待事项"
+                className="flex-row items-center gap-1 rounded-full border border-border/60 bg-surface/70 px-2.5 py-1 active:bg-surface-container dark:border-border-dark/60 dark:bg-surface-dark/70 dark:active:bg-surface-container-dark shadow-2xs"
+                onPress={() => router.push('/waiting')}
+              >
+                <Ionicons name="time-outline" size={13} color={isDark ? colors.accentDark : colors.accent} />
+                <Text className="font-sans text-xs font-medium text-accent dark:text-accent-dark">
+                  等待事项 ({waitingItems.length}) →
+                </Text>
+              </Pressable>
+            </View>
           </View>
 
           {data.length === 0 ? (

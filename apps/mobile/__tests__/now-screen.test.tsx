@@ -41,6 +41,9 @@ const skipCalls: { count: number; shouldFail: boolean; args: unknown[] } = {
 // Counts `trashAction` calls — the hero overflow sheet must hit the action it
 // was opened for, never whichever action replaced it in the hero.
 const trashCalls: { count: number; args: unknown[] } = { count: 0, args: [] };
+// Counts `archiveActionToSomeday` calls — the menu row parks the action the
+// sheet was opened for, without trashing it.
+const archiveCalls: { count: number; args: unknown[] } = { count: 0, args: [] };
 // Counts the habit READS (`useHabits` re-reads on mount, on focus and on
 // `reload()`). The success-path test can assert the rendered counters
 // changed, but the FAILURE path renders identically whether or not a
@@ -122,6 +125,10 @@ jest.mock('@nextdo/db', () => {
     trashAction: async (_db: unknown, args: unknown) => {
       trashCalls.count += 1;
       trashCalls.args.push(args);
+    },
+    archiveActionToSomeday: async (_db: unknown, args: unknown) => {
+      archiveCalls.count += 1;
+      archiveCalls.args.push(args);
     },
     listProjects: async () => projectsRef.current,
     listHabits: async () => {
@@ -286,6 +293,8 @@ beforeEach(() => {
   skipCalls.args = [];
   trashCalls.count = 0;
   trashCalls.args = [];
+  archiveCalls.count = 0;
+  archiveCalls.args = [];
   habitReads.habits = 0;
   habitReads.days = 0;
   contextReads.count = 0;
@@ -722,6 +731,21 @@ describe('Now screen', () => {
     // (the old callbacks read `displayed` at press time).
     expect(screen.queryByLabelText('行动操作：长任务')).toBeNull();
     expect(screen.queryByRole('button', { name: '删除行动' })).toBeNull();
+    expect(trashCalls.count).toBe(0);
+  });
+
+  it('the action menu parks the action in Someday/Maybe instead of deleting it', async () => {
+    setPool([nextAction({ id: 'park-me', title: '长任务', value: 5, estMinutes: 25 })]);
+    renderRouter('app', { initialUrl: '/(tabs)/now' });
+    await waitFor(() => expect(screen.getByText('长任务')).toBeTruthy());
+
+    fireEvent.press(screen.getByRole('button', { name: '更多操作：长任务' }));
+    await waitFor(() => expect(screen.getByLabelText('行动操作：长任务')).toBeTruthy());
+    fireEvent.press(screen.getByRole('button', { name: '转为 Someday/Maybe' }));
+
+    await waitFor(() => expect(archiveCalls.count).toBe(1));
+    expect(archiveCalls.args[0]).toMatchObject({ actionKind: 'next', actionId: 'park-me' });
+    // Parking is not trashing — the action must stay out of the delete path.
     expect(trashCalls.count).toBe(0);
   });
 

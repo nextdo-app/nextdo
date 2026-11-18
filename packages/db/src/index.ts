@@ -51,6 +51,7 @@ export type {
 // Action reads + the canonical mutation transactions (all three action kinds).
 export {
   addNextAction,
+  archiveActionToSomeday,
   completeAction,
   getActionDetails,
   listCompletedActions,
@@ -131,6 +132,7 @@ export {
   projectCardsWatchQuery,
   projectsWatchQuery,
   reviewRecordsWatchQuery,
+  somedayItemsWatchQuery,
   waitingForWatchQuery,
 } from './queries/watch-queries';
 export type { ProjectCard, ProjectWithCoverage } from './queries/watch-queries';

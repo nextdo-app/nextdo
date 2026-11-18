@@ -9,6 +9,7 @@
 import { toIso, ulid, type NextAction, type Value } from '@nextdo/core';
 import {
   addNextAction,
+  archiveActionToSomeday,
   completeAction,
   listCompletedActions,
   listNextActions,
@@ -18,6 +19,7 @@ import {
   trashAction,
   updateNextAction,
 } from '../queries/actions';
+import { listSomedayMaybeItems } from '../queries/someday';
 import { listFocusSessions } from '../queries/focus';
 import { listCompletionRecords } from '../queries/reviews';
 import { listScheduledRemindersFor } from '../queries/reminders';
@@ -941,6 +943,211 @@ describe('listCompletedActions — the 已完成行动 window read (issue 27)', 
       expect((await listCompletedActions(db)).map((row) => row.id)).toContain(A.done);
       await reopenAction(db, { actionKind: 'next', actionId: A.done, now: FIXTURE_NOW });
       expect((await listCompletedActions(db)).map((row) => row.id)).not.toContain(A.done);
+    } finally {
+      await close();
+    }
+  });
+});
+
+describe('archiveActionToSomeday — GTD「有空再说」', () => {
+  it('soft-deletes the action, parks its title in Someday/Maybe and cancels its reminders', async () => {
+    const { db, close } = await open(true);
+    try {
+      const before = await db
+        .selectFrom('next_actions')
+        .selectAll()
+        .where('id', '=', A.snoozed)
+        .executeTakeFirst();
+      expect(before?.deleted_at).toBeNull();
+      expect(before?.title).toBeTruthy();
+
+      const item = await archiveActionToSomeday(db, {
+        actionKind: 'next',
+        actionId: A.snoozed,
+        now: FIXTURE_NOW,
+      });
+
+      expect(item.title).toBe(before?.title);
+      expect(item.deletedAt).toBeNull();
+      expect((await listSomedayMaybeItems(db)).map((entry) => entry.id)).toContain(item.id);
+
+      const after = await db
+        .selectFrom('next_actions')
+        .selectAll()
+        .where('id', '=', A.snoozed)
+        .executeTakeFirst();
+      expect(after?.deleted_at).toBe(toIso(FIXTURE_NOW));
+      expect(await listScheduledRemindersFor(db, 'next', A.snoozed)).toEqual([]);
+    } finally {
+      await close();
+    }
+  });
+
+  it('carries the note across', async () => {
+    const { db, close } = await open(true);
+    try {
+      const action = makeAction({ title: '读一本讲 GTD 的书', note: '先看目录' });
+      await addNextAction(db, action);
+
+      const item = await archiveActionToSomeday(db, {
+        actionKind: 'next',
+        actionId: action.id,
+        now: FIXTURE_NOW,
+      });
+
+      expect(item).toMatchObject({ title: '读一本讲 GTD 的书', note: '先看目录' });
+    } finally {
+      await close();
+    }
+  });
+
+  it('archives a calendar action too', async () => {
+    const { db, close } = await open(true);
+    try {
+      const item = await archiveActionToSomeday(db, {
+        actionKind: 'calendar',
+        actionId: C.soon,
+        now: FIXTURE_NOW,
+      });
+      expect(item.title).toBeTruthy();
+      expect(await listScheduledRemindersFor(db, 'calendar', C.soon)).toEqual([]);
+      expect((await listSomedayMaybeItems(db)).map((entry) => entry.id)).toContain(item.id);
+    } finally {
+      await close();
+    }
+  });
+
+  it('rejects a habit day — a generated row has no parked form', async () => {
+    const { db, close } = await open(true);
+    try {
+      await expect(
+        archiveActionToSomeday(db, {
+          actionKind: 'habit' as unknown as 'next',
+          actionId: fixtureHabitDayId(H.today, 0),
+          now: FIXTURE_NOW,
+        }),
+      ).rejects.toMatchObject({ code: 'action.archive-kind' });
+    } finally {
+      await close();
+    }
+  });
+
+  it('rejects a missing or soft-deleted action', async () => {
+    const { db, close } = await open(true);
+    try {
+      await expect(
+        archiveActionToSomeday(db, {
+          actionKind: 'next',
+          actionId: A.trashed,
+          now: FIXTURE_NOW,
+        }),
+      ).rejects.toMatchObject({ code: 'action.not-found' });
+    } finally {
+      await close();
+    }
+  });
+
+  it('a second tap cannot mint a second entry', async () => {
+    const { db, close } = await open(true);
+    try {
+      const first = await archiveActionToSomeday(db, {
+        actionKind: 'next',
+        actionId: A.snoozed,
+        now: FIXTURE_NOW,
+      });
+      await expect(
+        archiveActionToSomeday(db, {
+          actionKind: 'next',
+          actionId: A.snoozed,
+          now: FIXTURE_NOW,
+        }),
+      ).rejects.toMatchObject({ code: 'action.not-found' });
+
+      const parked = (await listSomedayMaybeItems(db)).filter(
+        (entry) => entry.title === first.title,
+      );
+      expect(parked).toHaveLength(1);
+    } finally {
+      await close();
+    }
+  });
+
+  it('two concurrent taps produce exactly one entry', async () => {
+    const { db, close } = await open(true);
+    try {
+      const results = await Promise.allSettled([
+        archiveActionToSomeday(db, {
+          actionKind: 'next',
+          actionId: A.snoozed,
+          now: FIXTURE_NOW,
+        }),
+        archiveActionToSomeday(db, {
+          actionKind: 'next',
+          actionId: A.snoozed,
+          now: FIXTURE_NOW,
+        }),
+      ]);
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+
+      const title = await db
+        .selectFrom('next_actions')
+        .select('title')
+        .where('id', '=', A.snoozed)
+        .executeTakeFirst();
+      expect(
+        (await listSomedayMaybeItems(db)).filter((entry) => entry.title === title?.title),
+      ).toHaveLength(1);
+    } finally {
+      await close();
+    }
+  });
+
+  it('refuses an action another device already completed', async () => {
+    const { db, close } = await open(true);
+    try {
+      await expect(
+        archiveActionToSomeday(db, {
+          actionKind: 'next',
+          actionId: A.done,
+          now: FIXTURE_NOW,
+        }),
+      ).rejects.toMatchObject({ code: 'action.archive-not-open' });
+
+      // The done action keeps its row and its 已完成行动 entry.
+      const row = await db
+        .selectFrom('next_actions')
+        .selectAll()
+        .where('id', '=', A.done)
+        .executeTakeFirst();
+      expect(row?.deleted_at).toBeNull();
+      expect((await listCompletedActions(db)).map((entry) => entry.id)).toContain(A.done);
+    } finally {
+      await close();
+    }
+  });
+
+  it('refuses an action an open dependent still waits on', async () => {
+    const { db, close } = await open(true);
+    try {
+      // A.blocked depends on A.baseline; a parked baseline would block the
+      // dependent forever (the engine only treats DONE dependencies as met).
+      await expect(
+        archiveActionToSomeday(db, {
+          actionKind: 'next',
+          actionId: A.baseline,
+          now: FIXTURE_NOW,
+        }),
+      ).rejects.toMatchObject({ code: 'action.has-dependents' });
+
+      const row = await db
+        .selectFrom('next_actions')
+        .selectAll()
+        .where('id', '=', A.baseline)
+        .executeTakeFirst();
+      expect(row?.deleted_at).toBeNull();
+      expect(
+        (await listSomedayMaybeItems(db)).some((entry) => entry.title === row?.title),
+      ).toBe(false);
     } finally {
       await close();
     }

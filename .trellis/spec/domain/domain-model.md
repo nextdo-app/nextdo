@@ -165,8 +165,26 @@ action kinds**. A
 (see Next Action Engine). An action is never both `NextAction` and `CalendarAction`.
 
 ### SomedayMaybeItem
-`title`, `note?`. Weekly review re-asks: promote (→ Project/NextAction via Clarify),
-keep, or trash.
+`title`, `note?`. The weekly review currently re-asks only **keep** or **trash**
+(`apps/mobile/app/review/weekly.tsx`); promotion into a Project / NextAction is
+NOT implemented — the `SomedayDecision.to` union still lists `"project"` /
+`"action"`, but `reviews.ts` rejects them (`review.invalid-decision`). Treat
+those two values as an unimplemented extension, not as current behavior.
+
+- **Parking an existing action** (2026-11-18): `archiveActionToSomeday` in
+  `packages/db/src/queries/actions.ts` runs ONE local transaction that
+  soft-deletes a `NextAction` / `CalendarAction`, cancels its `scheduled`
+  Reminders, and inserts a `SomedayMaybeItem` carrying the action's title +
+  note. The Now action menu's 「转为 Someday/Maybe」 and the project detail
+  row's 「搁置」 call it. This is GTD's "not now" (still to be reconsidered),
+  deliberately distinct from Trash ("never") — the old row keeps its audit
+  trail, the weekly review still sees the title. `HabitDay` is NOT
+  archivable (typed out and guarded): it is generated from its Habit, so a
+  parked copy would duplicate a row the habit keeps producing.
+- The `/someday` screen (Inbox → Someday chip) lists live entries with a
+  per-row 删除 (soft delete). Promotion is not implemented anywhere yet — the
+  weekly review offers only keep / trash (see above), and this screen
+  deliberately does not re-implement Clarify.
 
 ### ReferenceItem
 External material (Proposal §4.3: v1 = links only). `title`, `url?`, `note?`.
@@ -453,6 +471,8 @@ Append-only, a **discriminated union** on `kind`:
   - weekly: `{ inboxCleared: boolean, followUpsRaised: string[],
     calendarReasonable: boolean,
     somedayDecisions: { id, to: "project" | "action" | "keep" | "trash" }[],
+    /* `project` / `action` are declared but NOT accepted: submitReview rejects
+       any value other than `keep` / `trash` (review.invalid-decision). */
     projectDecisions: { id, to: "active" | "on-hold" | "done" | "dropped" }[] }`
 - **Validation without dependencies:** core stays dependency-free, so the shapes are
   TS types plus a hand-written pure validator in core (`assertReviewRecord`);

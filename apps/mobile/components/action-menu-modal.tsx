@@ -19,6 +19,9 @@ export interface ActionMenuModalProps {
   onClose: () => void;
   onEdit?: () => void;
   onSnooze: () => void;
+  /** Next/calendar only — moves the action to Someday/Maybe instead of
+   *  trashing it. Undefined hides the row (a HabitDay has no parked form). */
+  onArchiveToSomeday?: () => void;
   onTrash: () => void;
 }
 
@@ -29,6 +32,7 @@ export const ActionMenuModal = memo(function ActionMenuModal({
   onClose,
   onEdit,
   onSnooze,
+  onArchiveToSomeday,
   onTrash,
 }: ActionMenuModalProps) {
   const insets = useAppInsets();
@@ -112,6 +116,27 @@ export const ActionMenuModal = memo(function ActionMenuModal({
                 稍后推迟
               </Text>
             </Pressable>
+
+            {onArchiveToSomeday ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="转为 Someday/Maybe"
+                onPress={() => {
+                  onClose();
+                  onArchiveToSomeday();
+                }}
+                className="min-h-[48px] flex-row items-center gap-3 rounded-xl px-3.5 active:bg-surface dark:active:bg-surface-dark"
+              >
+                <Ionicons
+                  name="bookmark-outline"
+                  size={20}
+                  color={isDark ? colors.inkDark : colors.ink}
+                />
+                <Text className="font-sans text-sm font-medium text-ink dark:text-ink-dark">
+                  转为 Someday/Maybe
+                </Text>
+              </Pressable>
+            ) : null}
 
             <Pressable
               accessibilityRole="button"

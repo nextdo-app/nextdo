@@ -23,9 +23,18 @@ import {
   type ActionStatus,
   type NextAction,
   type ReminderSpec,
+  type SomedayMaybeItem,
 } from '@nextdo/core';
 import { sql, type Kysely, type Transaction } from 'kysely';
-import { habitFromRow, nextActionFromRow, nextActionToRow, parseJson, type Database } from '../schema';
+import {
+  habitFromRow,
+  nextActionFromRow,
+  nextActionToRow,
+  normalizeNote,
+  parseJson,
+  somedayMaybeItemToRow,
+  type Database,
+} from '../schema';
 import type { ActionKind, NextdoDb } from '../types';
 import { habitCycleDay } from './pool';
 
@@ -698,6 +707,91 @@ export async function snoozeActionInTransaction(
   // transaction — otherwise a re-snooze would keep the old target time
   // armed alongside the new one. Same helper the add / update paths use.
   await reconcileReminder(db, actionKind, actionId, [reminder], now);
+}
+
+/**
+ * Archive an action into Someday/Maybe: soft-delete the action row and
+ * create a SomedayMaybeItem carrying its title + note, in one transaction.
+ *
+ * GTD's "not now, but maybe later" is a different outcome from Trash
+ * ("never do this"): the title survives where the weekly review can see it,
+ * instead of disappearing into the soft-deleted action row.
+ *
+ * The action is re-read INSIDE the write transaction. Both guards matter:
+ * - the row must still be `open` — an old project page may hold an action
+ *   another device already completed (`done`) or deleted; archiving it here
+ *   would erase it from the 已完成行动 history;
+ * - a second tap on the same row (before the watch refresh removes it) must
+ *   be a no-op, not a second Someday entry.
+ *
+ * An action that still has OPEN dependents is refused. The engine only treats
+ * a DONE dependency as satisfied, so a soft-deleted prerequisite would block
+ * those dependents forever (`pool.ts` `resolveDependency`).
+ *
+ * HabitDay is deliberately NOT accepted — it is a generated daily instance
+ * of a Habit, so the habit itself would keep generating days while its
+ * archived copy sat in Someday/Maybe. The type narrows this at the call
+ * site; the runtime guard keeps a JS caller honest.
+ */
+export async function archiveActionToSomeday(
+  db: NextdoDb,
+  args: { actionKind: 'next' | 'calendar'; actionId: string; now: Date },
+): Promise<SomedayMaybeItem> {
+  const { actionKind, actionId, now } = args;
+  if (actionKind !== 'next' && actionKind !== 'calendar') {
+    throw new ValidationNextdoError(
+      'action.archive-kind',
+      `Cannot archive a ${String(actionKind)} action to Someday/Maybe`,
+    );
+  }
+  const nowIso = toIso(now);
+  const table = ACTION_TABLES[actionKind];
+  return db.transaction().execute(async (tx) => {
+    const row = await loadActionRow(tx, actionKind, actionId);
+    if (row.status !== 'open') {
+      throw new ValidationNextdoError(
+        'action.archive-not-open',
+        `Cannot archive a ${actionKind} action whose status is ${row.status ?? 'unknown'}`,
+      );
+    }
+    const dependent = await tx
+      .selectFrom('next_actions')
+      .select('id')
+      .where('depends_on_id', '=', actionId)
+      .where('status', '=', 'open')
+      .where('deleted_at', 'is', null)
+      .executeTakeFirst();
+    if (dependent !== undefined) {
+      throw new ValidationNextdoError(
+        'action.has-dependents',
+        `Action ${actionId} is a prerequisite of open action ${dependent.id}`,
+      );
+    }
+    const item: SomedayMaybeItem = {
+      id: ulid(now),
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      deletedAt: null,
+      title: row.title ?? '',
+      note: normalizeNote(row.note) ?? undefined,
+    };
+    await tx
+      .updateTable(table)
+      .set({ deleted_at: nowIso, updated_at: nowIso })
+      .where('id', '=', actionId)
+      .execute();
+    await tx
+      .updateTable('reminders')
+      .set({ state: 'cancelled', updated_at: nowIso })
+      .where('action_id', '=', actionId)
+      .where('state', '=', 'scheduled')
+      .execute();
+    await tx
+      .insertInto('someday_maybe_items')
+      .values({ id: item.id, ...somedayMaybeItemToRow(item) })
+      .execute();
+    return item;
+  });
 }
 
 /**
