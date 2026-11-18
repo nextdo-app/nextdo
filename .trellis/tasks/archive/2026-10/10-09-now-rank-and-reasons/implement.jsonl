@@ -1,3 +1,0 @@
-{"file": ".trellis/spec/domain/next-action-engine.md", "reason": "Next Action 推荐引擎纯函数契约、候选动作模型、打分与权重公式及确定性排序规范"}
-{"file": ".trellis/spec/app/component-guidelines.md", "reason": "移动端 Now 页面组件规范、推荐理由展示与交互设计规范"}
-{"file": ".trellis/spec/app/testing-guidelines.md", "reason": "测试规范与回归测试断言指引"}

@@ -1,4 +1,0 @@
-{"file": ".trellis/spec/app/database-guidelines.md", "reason": "verify the E2E protocol and any fixes against the PowerSync model (2xx-on-rejection, stream name, owner-token rules)"}
-{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "root gate + review standards; bug fixes must ship regression tests"}
-{"file": ".trellis/spec/project/directory-structure.md", "reason": "e2e/ placement + dependency graph audit (Rule 1)"}
-{"file": ".trellis/spec/project/conventions.md", "reason": "convention compliance of the new script (exports, errors, logging)"}

@@ -1,5 +1,0 @@
-{"file": ".trellis/spec/app/database-guidelines.md", "reason": "PowerSync model, app backend contract, owner-token module, web worker assembly, test harness pattern — the core of this E2E"}
-{"file": ".trellis/spec/project/directory-structure.md", "reason": "placement rules for the new e2e/ scripts dir; dependency graph (Rule 1)"}
-{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "root gate that must stay green; testing bar for any bug fixes found by the E2E"}
-{"file": ".trellis/spec/project/conventions.md", "reason": "TS config, exports, typed errors, logging for the new e2e script"}
-{"file": ".trellis/tasks/archive/2026-09/09-21-monorepo-scaffold/research/versions-powersync.md", "reason": "PowerSync SDK v2 API + service 1.26.1 config details (checkpoint behavior, opened adapter, admin API)"}

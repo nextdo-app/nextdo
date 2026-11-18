@@ -1,3 +1,0 @@
-{"file": ".trellis/spec/app/hook-guidelines.md", "reason": "Verify hook rules and lifecycle cleanup"}
-{"file": ".trellis/spec/domain/next-action-engine.md", "reason": "Verify habit cycle day arithmetic and consistency"}
-{"file": ".trellis/spec/app/testing-guidelines.md", "reason": "Verify testing coverage and mock contracts"}

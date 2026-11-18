@@ -1,8 +1,0 @@
-{"file": ".trellis/spec/app/component-guidelines.md", "reason": "校验四屏/ui 组件换肤合规（tokens 消费、禁 raw hex、a11y 标签与 44pt、新组件规范）"}
-{"file": ".trellis/spec/app/hook-guidelines.md", "reason": "校验 useProjectCards/useActionTitle/useProjectCards 派生 helper 的 hook 惯例"}
-{"file": ".trellis/spec/app/database-guidelines.md", "reason": "校验 projectCardsWatchQuery 与 seedDefaultContexts 遵循 db 惯例（事务/校验先行、测试覆盖）"}
-{"file": ".trellis/spec/app/state-management.md", "reason": "校验瞬时 UI 状态（过滤 chips、preview 步、depth/answered）未泄漏到 DB 层"}
-{"file": ".trellis/spec/app/testing-guidelines.md", "reason": "校验测试更新符合惯例且行为断言未丢失（回归全绿）"}
-{"file": ".trellis/spec/domain/domain-model.md", "reason": "校验 Clarify 决策表实现与 spec 一致（Q2b 分支不回归、情境入库、种子 5 个、coverage 派生）"}
-{"file": ".trellis/spec/domain/next-action-engine.md", "reason": "确认引擎契约未被改动（纯函数、确定性、reasons 非空）"}
-{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "各包测试覆盖与 pnpm typecheck/lint/test 全绿要求"}

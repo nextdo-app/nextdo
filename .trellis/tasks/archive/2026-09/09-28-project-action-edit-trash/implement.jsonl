@@ -1,6 +1,0 @@
-{"file": ".trellis/spec/domain/next-action-engine.md", "reason": "R5 池子过滤要写入其 Pool contract（enforced by packages/db pool query）；过滤条件与边界以该契约为准"}
-{"file": ".trellis/spec/domain/domain-model.md", "reason": "Project 状态机/终态、NextAction 字段集、updateNextAction 重置 consecutiveSkips 的语义、软删除=Trash 定义"}
-{"file": ".trellis/spec/app/hook-guidelines.md", "reason": "新增 useUpdateProject/useUpdateNextAction 钩子须遵循（hook 拥有 mutation、now 取 useAppClock、查询在 packages/db）"}
-{"file": ".trellis/spec/app/component-guidelines.md", "reason": "EditProjectForm/EditActionForm 内联表单与按钮变体沿用现有组件约定"}
-{"file": ".trellis/spec/app/database-guidelines.md", "reason": "packages/db 查询改动 + 测试落点（@powersync/react 边界、查询写在 queries/）"}
-{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "测试与质量门要求（typecheck/lint/test 全绿后才可汇报完成）"}

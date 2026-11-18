@@ -15,9 +15,6 @@ workspace/
 |-- index.md              # This file - main index
 +-- {developer}/          # Per-developer directory
     |-- index.md          # Personal index with session history
-    |-- tasks/         # Task files
-    |   |-- *.json        # Active tasks
-    |   +-- archive/      # Archived tasks by month
     +-- journal-N.md     # Journal files (sequential: 1, 2, 3...)
 ```
 
@@ -27,7 +24,7 @@ workspace/
 
 | Developer | Last Active | Sessions | Active File |
 |-----------|-------------|----------|-------------|
-| (none yet) | - | - | - |
+| printsdfu | 2026-11-12 | 73 | `journal-2.md` |
 
 ---
 
@@ -88,7 +85,6 @@ Use this template when recording sessions:
 ## Session {N}: {Title}
 
 **Date**: YYYY-MM-DD
-**Task**: {task-name}
 **Branch**: `{branch-name}`
 
 ### Summary

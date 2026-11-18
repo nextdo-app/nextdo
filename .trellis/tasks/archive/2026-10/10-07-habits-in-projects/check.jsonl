@@ -1,5 +1,0 @@
-{"file": ".trellis/spec/domain/domain-model.md", "reason": "校验 Habit.projectId 语义、R5 规则、HabitDay 确定性 id 是否被破坏"}
-{"file": ".trellis/spec/app/database-guidelines.md", "reason": "校验 schema 变更四处一致、向后兼容、无第二套项目有效性判断"}
-{"file": ".trellis/spec/app/hook-guidelines.md", "reason": "校验新 hook 形状与现有 use-project-actions 一致"}
-{"file": ".trellis/spec/app/testing-guidelines.md", "reason": "校验新增测试覆盖了 PRD 的 7 条 AC"}
-{"file": ".trellis/tasks/10-07-habits-in-projects/prd.md", "reason": "逐条核对 AC-1 到 AC-7 是否都有对应测试断言"}

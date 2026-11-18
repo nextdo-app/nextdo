@@ -1,6 +1,0 @@
-{"file": ".trellis/tasks/09-28-oss-sync-options/prd.md", "reason": "验收标准逐条核对（含 grep 无个人域名、e2e 回归、三态文案）"}
-{"file": ".trellis/tasks/09-28-oss-sync-options/design.md", "reason": "契约核对：存储 API 形状、写顺序 config→token、stronghold 双 key、不改名订阅"}
-{"file": ".trellis/spec/app/database-guidelines.md", "reason": "存储矩阵是否已更新为双 key 契约；PowerSync 边界是否被越界"}
-{"file": ".trellis/spec/app/component-guidelines.md", "reason": "设置页组件边界与 provider 订阅描述一致性"}
-{"file": ".trellis/spec/app/testing-guidelines.md", "reason": "新用例是否符合测试惯例（mock 面完整性、断言 observable 行为）"}
-{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "根级 gate 全绿 + 交叉层数据流检查"}

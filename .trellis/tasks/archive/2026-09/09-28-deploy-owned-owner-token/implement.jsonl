@@ -1,6 +1,0 @@
-{"file": ".trellis/tasks/09-28-deploy-owned-owner-token/prd.md", "reason": "需求 R1-R5、决策 D1-D4、验收标准（必填 token、拒绝启动报错文案、零残留 grep）"}
-{"file": ".trellis/tasks/09-28-deploy-owned-owner-token/design.md", "reason": "启动数据流、客户端连接流、不变量核对表、提交拆分"}
-{"file": ".trellis/tasks/09-28-deploy-owned-owner-token/implement.md", "reason": "有序清单（server→db→mobile→deploy→spec）、逐文件改动点、验证步骤"}
-{"file": ".trellis/spec/app/testing-guidelines.md", "reason": "测试惯例（fetch mock 模式、mock 面完整性）——删 claim 用例时 mock 面必须同步收缩"}
-{"file": ".trellis/spec/app/component-guidelines.md", "reason": "设置页文案先例与按钮禁用/内联报错模式（token 必填走 connect() 内联，与地址无效同模式）"}
-{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "根级质量 gate 与完成定义"}

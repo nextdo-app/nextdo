@@ -1,8 +1,0 @@
-{"file": ".trellis/tasks/09-24-prod-deploy-connect/implement.md", "reason": "本任务执行清单：7 步顺序、每步验证命令与回滚点，实施必须逐步对照"}
-{"file": ".trellis/tasks/09-24-prod-deploy-connect/design.md", "reason": "技术契约：fetchCredentialsOnce 形状、stronghold 2.3.2 vault API 用法、Gate 状态机、CORS 参数、生产 compose 结构"}
-{"file": ".trellis/spec/app/database-guidelines.md", "reason": "PowerSync Rules 与 owner-token 每平台存储矩阵——R3/R4 直接受其约束（懒加载、禁 env 回退、单 key 契约）"}
-{"file": ".trellis/spec/app/component-guidelines.md", "reason": "Paper Serenity 组件约定——connect-gate.tsx 的样式/token/结构必须遵循"}
-{"file": ".trellis/spec/app/testing-guidelines.md", "reason": "单测约定——CORS 预检、stronghold mock、Gate 三态、connector 纯函数各步测试写法"}
-{"file": ".trellis/spec/project/directory-structure.md", "reason": "Rule 1：server/app 是 PowerSync 协议边界、不 import monorepo；新增 server/deploy 的目录归属"}
-{"file": ".trellis/spec/project/conventions.md", "reason": "日志与通用约定（logger 单出口等）——R5 中间件与错误处理需遵守"}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "本任务跨 server/db/mobile 三层，共享思考指南用于保持跨层一致"}

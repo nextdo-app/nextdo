@@ -1,4 +1,0 @@
-{"file": ".trellis/spec/app/database-guidelines.md", "reason": "PowerSync 规则、/credentials 协议、owner-token 存储矩阵——本次改动的核心规范"}
-{"file": ".trellis/spec/app/hook-guidelines.md", "reason": "useCloudSync 是 UI hook，禁止在其中发 fetch——约束 connect 的实现边界"}
-{"file": ".trellis/spec/app/component-guidelines.md", "reason": "设置页与 provider 组件的约定"}
-{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "提交前的质量门禁"}
