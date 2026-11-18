@@ -9,13 +9,14 @@
  * are expressed as watchable queries so the React hooks update live.
  */
 import { sql } from 'kysely';
-import type { InboxItem, Project, ReviewRecord, WaitingForItem } from '@nextdo/core';
+import type { InboxItem, Project, ReviewRecord, SomedayMaybeItem, WaitingForItem } from '@nextdo/core';
 import type { CompilableQuery } from '@powersync/common';
 import {
   inboxItemFromRow,
   parseJson,
   projectFromRow,
   reviewRecordFromRow,
+  somedayMaybeItemFromRow,
   waitingForItemFromRow,
 } from '../schema';
 import { toCompilableQuery } from '../watch-query';
@@ -205,6 +206,16 @@ export function waitingForWatchQuery(db: NextdoDb): CompilableQuery<WaitingForIt
     .where('deleted_at', 'is', null)
     .orderBy('created_at', 'desc');
   return toCompilableQuery(builder, waitingForItemFromRow);
+}
+
+/** Someday/Maybe list (live, non-deleted items, oldest first). */
+export function somedayItemsWatchQuery(db: NextdoDb): CompilableQuery<SomedayMaybeItem> {
+  const builder = db
+    .selectFrom('someday_maybe_items')
+    .selectAll()
+    .where('deleted_at', 'is', null)
+    .orderBy('created_at');
+  return toCompilableQuery(builder, somedayMaybeItemFromRow);
 }
 
 /**

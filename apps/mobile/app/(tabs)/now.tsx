@@ -35,6 +35,7 @@ import { useAppClock } from '@/hooks/use-app-clock';
 import { useSkipAction } from '@/hooks/use-skip-action';
 import { useSnoozeAction } from '@/hooks/use-snooze-action';
 import { useTrashAction } from '@/hooks/use-trash-action';
+import { useArchiveAction } from '@/hooks/use-archive-action';
 import { useCompleteAction } from '@/hooks/use-complete-action';
 import { useHabits, type HabitWithProgress } from '@/hooks/use-habits';
 import { useProjectTitles } from '@/hooks/use-project-titles';
@@ -299,6 +300,7 @@ const ActionRow = memo(function ActionRow({
   projectName,
   onComplete,
   onSnooze,
+  onArchive,
   onTrash,
   onEdit,
 }: {
@@ -307,6 +309,7 @@ const ActionRow = memo(function ActionRow({
   projectName: string | undefined;
   onComplete: (action: CandidateAction) => void;
   onSnooze: (kind: CandidateKind, id: string) => void;
+  onArchive: (kind: 'next' | 'calendar', id: string) => void;
   onTrash: (kind: CandidateKind, id: string) => void;
   onEdit: (candidate: NextCandidate) => void;
 }) {
@@ -436,6 +439,9 @@ const ActionRow = memo(function ActionRow({
         onClose={() => setShowMenu(false)}
         onEdit={() => onEdit(action as NextCandidate)}
         onSnooze={() => onSnooze(action.kind, action.id)}
+        onArchiveToSomeday={
+          action.kind === 'habit' ? undefined : () => onArchive(action.kind, action.id)
+        }
         onTrash={() => onTrash(action.kind, action.id)}
       />
     </View>
@@ -638,6 +644,7 @@ export default function NowScreen() {
   const { skip, error: skipError } = useSkipAction();
   const { snooze, error: snoozeError } = useSnoozeAction();
   const { trash, error: trashError } = useTrashAction();
+  const { archive, error: archiveError } = useArchiveAction();
   const { complete, error: completeError } = useCompleteAction();
   const { data: habitRows, error: habitError, reload: reloadHabits } = useHabits(now);
 
@@ -675,7 +682,7 @@ export default function NowScreen() {
   const [isListExpanded, setIsListExpanded] = useState(true);
   const insets = useAppInsets();
   const topPadding = Math.max(insets.top, 16);
-  const mutationError = skipError ?? snoozeError ?? trashError ?? completeError ?? habitError;
+  const mutationError = skipError ?? snoozeError ?? trashError ?? archiveError ?? completeError ?? habitError;
 
   const eligible = data?.eligible ?? [];
   const heroMenuEntry =
@@ -762,6 +769,15 @@ export default function NowScreen() {
       void trash({ actionKind, actionId });
     },
     [trash],
+  );
+
+  /** Park the action in Someday/Maybe instead of deleting it. Habit days are
+   *  excluded at the menu level — a generated day has no parked form. */
+  const handleArchive = useCallback(
+    (actionKind: 'next' | 'calendar', actionId: string) => {
+      void archive({ actionKind, actionId });
+    },
+    [archive],
   );
 
   /** Row-level 完成 — one definition for the hero, the list buttons and the
@@ -1142,6 +1158,15 @@ export default function NowScreen() {
                         handleSnooze(heroMenuEntry.action.kind, heroMenuEntry.action.id);
                       }
                     }}
+                    onArchiveToSomeday={
+                      heroMenuEntry !== undefined && heroMenuEntry.action.kind !== 'habit'
+                        ? () =>
+                            handleArchive(
+                              heroMenuEntry.action.kind as 'next' | 'calendar',
+                              heroMenuEntry.action.id,
+                            )
+                        : undefined
+                    }
                     onTrash={() => {
                       if (heroMenuEntry !== undefined) {
                         handleTrash(heroMenuEntry.action.kind, heroMenuEntry.action.id);
@@ -1218,6 +1243,7 @@ export default function NowScreen() {
                         }
                         onComplete={handleComplete}
                         onSnooze={handleSnooze}
+                        onArchive={handleArchive}
                         onTrash={handleTrash}
                         onEdit={handleEdit}
                       />

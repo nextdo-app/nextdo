@@ -39,6 +39,7 @@ import { ReminderTimesField } from '@/components/reminder-times-field';
 import { useCompleteAction } from '@/hooks/use-complete-action';
 import { useSnoozeAction } from '@/hooks/use-snooze-action';
 import { useTrashAction } from '@/hooks/use-trash-action';
+import { useArchiveAction } from '@/hooks/use-archive-action';
 import { useTrashProject } from '@/hooks/use-trash-project';
 import { useTrashHabit } from '@/hooks/use-trash-habit';
 import { useAppClock } from '@/hooks/use-app-clock';
@@ -674,6 +675,7 @@ export default function ProjectDetailScreen() {
   const { complete, error: completeError } = useCompleteAction();
   const { snooze, error: snoozeError } = useSnoozeAction();
   const { trash, error: trashError } = useTrashAction();
+  const { archive, error: archiveError } = useArchiveAction();
   const { trash: trashProject, error: trashProjectError } = useTrashProject();
   const { trash: trashHabit, error: trashHabitError } = useTrashHabit();
 
@@ -718,6 +720,7 @@ export default function ProjectDetailScreen() {
     completeError ??
     snoozeError ??
     trashError ??
+    archiveError ??
     updateProjectError ??
     trashProjectError ??
     trashHabitError;
@@ -891,6 +894,13 @@ export default function ProjectDetailScreen() {
                         />
                         <Button label="稍后" variant="secondary" onPress={() => setSnoozeTarget(action.id)} />
                         <Button label="编辑" variant="ghost" onPress={() => setEditingActionId(action.id)} />
+                        <Button
+                          label="搁置"
+                          variant="ghost"
+                          onPress={() =>
+                            void archive({ actionKind: 'next', actionId: action.id }).then(() => reload())
+                          }
+                        />
                         <Button
                           label="删除"
                           variant="ghost"

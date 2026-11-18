@@ -147,6 +147,7 @@ jest.mock('@nextdo/db', () => {
     completeAction: jest.fn(async () => undefined),
     snoozeAction: jest.fn(async () => undefined),
     trashAction: jest.fn(async () => undefined),
+    archiveActionToSomeday: jest.fn(async () => undefined),
     trashProject: jest.fn(async (_db: unknown, args: { id: string }) => {
       const index = dataRef.cards.findIndex((card) => card.id === args.id);
       if (index >= 0) dataRef.cards.splice(index, 1);
