@@ -1,7 +1,0 @@
-{"file": ".trellis/spec/app/index.md", "reason": "Quality Check 清单：lint / typecheck / test / web 导出，以及无障碍与 44pt 触摸目标"}
-{"file": ".trellis/spec/app/component-guidelines.md", "reason": "核查习惯屏组件的样式 token、无障碍属性、屏内组件是否该下沉到 packages/ui"}
-{"file": ".trellis/spec/app/hook-guidelines.md", "reason": "核查 hook 划分、mutation 是否绕过了 db query、now 是否来自 useAppClock"}
-{"file": ".trellis/spec/app/testing-guidelines.md", "reason": "核查测试是否覆盖 PRD 验收项、mock factory 是否补齐、导航动作是否可处理"}
-{"file": ".trellis/spec/domain/domain-model.md", "reason": "核查 Habit 字段写入是否完整、startHabit 而非 addHabit、文案红线"}
-{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "提交前质量门与禁止项（无 console、无 raw hex、无占位文本）"}
-{"file": ".trellis/tasks/10-02-habit-create-challenge/design.md", "reason": "核查实现是否遵守设计决策：db 导出而非复刻算法、useFocusEffect 刷新、hook 划分"}

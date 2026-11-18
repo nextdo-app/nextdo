@@ -1,9 +1,0 @@
-{"file": ".trellis/spec/app/component-guidelines.md", "reason": "组件呈现层约束（tokens 使用、禁 raw hex、a11y、ContextChip/ProgressBar 提升到 packages/ui 的判定）"}
-{"file": ".trellis/spec/app/hook-guidelines.md", "reason": "数据 hook 命名与单一查询职责（useProjectCards 新增、useActionTitle 扩展 contextIds、时间敏感派生留 UI 层的先例）"}
-{"file": ".trellis/spec/app/database-guidelines.md", "reason": "packages/db 查询/watch-query 惯例（单语句标量子查询模式、db 与 now 注入、根 layout 导入的唯一例外、测试方式）"}
-{"file": ".trellis/spec/app/state-management.md", "reason": "瞬时 UI 状态归属（Now 过滤 chips、向导 preview 步、引擎 context settings 不得泄漏到 DB）"}
-{"file": ".trellis/spec/app/testing-guidelines.md", "reason": "app 测试惯例（flow 测试、文本查询、db mock、四屏测试更新方式）"}
-{"file": ".trellis/spec/domain/domain-model.md", "reason": "Clarify 决策表、Context 种子声明、coverage 派生规则 — 本次契约/实现必须与 spec 一致"}
-{"file": ".trellis/spec/domain/next-action-engine.md", "reason": "确认引擎契约未被改动（纯函数、确定性、reasons 非空；Now 屏改动不碰引擎）"}
-{"file": ".trellis/spec/project/conventions.md", "reason": "TS 严格模式、命名、导出与错误处理约定"}
-{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "各包测试覆盖要求（core/db 单测、apps 流程测试、web export 门禁）"}

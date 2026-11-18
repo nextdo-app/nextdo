@@ -29,20 +29,19 @@
 | `project/` | Monorepo layout, TypeScript conventions, errors, logging, quality | [index](./project/index.md) |
 | `app/` | Expo app: components, hooks, state, local database | [index](./app/index.md) |
 | `domain/` | GTD domain model + Next Action Engine (pure TS, no RN) | [index](./domain/index.md) |
-| `guides/` | Cross-cutting thinking guides (Trellis defaults) | [index](./guides/index.md) |
+| `guides/` | Cross-cutting thinking guides | [index](./guides/index.md) |
 
 ---
 
 ## Status Note
 
-This project was greenfield as of 2026-09-20: these specs record the **agreed baseline
-conventions**, not yet-existing code. When the scaffold task lands the first code, update
-the spec files with real file paths and code examples (workflow Phase 3.3), so that later
-tasks see reality instead of intent.
+The project was greenfield as of 2026-09-20. These specs started as **agreed baseline
+conventions**, not yet-existing code. Code now exists; update a spec in the same change
+when its description no longer matches the implementation.
 
 **Fact corrections (2026-09-21, pre-scaffold)**: three stale statements turned out to
 need correction before implementation (evidence:
-`.trellis/tasks/09-21-monorepo-scaffold/research/`, versions cross-checked against the
+`.trellis/research/archive/2026-09/09-21-monorepo-scaffold/research/`, versions cross-checked against the
 npm registry): (1) **Node 20 → 24** — Node 20 EOL'd 2026-04-30 and Expo SDK 57
 requires Node ≥ 22.13; (2) **PowerSync SDK v2 revamp (2026-07)** — package renames
 (`@powersync/web`, `@powersync/kysely-driver`; `@powersync/client`/`@powersync/axios`/
@@ -56,4 +55,4 @@ eslint 8/9/10).
 
 **Pinning policy (2026-09-21)**: exact version specifiers in every workspace
 `package.json` (no `^`/`~` ranges; the committed lockfile is the source of truth for
-what gets installed). The prd and `implement.md` Step 0 enforce it.
+what gets installed).

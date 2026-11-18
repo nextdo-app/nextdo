@@ -1,3 +1,0 @@
-{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "全栈测试质量、覆盖率与类型检查标准"}
-{"file": ".trellis/spec/app/testing-guidelines.md", "reason": "React Native 与 Jest 测试用例编写与交互断言规范"}
-{"file": ".trellis/spec/project/conventions.md", "reason": "Git 提交信息与代码规范约定"}

@@ -1,6 +1,0 @@
-{"file": ".trellis/tasks/09-28-claim-owner-token/prd.md", "reason": "需求 R1-R5、决策 D1-D3、验收标准（含 409 reason 契约与日志零密钥）"}
-{"file": ".trellis/tasks/09-28-claim-owner-token/design.md", "reason": "claim 数据流、createApp 闭包可变 token、启动语义变更、ClaimOutcome 契约、安全权衡"}
-{"file": ".trellis/tasks/09-28-claim-owner-token/implement.md", "reason": "有序清单（server→db→mobile→docs）、风险文件、5 段提交拆分"}
-{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "根级质量 gate 与完成定义"}
-{"file": ".trellis/spec/app/testing-guidelines.md", "reason": "apps/mobile 与 packages/db 测试惯例（fetch mock 模式、mock 面完整性）"}
-{"file": ".trellis/spec/app/component-guidelines.md", "reason": "UI 边界与文案先例（设置页三态文案保持单一先例）"}

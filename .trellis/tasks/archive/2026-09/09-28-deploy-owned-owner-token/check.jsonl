@@ -1,5 +1,0 @@
-{"file": ".trellis/tasks/09-28-deploy-owned-owner-token/prd.md", "reason": "验收标准逐条核对（必填 token、启动拒绝、/claim 404、零残留 grep、客户端内联文案、部署面）"}
-{"file": ".trellis/tasks/09-28-deploy-owned-owner-token/design.md", "reason": "不变量核对表（token 不入日志、写顺序、401 矩阵、e2e 零改动）"}
-{"file": ".trellis/spec/app/component-guidelines.md", "reason": "设置页文案先例一致性与 spec 自身是否同步更新"}
-{"file": ".trellis/spec/app/database-guidelines.md", "reason": "server 后端 spec 与代码契约一致性（env 必填、两端点）"}
-{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "根级 gate 全绿 + 交叉层数据流检查"}

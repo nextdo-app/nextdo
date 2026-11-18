@@ -1,9 +1,0 @@
-{"file": ".trellis/spec/app/index.md", "reason": "app 层总约定：查询进 packages/db、hook 放 apps/mobile/hooks、NativeWind、无障碍"}
-{"file": ".trellis/spec/app/database-guidelines.md", "reason": "packages/db 查询/schema 规则 + @powersync/react 边界（onChange 先例需对齐）"}
-{"file": ".trellis/spec/app/hook-guidelines.md", "reason": "数据 hook vs UI hook、useAppClock 规则、hook 放置"}
-{"file": ".trellis/spec/app/component-guidelines.md", "reason": "设置页状态块改动遵循组件模式"}
-{"file": ".trellis/spec/app/testing-guidelines.md", "reason": "jest-expo/fake timers/db mock 约定（新 hook 会被屏测试挂载）"}
-{"file": ".trellis/spec/domain/index.md", "reason": "domain 层入口（Reminder 契约在 domain-model.md）"}
-{"file": ".trellis/spec/domain/domain-model.md", "reason": "Reminder 领域规则（snooze 写行、状态机、禁止 nag）"}
-{"file": ".trellis/tasks/09-30-reminder-notification-delivery/research/expo-notifications.md", "reason": "expo-notifications 57 API/持久化/权限/声音/exact-alarm 研究结论"}
-{"file": ".trellis/tasks/09-30-reminder-notification-delivery/research/tauri-plugin-notification.md", "reason": "tauri 插件 2.4.0 桌面限制/Rust 集成三处/权限模型研究结论"}

@@ -1,5 +1,0 @@
-{"file": ".trellis/spec/domain/domain-model.md", "reason": "校验 Clarify 决策表实现与 spec 一致（Q2b 分支、挂接跳过 Q3–Q5、re-clarify 改挂/解除）"}
-{"file": ".trellis/spec/domain/next-action-engine.md", "reason": "确认引擎契约未被改动（纯函数、确定性、reasons 非空）"}
-{"file": ".trellis/spec/app/testing-guidelines.md", "reason": "app 测试惯例（flow 测试、文本正则查询、noUncheckedIndexedAccess 注意项）"}
-{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "各包测试覆盖要求（core/db 单测、apps 流程测试）"}
-{"file": ".trellis/spec/app/state-management.md", "reason": "瞬时 UI 状态归属（弹窗可见性、导航参数清理不得泄漏到 DB）"}

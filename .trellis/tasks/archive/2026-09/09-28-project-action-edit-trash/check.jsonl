@@ -1,6 +1,0 @@
-{"file": ".trellis/spec/domain/next-action-engine.md", "reason": "检查 R5 实现是否与 Pool contract 一致（过滤位置在 db 池子查询、引擎不改、projects 输出保持现状）"}
-{"file": ".trellis/spec/domain/domain-model.md", "reason": "核对状态机使用（active↔on-hold 合法、done/dropped 终态）、字段映射与软删除语义"}
-{"file": ".trellis/spec/app/database-guidelines.md", "reason": "db 层改动是否符合查询/测试/边界约定"}
-{"file": ".trellis/spec/app/hook-guidelines.md", "reason": "新钩子是否符合 mutation/时钟/订阅约定"}
-{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "质量门：typecheck/lint/test 全量 + 测试断言充分性"}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨层一致性（db 池子契约 → Now 屏 watch 联动 → 项目详情状态动作）"}

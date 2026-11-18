@@ -1,5 +1,0 @@
-{"file": ".trellis/tasks/09-28-claim-owner-token/prd.md", "reason": "验收标准逐条核对（claim 三态、409 reason、未申领 401 矩阵、日志零密钥、客户端分支）"}
-{"file": ".trellis/tasks/09-28-claim-owner-token/design.md", "reason": "契约核对：闭包可变 token、写顺序不变、ClaimOutcome 形状、e2e 零改动"}
-{"file": ".trellis/spec/app/component-guidelines.md", "reason": "设置页文案先例与组件边界一致性"}
-{"file": ".trellis/spec/app/testing-guidelines.md", "reason": "新用例符合测试惯例、mock 面完整性（grep 确认）"}
-{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "根级 gate 全绿 + 交叉层数据流检查"}

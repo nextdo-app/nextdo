@@ -1,3 +1,0 @@
-{"file": ".trellis/spec/app/component-guidelines.md", "reason": "规范移动端设置界面与引导卡片的交互设计与无障碍属性"}
-{"file": ".trellis/spec/app/database-guidelines.md", "reason": "规范服务端核心业务表结构定义与迁移幂等性"}
-{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "全栈测试质量与类型检查标准"}

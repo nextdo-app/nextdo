@@ -1,3 +1,0 @@
-{"file": ".trellis/spec/app/component-guidelines.md", "reason": "Settings tab UI and component rules"}
-{"file": ".trellis/spec/app/hook-guidelines.md", "reason": "useCloudSync hook behavior and reactive sync contracts"}
-{"file": ".trellis/spec/app/testing-guidelines.md", "reason": "Testing rules for React Native and hook unit tests"}

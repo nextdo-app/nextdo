@@ -1,6 +1,0 @@
-{"file": ".trellis/spec/domain/domain-model.md", "reason": "Clarify 决策表、NextAction/Project 实体与 value 继承、invariants — 本次契约扩展必须与之保持一致"}
-{"file": ".trellis/spec/domain/next-action-engine.md", "reason": "re-clarify 触发语义与引擎对 projectId 的读取（确认引擎不受影响）"}
-{"file": ".trellis/spec/app/database-guidelines.md", "reason": "packages/db 查询/事务惯例（错误码、注入 db 与 now、测试方式）"}
-{"file": ".trellis/spec/app/hook-guidelines.md", "reason": "数据 hook 命名与单一查询职责（useAddInboxItem 返回类型改动、useProjects 接入向导）"}
-{"file": ".trellis/spec/app/component-guidelines.md", "reason": "组件呈现层约束（向导/弹窗改动不碰数据层）"}
-{"file": ".trellis/spec/project/conventions.md", "reason": "TS 严格模式、命名、导出与错误处理约定"}

@@ -1,8 +1,0 @@
-{"file": ".trellis/spec/index.md", "reason": "stack baseline the check must match"}
-{"file": ".trellis/spec/project/index.md", "reason": "project quality gate"}
-{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "testing bar + review standards"}
-{"file": ".trellis/spec/project/conventions.md", "reason": "convention compliance (exports, errors, naming)"}
-{"file": ".trellis/spec/project/directory-structure.md", "reason": "dependency graph audit (Rule 1)"}
-{"file": ".trellis/spec/app/database-guidelines.md", "reason": "verify packages/db + server/app against PowerSync model"}
-{"file": ".trellis/spec/domain/domain-model.md", "reason": "verify entities/transactions in core+db"}
-{"file": ".trellis/spec/domain/next-action-engine.md", "reason": "verify engine contract + full test matrix"}

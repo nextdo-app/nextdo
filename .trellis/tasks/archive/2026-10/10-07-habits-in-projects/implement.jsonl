@@ -1,5 +1,0 @@
-{"file": ".trellis/spec/domain/domain-model.md", "reason": "Habit 实体字段、HabitDay 生成、引擎项目归属规则 —— 改 schema 前必须知道 Habit 与 Project 的既定契约与不变量"}
-{"file": ".trellis/spec/app/database-guidelines.md", "reason": "schema 变更单元（四处同步）、无客户端迁移、向后兼容 additive 规则、R5 候选池契约"}
-{"file": ".trellis/spec/app/hook-guidelines.md", "reason": "新增 useProjectHabits 需遵循 hook 形状、app clock 单一来源、订阅归属"}
-{"file": ".trellis/spec/app/component-guidelines.md", "reason": "项目详情页新增区块的组件与可访问性约定"}
-{"file": ".trellis/spec/app/testing-guidelines.md", "reason": "packages/db 真实 SQLite fixture 测试 + app 层 PowerSync 边界 mock 的测试写法"}

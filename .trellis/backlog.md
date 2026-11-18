@@ -1,7 +1,7 @@
 # Backlog — 下一任务候选池
 
 > 用途：记录尚未排期的候选任务，供下次会话选任务时参考。
-> 选定某项后走 Trellis 正常流程（`task.py create` → brainstorm → …），完成后从本文件移除（来源任务的 archive 里留档即可）。
+> 选定某项后直接进入实现；需要记录决策时用 mini-trellis remember。完成后从本文件移除（旧任务的 design 与调研已归档在 `.trellis/research/archive/`）。
 > 本文件按当前推荐优先级排序；用户可随时重排。
 > 09-30 会话按「上线前必须 / 上线前建议 / 长期候选」重排（对照 Proposal MVP 表逐项核查）。
 
@@ -9,7 +9,7 @@
 
 1. **提醒通知投递**（09-30 升为 P0；原候选「推送通知」）
    - 现状：snooze 事务已写 `reminders` 行（`packages/db/src/queries/actions.ts`，`fires_at` / `intensity` 齐备），但 app 侧**没有任何投递逻辑** —— `expo-notifications` 未安装、无本地通知调度、无权限申请、无客户端代码读 reminders 表。用户点「稍后」后手机永远不会提醒。
-   - 形态（brainstorm 时细化）：expo-notifications + 本地通知调度（消费 reminders 行，app 重启后补排程）；提醒三档强度映射；通知内直接「完成 / 推迟 / 跳过」操作（Proposal §8）。
+   - 形态（实现前细化）：expo-notifications + 本地通知调度（消费 reminders 行，app 重启后补排程）；提醒三档强度映射；通知内直接「完成 / 推迟 / 跳过」操作（Proposal §8）。
    - 依据：Proposal MVP 表 Reminder 与 Snooze 均为「必须」；09-30 核查。
 2. **iOS 分发**（09-30 新增）
    - 现状：`.github/workflows/release.yml` 覆盖桌面三平台 + Android 按 ABI 拆 APK（EAS）；iOS 被明确排除在流水线外（需 Apple 签名凭证）。主力机是 iPhone 的话这是发布阻断项。

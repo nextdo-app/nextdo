@@ -1,7 +1,0 @@
-{"file": ".trellis/tasks/09-24-prod-deploy-connect/prd.md", "reason": "验收标准逐条核对（质量门禁、e2e 回归、CORS/stronghold/Gate 单测覆盖）"}
-{"file": ".trellis/tasks/09-24-prod-deploy-connect/design.md", "reason": "对照设计契约检查实现是否偏离（fetchCredentialsOnce 语义、Gate 状态机、CORS 参数、compose 结构）"}
-{"file": ".trellis/spec/app/database-guidelines.md", "reason": "核对 owner-token 存储矩阵与 PowerSync 边界未被破坏（connector 抽取、stronghold 分支）"}
-{"file": ".trellis/spec/app/component-guidelines.md", "reason": "核对 connect-gate.tsx 符合 Paper Serenity 组件约定"}
-{"file": ".trellis/spec/app/testing-guidelines.md", "reason": "核对新增测试的覆盖与写法符合测试约定"}
-{"file": ".trellis/spec/project/directory-structure.md", "reason": "核对 server/app 协议边界与 server/deploy 新目录归属"}
-{"file": ".trellis/spec/project/quality-guidelines.md", "reason": "质量门禁标准（test/typecheck/lint）"}
