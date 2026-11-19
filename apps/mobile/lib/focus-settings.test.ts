@@ -6,6 +6,7 @@ import {
   __setFocusSettingsStoreForTests,
   loadFocusSettings,
   normalizeFocusMinutes,
+  parseFocusPreset,
   parseFocusSettings,
   saveFocusSettings,
 } from './focus-settings';
@@ -44,6 +45,49 @@ describe('normalizeFocusMinutes', () => {
     expect(normalizeFocusMinutes(2.5)).toBeNull();
     expect(normalizeFocusMinutes('25')).toBeNull();
     expect(normalizeFocusMinutes(null)).toBeNull();
+  });
+});
+
+describe('parseFocusPreset', () => {
+  it('keeps an in-range preset', () => {
+    expect(parseFocusPreset('25')).toEqual({
+      minutes: 25,
+      requestedMinutes: 25,
+      clamped: false,
+    });
+    expect(parseFocusPreset('180')).toEqual({
+      minutes: 180,
+      requestedMinutes: 180,
+      clamped: false,
+    });
+  });
+
+  it('clamps an over-cap estimate to 180 instead of dropping it', () => {
+    expect(parseFocusPreset('240')).toEqual({
+      minutes: 180,
+      requestedMinutes: 240,
+      clamped: true,
+    });
+  });
+
+  it('treats missing, malformed and below-minimum values as no preset', () => {
+    const none = { minutes: null, requestedMinutes: null, clamped: false };
+    expect(parseFocusPreset(undefined)).toEqual(none);
+    expect(parseFocusPreset(null)).toEqual(none);
+    expect(parseFocusPreset('')).toEqual(none);
+    expect(parseFocusPreset('abc')).toEqual(none);
+    expect(parseFocusPreset('2.5')).toEqual(none);
+    expect(parseFocusPreset('0')).toEqual(none);
+    expect(parseFocusPreset('-5')).toEqual(none);
+  });
+
+  it('treats non-string params as no preset instead of throwing', () => {
+    // A duplicated query parameter (?preset=25&preset=240) arrives as an
+    // array from expo-router; a number would only come from a buggy caller.
+    const none = { minutes: null, requestedMinutes: null, clamped: false };
+    expect(parseFocusPreset(['25', '240'])).toEqual(none);
+    expect(parseFocusPreset(240)).toEqual(none);
+    expect(parseFocusPreset({ preset: '240' })).toEqual(none);
   });
 });
 

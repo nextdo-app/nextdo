@@ -22,7 +22,12 @@ import {
 } from '@/lib/focus-island-desktop';
 import { useReminderPermission } from '@/hooks/use-reminder-permission';
 import { goBack } from '@/lib/go-back';
-import { MAX_FOCUS_MINUTES, MIN_FOCUS_MINUTES, normalizeFocusMinutes } from '@/lib/focus-settings';
+import {
+  MAX_FOCUS_MINUTES,
+  MIN_FOCUS_MINUTES,
+  normalizeFocusMinutes,
+  parseFocusPreset,
+} from '@/lib/focus-settings';
 
 const STANDARD_PRESETS = [15, 25, 45, 60];
 
@@ -54,6 +59,10 @@ export default function FocusScreen() {
   const completingRef = useRef(false);
   const attached = focus.action?.id === actionId && focus.action?.kind === actionKind;
   const busy = view.busy || completingAction;
+  // The Now screen forwards the action estimate as `preset`; an estimate over
+  // the per-session cap is clamped (with a visible explanation) instead of
+  // silently falling back to the last duration.
+  const parsedPreset = parseFocusPreset(preset);
 
   useEffect(() => {
     if (actionId !== null && actionKind !== null) focus.attach(actionId, actionKind);
@@ -73,7 +82,7 @@ export default function FocusScreen() {
       autoStarted.current === key
     )
       return;
-    const minutes = normalizeFocusMinutes(Number(preset));
+    const minutes = parseFocusPreset(preset).minutes;
     if (minutes === null) return;
     autoStarted.current = key;
     void focus.start(minutes);
@@ -112,7 +121,7 @@ export default function FocusScreen() {
       if (ok && minutes !== null) void updateFocusSettings({ lastMinutes: minutes });
     });
   };
-  const presetMinutes = preset ? normalizeFocusMinutes(Number(preset)) : null;
+  const presetMinutes = parsedPreset.minutes;
   const lastMinutes = focusSettings?.lastMinutes ?? null;
   const activeMinutes =
     chosenMinutes !== undefined
@@ -193,6 +202,12 @@ export default function FocusScreen() {
                     disabled={busy}
                     onPress={() => startSession(activeMinutes)}
                   />
+                  {parsedPreset.clamped && chosenMinutes === undefined ? (
+                    <Text accessibilityRole="alert" className="text-center text-xs text-muted dark:text-muted-dark">
+                      该行动估时 {parsedPreset.requestedMinutes} 分钟，超过单次专注上限{' '}
+                      {MAX_FOCUS_MINUTES} 分钟，本次按 {MAX_FOCUS_MINUTES} 分钟开始。
+                    </Text>
+                  ) : null}
                   <View className="gap-2">
                     <Text className="text-center font-sans text-xs font-medium text-muted dark:text-muted-dark">
                       选择本次专注时长

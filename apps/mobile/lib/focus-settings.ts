@@ -114,6 +114,49 @@ export function normalizeFocusMinutes(value: unknown): number | null {
   return minutes >= MIN_FOCUS_MINUTES && minutes <= MAX_FOCUS_MINUTES ? minutes : null;
 }
 
+/** The `preset` deep-link parameter, clamped to the supported range. */
+export interface FocusPreset {
+  /** Duration to use; null = no usable preset (missing or malformed). */
+  minutes: number | null;
+  /** The integer the link asked for; null = missing or malformed. */
+  requestedMinutes: number | null;
+  /** The request exceeded MAX_FOCUS_MINUTES and was clamped to the cap. */
+  clamped: boolean;
+}
+
+/**
+ * Parse the focus route's `preset` parameter.
+ *
+ * The Now screen passes the action's `estMinutes` through unchanged, and an
+ * action estimate may exceed the 180-minute cap on a single session (e.g. a
+ * 240-minute estimate). Silently falling back to the last duration / 25
+ * minutes made the start button lie about what it was about to run, so an
+ * over-cap request is clamped to `MAX_FOCUS_MINUTES` and reported as such —
+ * the screen shows why the session is shorter than the estimate.
+ *
+ * `raw` is `unknown` on purpose: `useLocalSearchParams` does not validate at
+ * runtime, and a duplicated query parameter (`?preset=25&preset=240`) arrives
+ * as an array. Anything that is not a single string is treated as no preset
+ * rather than throwing during render.
+ */
+export function parseFocusPreset(raw: unknown): FocusPreset {
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    return { minutes: null, requestedMinutes: null, clamped: false };
+  }
+  const requested = Number(raw);
+  if (!Number.isSafeInteger(requested) || requested < MIN_FOCUS_MINUTES) {
+    return { minutes: null, requestedMinutes: null, clamped: false };
+  }
+  if (requested > MAX_FOCUS_MINUTES) {
+    return {
+      minutes: MAX_FOCUS_MINUTES,
+      requestedMinutes: requested,
+      clamped: true,
+    };
+  }
+  return { minutes: requested, requestedMinutes: requested, clamped: false };
+}
+
 /** Normalize a stored value; anything unreadable falls back to no preference. */
 export function parseFocusSettings(raw: string | null): FocusSettings {
   if (raw === null) return DEFAULT_FOCUS_SETTINGS;
