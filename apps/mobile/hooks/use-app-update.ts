@@ -79,12 +79,18 @@ export type UpdateOutcome =
   /** 检查失败，`reason` 供屏幕选文案。 */
   | { kind: 'failed'; reason: UpdateFailureReason };
 
-/** 桌面端应用内下载的状态（非桌面端不使用）。 */
+/**
+ * 应用内下载的状态（桌面端 / 安卓端使用）。
+ *
+ * 每个非 idle 状态都记着发起它的 release tag：安装包只对**下载它的那个
+ * 版本**有效，切换选中版本后旧状态必须作废，否则「已下载完成 → 立即安装」
+ * 会在用户以为自己装的是新版本时安装旧包。
+ */
 export type DownloadState =
   | { kind: 'idle' }
-  | { kind: 'downloading'; downloadedBytes: number; totalBytes: number }
-  | { kind: 'done'; filePath: string }
-  | { kind: 'error'; error: string };
+  | { kind: 'downloading'; tag: string; downloadedBytes: number; totalBytes: number }
+  | { kind: 'done'; tag: string; filePath: string }
+  | { kind: 'error'; tag: string; error: string };
 
 export interface UseAppUpdateResult {
   /** 本机当前版本（app.json 的 `version`；读不到时是空串）。 */
@@ -121,8 +127,13 @@ export interface UseAppUpdateResult {
   isDesktop: boolean;
   /** 是否能走应用内安装（桌面壳或带原生模块的安卓构建）。 */
   canInstallInApp: boolean;
-  /** 桌面端应用内下载状态。 */
+  /**
+   * 当前选中版本的下载状态。切换目标版本后，为旧版本发起的下载不再出现在
+   * 这里 —— 已下载完成的安装包只属于它对应的那个版本。
+   */
   download: DownloadState;
+  /** 是否有应用内下载正在进行（不区分版本，供界面禁止切换目标）。 */
+  downloadBusy: boolean;
   /** 桌面端启动应用内下载（传入安装包 URL）。 */
   startDownload: (url: string) => void;
   /** 桌面端打开已下载的安装包。 */
@@ -175,6 +186,18 @@ export function useAppUpdate(): UseAppUpdateResult {
   const [installError, setInstallError] = useState<string | null>(null);
 
   const mountedRef = useRef(true);
+  /**
+   * 下载 / 安装进行中（ref 版本）。
+   *
+   * 检查更新是异步的：请求飞行期间用户可能已经点了下载，等结果落地时闭包里的
+   * `download.kind` 仍是旧值。用 ref 记录最新锁状态，保证「检查先发起、随后
+   * 开始下载」的时序也会丢弃结果，而不是把选中版本重置回偏好默认值。
+   */
+  const updateLockedRef = useRef(false);
+
+  useEffect(() => {
+    updateLockedRef.current = download.kind === 'downloading' || installing;
+  }, [download.kind, installing]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -225,6 +248,9 @@ export function useAppUpdate(): UseAppUpdateResult {
 
   const check = useCallback(() => {
     if (checking) return;
+    // 下载 / 安装进行中不能重新检查：结果会重建 outcome 并复位选中版本，
+    // 而安装包仍属于旧目标 —— 界面会进入「两版本都禁用、下载按钮却无效」的死角。
+    if (updateLockedRef.current) return;
     setChecking(true);
     void Promise.all([
       fetchDualChannelReleases(),
@@ -236,6 +262,8 @@ export function useAppUpdate(): UseAppUpdateResult {
     ]).then(([result, resolvedArch]) => {
       if (!mountedRef.current) return;
       setChecking(false);
+      // 请求飞行期间用户开始了下载 / 安装：丢弃这次结果，保持当前选择与进度。
+      if (updateLockedRef.current) return;
       if (resolvedArch !== null && macArch === null) {
         setMacArch(resolvedArch);
       }
@@ -341,8 +369,19 @@ export function useAppUpdate(): UseAppUpdateResult {
     });
   }, [androidAbi, checking, currentVersion, macArch, platform, preferredChannel]);
 
+  /**
+   * 当前选中版本的 tag。下载 / 安装状态都绑定在它上面：切换目标版本后，
+   * 为旧版本发起的下载（哪怕已完成）不再属于当前选择。
+   */
+  const selectedTag =
+    outcome?.kind === 'available'
+      ? (outcome.options.find((opt) => opt.version === outcome.selectedVersion)?.tag ?? null)
+      : null;
+
   const selectVersion = useCallback(
     (targetVersion: string) => {
+      // 下载进行中不允许换目标：安装包正在下，切换只会让用户以为下的是新版本。
+      if (download.kind === 'downloading' || installing) return;
       setSelectedVersion(targetVersion);
       setOutcome((prev) => {
         if (!prev || prev.kind !== 'available') return prev;
@@ -356,7 +395,7 @@ export function useAppUpdate(): UseAppUpdateResult {
         };
       });
     },
-    [],
+    [download.kind, installing],
   );
 
   /** 开始应用内下载：桌面端轮询 Tauri 的进度，安卓走 expo-file-system 的回调。 */
@@ -364,13 +403,19 @@ export function useAppUpdate(): UseAppUpdateResult {
     (url: string) => {
       if (!isDesktop && !canInstallInApp) return;
       if (download.kind === 'downloading') return;
-      setDownload({ kind: 'downloading', downloadedBytes: 0, totalBytes: 0 });
+      // 下载按钮只出现在「有新版本」的 outcome 里，拿不到 tag 说明状态已经
+      // 过期（例如检查结果刚被替换），此时不发起下载。
+      if (selectedTag === null) return;
+      // 同步上锁：检查请求可能正在飞行，其结果必须看到这把锁。
+      updateLockedRef.current = true;
+      setDownload({ kind: 'downloading', tag: selectedTag, downloadedBytes: 0, totalBytes: 0 });
 
       if (canInstallInApp) {
         void downloadAndroidUpdate(url, (progress) => {
           if (mountedRef.current) {
             setDownload({
               kind: 'downloading',
+              tag: selectedTag,
               downloadedBytes: progress.downloadedBytes,
               totalBytes: progress.totalBytes,
             });
@@ -378,7 +423,7 @@ export function useAppUpdate(): UseAppUpdateResult {
         })
           .then(async (fileUri) => {
             if (mountedRef.current) {
-              setDownload({ kind: 'done', filePath: fileUri });
+              setDownload({ kind: 'done', tag: selectedTag, filePath: fileUri });
               setInstallError(null);
               // 安卓端下载完成自动调起系统安装器
               setInstalling(true);
@@ -397,7 +442,7 @@ export function useAppUpdate(): UseAppUpdateResult {
           })
           .catch((e) => {
             if (mountedRef.current) {
-              setDownload({ kind: 'error', error: String(e) });
+              setDownload({ kind: 'error', tag: selectedTag, error: String(e) });
             }
           });
         return;
@@ -405,7 +450,7 @@ export function useAppUpdate(): UseAppUpdateResult {
 
       void startDesktopDownload(url).catch((e) => {
         if (mountedRef.current) {
-          setDownload({ kind: 'error', error: String(e) });
+          setDownload({ kind: 'error', tag: selectedTag, error: String(e) });
         }
       });
 
@@ -425,15 +470,16 @@ export function useAppUpdate(): UseAppUpdateResult {
           if (p.state === 'downloading') {
             setDownload({
               kind: 'downloading',
+              tag: selectedTag,
               downloadedBytes: p.downloaded_bytes,
               totalBytes: p.total_bytes,
             });
           } else if (p.state === 'done') {
-            setDownload({ kind: 'done', filePath: p.file_path });
+            setDownload({ kind: 'done', tag: selectedTag, filePath: p.file_path });
             setInstallError(null);
             stopDesktopUpdatePolling();
           } else if (p.state === 'error') {
-            setDownload({ kind: 'error', error: p.error });
+            setDownload({ kind: 'error', tag: selectedTag, error: p.error });
             stopDesktopUpdatePolling();
           }
         });
@@ -442,18 +488,19 @@ export function useAppUpdate(): UseAppUpdateResult {
       activePollTimer = setInterval(checkProgress, 400);
       checkProgress();
     },
-    [canInstallInApp, isDesktop, download.kind],
+    [canInstallInApp, isDesktop, download.kind, selectedTag],
   );
 
-  /** 手动打开已下载的安装包。 */
+  /** 手动打开已下载的安装包（只允许打开当前选中版本的那份）。 */
   const openInstaller = useCallback(() => {
-    if (download.kind !== 'done') return;
+    if (download.kind !== 'done' || download.tag !== selectedTag) return;
     void openDownloadedInstaller(download.filePath);
-  }, [download]);
+  }, [download, selectedTag]);
 
   /** 一键安装：桌面端静默替换并重启，安卓调起系统安装器。 */
   const installUpdate = useCallback(() => {
-    if (download.kind !== 'done') return;
+    if (download.kind !== 'done' || download.tag !== selectedTag) return;
+    updateLockedRef.current = true;
     setInstalling(true);
     setInstallError(null);
 
@@ -471,19 +518,32 @@ export function useAppUpdate(): UseAppUpdateResult {
       return;
     }
 
-    void installDesktopUpdateAndRestart(download.filePath).catch((err) => {
-      if (mountedRef.current) {
-        setInstalling(false);
-        setInstallError(err instanceof Error ? err.message : String(err));
-      }
-    });
-  }, [canInstallInApp, download]);
+    void installDesktopUpdateAndRestart(download.filePath)
+      .then(() => {
+        // Linux 只是用系统安装器打开安装包（xdg-open），应用不会退出 —— 必须
+        // 把按钮和版本切换解锁。macOS / Windows 的安装会让本进程退出，Promise
+        // 不会回到这里。
+        if (mountedRef.current && platform !== 'macos' && platform !== 'windows') {
+          setInstalling(false);
+        }
+      })
+      .catch((err) => {
+        if (mountedRef.current) {
+          setInstalling(false);
+          setInstallError(err instanceof Error ? err.message : String(err));
+        }
+      });
+  }, [canInstallInApp, download, platform, selectedTag]);
 
   // 计算 Release 详情链接
   const activeTag =
     outcome && outcome.kind === 'available'
       ? (outcome.options.find((o) => o.version === outcome.selectedVersion)?.tag ?? `v${outcome.latestVersion}`)
       : undefined;
+
+  // 下载状态只对下载它的版本有效：切换目标后旧状态不再展示/可用。
+  const selectedDownload: DownloadState =
+    download.kind !== 'idle' && download.tag === selectedTag ? download : { kind: 'idle' };
 
   return {
     currentVersion,
@@ -503,7 +563,8 @@ export function useAppUpdate(): UseAppUpdateResult {
     pageUrl: activeTag ? releasePageUrl(activeTag) : releasePageUrl(),
     isDesktop,
     canInstallInApp,
-    download,
+    download: selectedDownload,
+    downloadBusy: download.kind === 'downloading',
     startDownload,
     openInstaller,
     installUpdate,

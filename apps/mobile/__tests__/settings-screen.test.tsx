@@ -444,10 +444,14 @@ let mockDownloadProgress = {
  * shell does, so the macOS installer is picked from the detected architecture
  * rather than from a guess.
  */
-function pretendDesktopMac(arch: 'aarch64' | 'x86_64' = 'aarch64'): void {
+const MAC_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15';
+const LINUX_UA =
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
+
+function pretendDesktopShell(userAgent: string, arch: 'aarch64' | 'x86_64' | null = null): void {
   Object.defineProperty(Platform, 'OS', { value: 'web', configurable: true });
   (globalThis as { window?: unknown }).window = {
-    navigator: { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15' },
+    navigator: { userAgent },
     __TAURI_INTERNALS__: {
       invoke: jest.fn().mockImplementation(async (cmd: string, args?: { url?: string; filePath?: string }) => {
         if (cmd === 'open_url' && args?.url) {
@@ -469,10 +473,18 @@ function pretendDesktopMac(arch: 'aarch64' | 'x86_64' = 'aarch64'): void {
         if (cmd === 'get_download_progress') {
           return mockDownloadProgress;
         }
-        return arch;
+        return arch === null ? undefined : arch;
       }),
     },
   };
+}
+
+function pretendDesktopMac(arch: 'aarch64' | 'x86_64' = 'aarch64'): void {
+  pretendDesktopShell(MAC_UA, arch);
+}
+
+function pretendDesktopLinux(): void {
+  pretendDesktopShell(LINUX_UA);
 }
 
 /** Press 检查更新 and flush the request → compare → setState chain. */
@@ -790,6 +802,213 @@ describe('settings update-check block', () => {
       `${PROXY}https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4`,
       `${PROXY}https://github.com/nextdo-app/nextdo/releases/tag/v0.1.5-beta.1`,
     ]);
+  });
+
+  it('switching the selected target discards the installer downloaded for the previous version', async () => {
+    const atomXml = `
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <entry>
+          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.5-beta.1"/>
+          <updated>2026-10-12T08:00:00Z</updated>
+        </entry>
+        <entry>
+          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4"/>
+          <updated>2026-10-10T12:00:00Z</updated>
+        </entry>
+      </feed>
+    `;
+    mockDownloadProgress = {
+      state: 'done',
+      downloaded_bytes: 50 * 1024 * 1024,
+      total_bytes: 50 * 1024 * 1024,
+      file_path: '/tmp/Nextdo_0.1.4_aarch64.dmg',
+      error: '',
+    };
+    pretendDesktopMac('aarch64');
+    mockUpdateFetch.mockResolvedValue(atomFeedResponse(atomXml));
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+
+    await pressCheckForUpdate();
+
+    // 默认选中正式版 v0.1.4：下载它，进入「已下载完成，可立即安装」。
+    fireEvent.press(screen.getByRole('button', { name: '下载并安装 macOS 安装包（Apple 芯片）' }));
+    await flush();
+    expect(screen.getByText(/新版本已下载完成，可立即安装更新/)).toBeTruthy();
+
+    // 切换到测试版 v0.1.5-beta.1：为 v0.1.4 下载的安装包不再属于当前目标，
+    // 不能继续显示「立即安装」——否则用户会以为装的是测试版。
+    fireEvent.press(screen.getByRole('button', { name: /选择更新至 测试版 v0\.1\.5-beta\.1/ }));
+    await flush();
+
+    expect(screen.queryByText(/新版本已下载完成/)).toBeNull();
+    expect(screen.queryByRole('button', { name: '立即安装并重启' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '手动打开安装包' })).toBeNull();
+
+    // 下载按钮重新出现，并指向测试版的安装包。
+    mockDownloadProgress = {
+      state: 'done',
+      downloaded_bytes: 50 * 1024 * 1024,
+      total_bytes: 50 * 1024 * 1024,
+      file_path: '/tmp/Nextdo_0.1.5-beta.1_aarch64.dmg',
+      error: '',
+    };
+    fireEvent.press(screen.getByRole('button', { name: '下载并安装 macOS 安装包（Apple 芯片）' }));
+    await flush();
+
+    expect(downloadedUrls).toEqual([
+      `${PROXY}${GITHUB_DOWNLOAD}/v0.1.4/Nextdo_0.1.4_aarch64.dmg`,
+      `${PROXY}${GITHUB_DOWNLOAD}/v0.1.5-beta.1/Nextdo_0.1.5-beta.1_aarch64.dmg`,
+    ]);
+
+    // 这次安装按钮对应的是测试版下载出来的文件，不是正式版那份。
+    fireEvent.press(screen.getByRole('button', { name: '立即安装并重启' }));
+    await flush();
+    expect(installedFilePaths).toEqual(['/tmp/Nextdo_0.1.5-beta.1_aarch64.dmg']);
+  });
+
+  it('does not switch the selected target while a download is still running', async () => {
+    const atomXml = `
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <entry>
+          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.5-beta.1"/>
+          <updated>2026-10-12T08:00:00Z</updated>
+        </entry>
+        <entry>
+          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4"/>
+          <updated>2026-10-10T12:00:00Z</updated>
+        </entry>
+      </feed>
+    `;
+    mockDownloadProgress = {
+      state: 'downloading',
+      downloaded_bytes: 1024,
+      total_bytes: 0,
+      file_path: '',
+      error: '',
+    };
+    pretendDesktopMac('aarch64');
+    mockUpdateFetch.mockResolvedValue(atomFeedResponse(atomXml));
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+
+    await pressCheckForUpdate();
+    fireEvent.press(screen.getByRole('button', { name: '下载并安装 macOS 安装包（Apple 芯片）' }));
+    await flush();
+
+    const betaOption = screen.getByRole('button', { name: /选择更新至 测试版 v0\.1\.5-beta\.1/ });
+    expect(betaOption.props.accessibilityState?.disabled).toBe(true);
+
+    fireEvent.press(betaOption);
+    await flush();
+
+    // 仍停在正式版：下载没结束前切换目标会让下载归属变得含糊。
+    expect(
+      screen.getByRole('button', { name: /选择更新至 正式版 v0\.1\.4/ }).props.accessibilityState
+        ?.selected,
+    ).toBe(true);
+  });
+
+  it('a check result that lands after a download started must not reset the chosen target', async () => {
+    const atomXml = `
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <entry>
+          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.5-beta.1"/>
+          <updated>2026-10-12T08:00:00Z</updated>
+        </entry>
+        <entry>
+          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4"/>
+          <updated>2026-10-10T12:00:00Z</updated>
+        </entry>
+      </feed>
+    `;
+    mockDownloadProgress = {
+      state: 'downloading',
+      downloaded_bytes: 1024,
+      total_bytes: 0,
+      file_path: '',
+      error: '',
+    };
+    pretendDesktopMac('aarch64');
+    mockUpdateFetch.mockResolvedValue(atomFeedResponse(atomXml));
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+
+    await pressCheckForUpdate();
+
+    // 手动选测试版，并让下一次检查请求挂起（模拟慢网络）。
+    fireEvent.press(screen.getByRole('button', { name: /选择更新至 测试版 v0\.1\.5-beta\.1/ }));
+    await flush();
+
+    let resolveCheck: (value: unknown) => void = () => {};
+    mockUpdateFetch.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCheck = resolve;
+      }),
+    );
+    fireEvent.press(screen.getByRole('button', { name: '检查更新' }));
+    await flush();
+
+    // 检查还在飞行，用户开始下载测试版。
+    fireEvent.press(screen.getByRole('button', { name: '下载并安装 macOS 安装包（Apple 芯片）' }));
+    await flush();
+    expect(screen.getByText(/正在下载/)).toBeTruthy();
+
+    // 旧的检查结果此刻才落地：不能把选中版本重置回正式版，也不能吞掉进度。
+    resolveCheck(atomFeedResponse(atomXml));
+    await flush();
+
+    expect(
+      screen.getByRole('button', { name: /选择更新至 测试版 v0\.1\.5-beta\.1/ }).props
+        .accessibilityState?.selected,
+    ).toBe(true);
+    expect(screen.getByText(/正在下载/)).toBeTruthy();
+    expect(downloadedUrls).toEqual([
+      `${PROXY}${GITHUB_DOWNLOAD}/v0.1.5-beta.1/Nextdo_0.1.5-beta.1_aarch64.dmg`,
+    ]);
+  });
+
+  it('Linux desktop install resolves without quitting the app → target switching is unlocked', async () => {
+    const atomXml = `
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <entry>
+          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.5-beta.1"/>
+          <updated>2026-10-12T08:00:00Z</updated>
+        </entry>
+        <entry>
+          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4"/>
+          <updated>2026-10-10T12:00:00Z</updated>
+        </entry>
+      </feed>
+    `;
+    mockDownloadProgress = {
+      state: 'done',
+      downloaded_bytes: 50 * 1024 * 1024,
+      total_bytes: 50 * 1024 * 1024,
+      file_path: '/tmp/Nextdo_0.1.4_amd64.deb',
+      error: '',
+    };
+    pretendDesktopLinux();
+    mockUpdateFetch.mockResolvedValue(atomFeedResponse(atomXml));
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+
+    await pressCheckForUpdate();
+
+    fireEvent.press(screen.getByRole('button', { name: '下载并安装 Linux · deb' }));
+    await flush();
+    expect(screen.getByText(/新版本已下载完成/)).toBeTruthy();
+
+    fireEvent.press(screen.getByRole('button', { name: '立即安装并重启' }));
+    await flush();
+    expect(installedFilePaths).toEqual(['/tmp/Nextdo_0.1.4_amd64.deb']);
+
+    // xdg-open 路径正常 resolve（应用没退出）→ installing 必须复位，能再切版本。
+    const betaOption = screen.getByRole('button', { name: /选择更新至 测试版 v0\.1\.5-beta\.1/ });
+    expect(betaOption.props.accessibilityState?.disabled).toBe(false);
+    fireEvent.press(betaOption);
+    await flush();
+    expect(betaOption.props.accessibilityState?.selected).toBe(true);
   });
 
   it('issue 29: up-to-date message uses beta channel and version when beta channel preferred', async () => {
