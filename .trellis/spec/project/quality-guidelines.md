@@ -39,9 +39,8 @@ index.html 回落 —— 直接访问 `/settings` 这类深层路由不会 404�
 浏览器环节要做的事：
 
 - 打开上面那个地址，走一遍**本次改动涉及的用户流程**；
-- **截图留证并按 session / 功能建子目录存放**：在 `.verify/` 下按本次任务或功能名称建立独立子文件夹（如 `.verify/<feature-slug>/` 或 `.verify/<session-slug>/`，例如 `.verify/app-update-check/`、`.verify/now-hierarchy/`），**禁止将截图平铺堆放在 `.verify/` 根目录下**，以便随时定位和对比检查（`.verify/` 目录已 gitignore）；
 - 改动涉及失败路径时，确认界面确实呈现了预期的失败态，而不只是抛了异常；
-- 交付说明里写清实测了哪些页面/行为、指出对应的子文件夹路径与截图文件名，不要拿「单测通过」代替。
+- 交付说明里写清实测了哪些页面/行为、观察到了什么，不要拿「单测通过」代替。
 
 在 CI 上没有浏览器时，把这一条降级为「至少跑 `pnpm verify:web
 --no-serve`」（门禁 + 构建通过），并在交付说明里注明界面未实测。
@@ -52,22 +51,6 @@ index.html 回落 —— 直接访问 `/settings` 这类深层路由不会 404�
 推分支并开 PR，由 `.github/workflows/ci.yml` 跑门禁、`.github/workflows/release.yml`
 在 `v*` tag 或 `workflow_dispatch` 时构建并发布 Release。本地构建产物
 （`apps/desktop/src-tauri/target`、`apps/mobile/dist`）不要留在工作区。
-
-### 交互态截图（headless Chrome + CDP）
-
-静态路由截图可以「打开即拍」，但表单一类的交互态必须先点到目标状态再拍。既有脚本
-`scripts/capture-verify-screenshots.mjs` 只做前者；需要点击/输入的实测按下面四条写脚本
-（完整例子：`.verify/form-field-labels/capture.mjs`，任务 10-16-form-field-labels）：
-
-- **等界面出现要用可见文本，不能用 placeholder**：`document.body.innerText` 不包含 placeholder，
-  用它当等待信号必然超时；等标签、标题或按钮文案。
-- **点击要用真实指针事件**：React Native Web 的 `Pressable` 只认指针事件 —— 算出叶子节点中心坐标后
-  发 `Input.dispatchMouseEvent`（mousePressed + mouseReleased）；直接 `el.click()` 不可靠。
-- **输入框灌值要走原生 setter + input 事件**：先
-  `Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, v)`，再
-  `el.dispatchEvent(new Event('input', { bubbles: true }))`；直接改 `el.value` React 收不到。
-- **表单校验会让提交按钮禁用**，此时点击是静默无效的：先把表单填成合法状态再提交，否则后续依赖
-  「数据真的落库」的步骤会全部超时 —— 这类失败要当脚本缺陷修，不要在断言里放宽。
 
 ## Testing Requirements
 

@@ -427,3 +427,20 @@ Topics: [.trellis/research/reference-library.md](../../research/reference-librar
 ### Next Steps
 
 - 修 Focus 240 分钟静默回退；资料库 MVP 待启动。
+
+
+## Session 77: 取消交付前验证的截图要求
+<!-- trellis-session: v=3 fp=a4d56af11e66bede -->
+
+**Date**: 2026-11-19
+**Task**: 取消交付前验证的截图要求
+**Branch**: `main`
+
+### Summary
+
+用户确认：交付前验证保留浏览器实测，但取消截图存档要求，不再使用 .verify/ 目录。已删除 scripts/capture-verify-screenshots.mjs 和 .verify/（36M），并同步更新 AGENTS.md、.cursor/commands/verify-web.md、.trellis/spec/project/quality-guidelines.md（删除交互态截图一节）、.gitignore。
+Topics: [.trellis/spec/project/quality-guidelines.md](../../spec/project/quality-guidelines.md)
+
+### Git Commits
+
+(No associated commits)

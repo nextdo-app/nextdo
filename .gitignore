@@ -34,10 +34,6 @@ server/deploy/data/
 coverage/
 .eslintcache
 
-# 交付前浏览器验证的临时产物（截图 / trace）——验证完就该删掉，不入库。
-# 流程见 .trellis/spec/project/quality-guidelines.md 的「Web 验证门禁」。
-.verify/
-
 # UI 设计参考稿：Stitch 导出的稿子与设计简报，本地留着对照实现，不属于应用代码。
 # 已从 git 索引移除（文件仍在本地，需要时 git add -f 可再入库）。
 条件栏截图/
