@@ -1849,7 +1849,7 @@ export default function SettingsScreen() {
 
           <Button
             label={update.checking ? '检查中…' : '检查更新'}
-            disabled={update.checking}
+            disabled={update.checking || update.downloadBusy || update.installing}
             onPress={update.check}
           />
           {update.outcome?.kind === 'up-to-date' ? (
@@ -1882,12 +1882,15 @@ export default function SettingsScreen() {
                   <View className="gap-2">
                     {update.outcome.options.map((opt) => {
                       const isSelected = opt.version === update.selectedVersion;
+                      // 下载进行中不允许换目标：安装包只对下载它的版本有效。
+                      const targetLocked = update.downloadBusy || update.installing;
                       return (
                         <Pressable
                           key={opt.version}
                           accessibilityRole="button"
                           accessibilityLabel={`选择更新至 ${opt.channelLabel} v${opt.version}`}
-                          accessibilityState={{ selected: isSelected }}
+                          accessibilityState={{ selected: isSelected, disabled: targetLocked }}
+                          disabled={targetLocked}
                           onPress={() => {
                             update.selectVersion(opt.version);
                           }}
@@ -1896,6 +1899,7 @@ export default function SettingsScreen() {
                             isSelected
                               ? 'border-accent bg-accent/10 dark:border-accent-dark dark:bg-accent-dark/15'
                               : 'border-border/80 bg-surface dark:border-border-dark dark:bg-surface-dark',
+                            targetLocked ? 'opacity-60' : '',
                           )}
                         >
                           <View className="gap-1">
@@ -2062,6 +2066,7 @@ export default function SettingsScreen() {
                         }
                         variant="secondary"
                         onPress={update.installUpdate}
+                        disabled={update.installing}
                       />
                       <Button
                         label="手动打开安装包"
