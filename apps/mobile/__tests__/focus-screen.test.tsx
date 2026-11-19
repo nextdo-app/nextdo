@@ -677,4 +677,14 @@ describe('Focus screen', () => {
     );
     await waitFor(() => expect(screen.getByText('结束专注')).toBeTruthy());
   });
+
+  it('treats a duplicated preset parameter as no preset instead of crashing', async () => {
+    // expo-router hands `preset` back as an array for ?preset=25&preset=240;
+    // the unvalidated route param must not throw during render.
+    renderRouter('app', { initialUrl: '/focus/f-1?kind=next&preset=25&preset=240' });
+    await waitFor(() => expect(screen.getByText('选择本次专注时长')).toBeTruthy());
+
+    expect(screen.getByText('开始专注 (25 分钟)')).toBeTruthy();
+    expect(screen.queryByText(/超过单次专注上限/)).toBeNull();
+  });
 });

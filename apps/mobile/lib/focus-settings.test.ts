@@ -80,6 +80,15 @@ describe('parseFocusPreset', () => {
     expect(parseFocusPreset('0')).toEqual(none);
     expect(parseFocusPreset('-5')).toEqual(none);
   });
+
+  it('treats non-string params as no preset instead of throwing', () => {
+    // A duplicated query parameter (?preset=25&preset=240) arrives as an
+    // array from expo-router; a number would only come from a buggy caller.
+    const none = { minutes: null, requestedMinutes: null, clamped: false };
+    expect(parseFocusPreset(['25', '240'])).toEqual(none);
+    expect(parseFocusPreset(240)).toEqual(none);
+    expect(parseFocusPreset({ preset: '240' })).toEqual(none);
+  });
 });
 
 describe('parseFocusSettings', () => {

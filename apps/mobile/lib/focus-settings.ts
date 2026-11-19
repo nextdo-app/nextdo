@@ -133,9 +133,14 @@ export interface FocusPreset {
  * minutes made the start button lie about what it was about to run, so an
  * over-cap request is clamped to `MAX_FOCUS_MINUTES` and reported as such —
  * the screen shows why the session is shorter than the estimate.
+ *
+ * `raw` is `unknown` on purpose: `useLocalSearchParams` does not validate at
+ * runtime, and a duplicated query parameter (`?preset=25&preset=240`) arrives
+ * as an array. Anything that is not a single string is treated as no preset
+ * rather than throwing during render.
  */
-export function parseFocusPreset(raw: string | null | undefined): FocusPreset {
-  if (raw === null || raw === undefined || raw.trim() === '') {
+export function parseFocusPreset(raw: unknown): FocusPreset {
+  if (typeof raw !== 'string' || raw.trim() === '') {
     return { minutes: null, requestedMinutes: null, clamped: false };
   }
   const requested = Number(raw);
