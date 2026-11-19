@@ -852,6 +852,26 @@ describe('settings update-check block', () => {
     await flush();
     expect(openedFilePaths).toEqual(['/tmp/Nextdo_0.1.4_aarch64.dmg']);
   });
+
+  it('desktop: the 自动下载更新 switch is shown and persists the toggle', async () => {
+    pretendDesktopMac('aarch64');
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+
+    expect(screen.getByText('自动下载更新')).toBeTruthy();
+    const switchBtn = screen.getByRole('switch', { name: '自动下载更新' });
+    // 默认开启：发现新版本后弹窗会自动在后台下载安装包。
+    expect(switchBtn.props.accessibilityState?.checked).toBe(true);
+
+    fireEvent.press(switchBtn);
+    await flush();
+    expect(switchBtn.props.accessibilityState?.checked).toBe(false);
+
+    // 恢复默认，避免影响同一文件后续用例。
+    fireEvent.press(switchBtn);
+    await flush();
+    expect(switchBtn.props.accessibilityState?.checked).toBe(true);
+  });
 });
 
 /* ------------------------------------------------------------------ *

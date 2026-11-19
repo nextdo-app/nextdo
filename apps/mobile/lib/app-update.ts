@@ -326,6 +326,94 @@ export async function setAutoUpdateCheckPreference(enabled: boolean): Promise<vo
   }
 }
 
+/** 自动下载更新偏好键（默认开启，仅对能应用内安装的桌面端 / 安卓生效）。 */
+export const AUTO_DOWNLOAD_UPDATE_KEY = 'nextdo.settings.auto-download-update';
+
+/** 「跳过此版本」记录键：存版本号，同版本不再提醒。 */
+export const UPDATE_SKIPPED_VERSION_KEY = 'nextdo.settings.update-skipped-version';
+
+/** 「稍后再说」记录键：JSON `{ version, until }`。 */
+export const UPDATE_SNOOZE_KEY = 'nextdo.settings.update-snooze';
+
+/** 「稍后再说」的静默时长：24 小时后同一版本再次提醒（Sparkle 的 Remind Me Later 语义）。 */
+export const UPDATE_SNOOZE_DURATION_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * 获取是否开启自动下载更新（默认开启）。
+ *
+ * 开启时，发现新版本后由更新弹窗在后台自动下载安装包，用户只需决定何时重启安装。
+ */
+export async function getAutoDownloadPreference(): Promise<boolean> {
+  try {
+    const stored = await preferenceStorage.getItem(AUTO_DOWNLOAD_UPDATE_KEY);
+    if (stored !== null) {
+      return stored === 'true';
+    }
+  } catch {
+    // 降级使用默认
+  }
+  return true;
+}
+
+/** 持久化保存是否开启自动下载更新。 */
+export async function setAutoDownloadPreference(enabled: boolean): Promise<void> {
+  try {
+    await preferenceStorage.setItem(AUTO_DOWNLOAD_UPDATE_KEY, enabled ? 'true' : 'false');
+  } catch {
+    // 忽略异常
+  }
+}
+
+/** 记录用户「跳过此版本」；该版本不再提醒，出现更高版本时会重新提醒。 */
+export async function skipUpdateVersion(version: string): Promise<void> {
+  try {
+    await preferenceStorage.setItem(UPDATE_SKIPPED_VERSION_KEY, version);
+  } catch {
+    // 忽略异常
+  }
+}
+
+/** 记录「稍后再说」：`UPDATE_SNOOZE_DURATION_MS` 内不再提醒同一版本。 */
+export async function snoozeUpdateVersion(version: string): Promise<void> {
+  try {
+    await preferenceStorage.setItem(
+      UPDATE_SNOOZE_KEY,
+      JSON.stringify({ version, until: Date.now() + UPDATE_SNOOZE_DURATION_MS }),
+    );
+  } catch {
+    // 忽略异常
+  }
+}
+
+/**
+ * 某个版本当前是否应保持安静（用户跳过，或「稍后再说」尚未到期）。
+ *
+ * 只按精确版本号匹配：更新的版本号永远会重新提醒。存储不可用时按「未静音」
+ * 处理 —— 宁可多提醒一次，也不漏掉更新。
+ */
+export async function isUpdateSuppressed(version: string): Promise<boolean> {
+  try {
+    const skipped = await preferenceStorage.getItem(UPDATE_SKIPPED_VERSION_KEY);
+    if (skipped === version) return true;
+    const snoozedRaw = await preferenceStorage.getItem(UPDATE_SNOOZE_KEY);
+    if (snoozedRaw !== null) {
+      const snoozed = JSON.parse(snoozedRaw) as { version?: unknown; until?: unknown };
+      if (
+        snoozed !== null &&
+        typeof snoozed === 'object' &&
+        snoozed.version === version &&
+        typeof snoozed.until === 'number' &&
+        Date.now() < snoozed.until
+      ) {
+        return true;
+      }
+    }
+  } catch {
+    // 解析或读取失败 → 当作未静音
+  }
+  return false;
+}
+
 /* ------------------------------------------------------------------ *
  * tag 解析 + 按平台拼安装包
  * ------------------------------------------------------------------ */

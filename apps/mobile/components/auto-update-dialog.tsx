@@ -1,11 +1,14 @@
 /**
  * 全局自动更新检查提示弹窗与监听器（AutoUpdateNotifier & AutoUpdateDialog）。
  *
- * 设计灵感与行为对齐 tungsten-edge (SparkleUpdateService)：
- * 1. 静默检测：若开启自动更新偏好，在应用启动后后台低优先级检测；
- * 2. 温和提醒：同一个版本在同一个运行会话（session）中只主动提醒一次，用户点「稍后再说」后不重复弹窗骚扰；
+ * 设计灵感与行为对齐 tungsten-edge (SparkleUpdateService) / VS Code：
+ * 1. 静默检测：若开启自动更新偏好，应用启动后低优先级检测一次，之后每
+ *    `AUTO_UPDATE_CHECK_INTERVAL_MS` 复查一次 —— 长期开着的桌面应用不会错过新版本；
+ * 2. 温和提醒：同一版本「稍后再说」后 24 小时内不再打扰；「跳过此版本」后
+ *    该版本不再提醒（下一次更高版本会重新提醒）；
  * 3. 完整透明：在用户做决定前，先完整展示该版本的更新日志（ChangeLog / Release Notes）；
- * 4. 自主选择：由用户决定立即下载更新还是稍后再说；
+ * 4. 自动下载：开启自动下载偏好时，弹窗出现即在后台下载安装包（仅限能应用内
+ *    安装的桌面壳 / 安卓），下载完成后只需一键重启安装；
  * 5. 应用内安装：桌面壳（Tauri）下载后直接替换重启，Android 下载 APK 后直接调起
  *    系统安装器 —— 两条路都不再把用户丢去浏览器自己找安装包。
  */
@@ -28,17 +31,21 @@ import {
   downloadAndroidUpdate,
   fetchDualChannelReleases,
   formatReleaseDate,
+  getAutoDownloadPreference,
   getAutoUpdateCheckPreference,
   getUpdateChannelPreference,
   installAndroidUpdate,
   installDesktopUpdateAndRestart,
   isTauriDesktop,
+  isUpdateSuppressed,
   openAndroidInstallPermissionSettings,
   openDownloadedInstaller,
   openExternalUrl,
   pickDownloads,
   pollDesktopDownloadProgress,
   releasePageUrl,
+  skipUpdateVersion,
+  snoozeUpdateVersion,
   startDesktopDownload,
   type AndroidAbi,
   type DesktopDownloadProgress,
@@ -48,18 +55,11 @@ import {
   type UpdateChannelPreference,
 } from '@/lib/app-update';
 
-/** 在本次运行期间已主动提醒过的版本（内存态，重启前不重复打扰）。 */
-const announcedVersions = new Set<string>();
+/** 运行期间的后台复查间隔（启动检查之外）。 */
+export const AUTO_UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
-/** 清空已提醒版本集合（测试用）。 */
-export function resetAnnouncedVersions(): void {
-  announcedVersions.clear();
-}
-
-/** 标记某版本为已提醒。 */
-export function markVersionAnnounced(version: string): void {
-  announcedVersions.add(version);
-}
+/** 启动后首次检查的延迟：先让主界面渲染出来。 */
+const INITIAL_CHECK_DELAY_MS = 1500;
 
 export interface AutoUpdateDialogProps {
   visible: boolean;
@@ -94,6 +94,17 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
   >({ kind: 'idle' });
   const [installing, setInstalling] = useState(false);
   const [installError, setInstallError] = useState<string | null>(null);
+  /** 是否在弹窗出现后自动后台下载（默认开，设置页可关）。 */
+  const [autoDownload, setAutoDownload] = useState(false);
+  /** 自动下载只触发一次（同一个版本）。 */
+  const autoDownloadStartedRef = useRef(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    // 纯浏览器 / iOS 没有应用内安装，读取这个偏好没有意义。
+    if (!isDesktop && !canInstallInApp) return;
+    void getAutoDownloadPreference().then(setAutoDownload);
+  }, [visible, isDesktop, canInstallInApp]);
 
   useEffect(() => {
     if (platform === 'macos') {
@@ -134,6 +145,18 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
 
   const activeDownloadUrl = downloads[0]?.url;
 
+  /** 当前选中的 release 是否确实比本机版本新（旧版本永远不自动下载）。 */
+  const activeIsNewer =
+    activeRelease !== null &&
+    (currentVersion === '' || compareVersions(activeRelease.version, currentVersion) > 0);
+
+  // 换版本（或切换渠道）时丢弃上一份下载状态，避免把旧安装包当成新版本安装。
+  useEffect(() => {
+    setDownloadState({ kind: 'idle' });
+    setInstallError(null);
+    autoDownloadStartedRef.current = false;
+  }, [activeRelease?.tag]);
+
   // 桌面端下载轮询
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const stopPolling = useCallback(() => {
@@ -149,77 +172,105 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
     };
   }, [stopPolling]);
 
-  const handleStartDownload = useCallback(() => {
-    if (!activeDownloadUrl) {
-      if (activeRelease) {
-        void openExternalUrl(releasePageUrl(activeRelease.tag));
+  /**
+   * 开始下载安装包。`autoInstall` 为 true 时（用户点了「立即更新」）安卓下载
+   * 完成后直接调起系统安装器；自动后台下载传 false，把安装决定留给用户。
+   */
+  const handleStartDownload = useCallback(
+    (autoInstall = true) => {
+      if (!activeDownloadUrl) {
+        if (activeRelease) {
+          void openExternalUrl(releasePageUrl(activeRelease.tag));
+        }
+        return;
       }
-      return;
-    }
 
-    if (canInstallInApp) {
-      // 安卓：下到应用缓存，下完的「完成态」再由用户一键交给系统安装器。
-      setInstallError(null);
-      setDownloadState({ kind: 'downloading', downloadedBytes: 0, totalBytes: 0 });
-      void downloadAndroidUpdate(activeDownloadUrl, (progress) => {
-        setDownloadState({
-          kind: 'downloading',
-          downloadedBytes: progress.downloadedBytes,
-          totalBytes: progress.totalBytes,
-        });
-      })
-        .then(async (fileUri) => {
-          setDownloadState({ kind: 'done', filePath: fileUri });
-          // 安卓端下载完成自动调起系统安装器，无需等待用户二次点击
-          try {
-            setInstalling(true);
-            await installAndroidUpdate(fileUri);
-          } catch (e) {
-            setInstallError(String(e));
-          } finally {
-            setInstalling(false);
-          }
-        })
-        .catch((err) => {
-          setDownloadState({ kind: 'error', error: String(err) });
-        });
-      return;
-    }
-
-    if (!isDesktop) {
-      void openExternalUrl(activeDownloadUrl);
-      return;
-    }
-
-    setDownloadState({ kind: 'downloading', downloadedBytes: 0, totalBytes: 0 });
-    void startDesktopDownload(activeDownloadUrl).catch((err) => {
-      setDownloadState({ kind: 'error', error: String(err) });
-    });
-
-    stopPolling();
-
-    const checkProgress = () => {
-      void pollDesktopDownloadProgress().then((p: DesktopDownloadProgress) => {
-        if (p.state === 'downloading') {
+      if (canInstallInApp) {
+        // 安卓：下到应用缓存，下完的「完成态」再由用户一键交给系统安装器。
+        setInstallError(null);
+        setDownloadState({ kind: 'downloading', downloadedBytes: 0, totalBytes: 0 });
+        void downloadAndroidUpdate(activeDownloadUrl, (progress) => {
           setDownloadState({
             kind: 'downloading',
-            downloadedBytes: p.downloaded_bytes,
-            totalBytes: p.total_bytes,
+            downloadedBytes: progress.downloadedBytes,
+            totalBytes: progress.totalBytes,
           });
-        } else if (p.state === 'done') {
-          setDownloadState({ kind: 'done', filePath: p.file_path });
-          stopPolling();
-        } else if (p.state === 'error') {
-          setDownloadState({ kind: 'error', error: p.error });
-          stopPolling();
-        }
-      });
-    };
+        })
+          .then(async (fileUri) => {
+            setDownloadState({ kind: 'done', filePath: fileUri });
+            if (!autoInstall) return;
+            // 安卓端下载完成自动调起系统安装器，无需等待用户二次点击
+            try {
+              setInstalling(true);
+              await installAndroidUpdate(fileUri);
+            } catch (e) {
+              setInstallError(String(e));
+            } finally {
+              setInstalling(false);
+            }
+          })
+          .catch((err) => {
+            setDownloadState({ kind: 'error', error: String(err) });
+          });
+        return;
+      }
 
-    pollTimerRef.current = setInterval(checkProgress, 400);
-    // 与设置页一致：立刻取一次进度，完成态不必等第一个 400ms 周期。
-    checkProgress();
-  }, [activeDownloadUrl, activeRelease, canInstallInApp, isDesktop, stopPolling]);
+      if (!isDesktop) {
+        void openExternalUrl(activeDownloadUrl);
+        return;
+      }
+
+      setDownloadState({ kind: 'downloading', downloadedBytes: 0, totalBytes: 0 });
+      void startDesktopDownload(activeDownloadUrl).catch((err) => {
+        setDownloadState({ kind: 'error', error: String(err) });
+      });
+
+      stopPolling();
+
+      const checkProgress = () => {
+        void pollDesktopDownloadProgress().then((p: DesktopDownloadProgress) => {
+          if (p.state === 'downloading') {
+            setDownloadState({
+              kind: 'downloading',
+              downloadedBytes: p.downloaded_bytes,
+              totalBytes: p.total_bytes,
+            });
+          } else if (p.state === 'done') {
+            setDownloadState({ kind: 'done', filePath: p.file_path });
+            stopPolling();
+          } else if (p.state === 'error') {
+            setDownloadState({ kind: 'error', error: p.error });
+            stopPolling();
+          }
+        });
+      };
+
+      pollTimerRef.current = setInterval(checkProgress, 400);
+      // 与设置页一致：立刻取一次进度，完成态不必等第一个 400ms 周期。
+      checkProgress();
+    },
+    [activeDownloadUrl, activeRelease, canInstallInApp, isDesktop, stopPolling],
+  );
+
+  // 自动后台下载：弹窗一出现就开始下（仅限能应用内安装的桌面壳 / 安卓）。
+  // 用户只需在读更新说明的这段时间里等它下完，再决定何时重启安装。
+  useEffect(() => {
+    if (!visible || !autoDownload || !activeIsNewer) return;
+    if (!isDesktop && !canInstallInApp) return;
+    if (downloadState.kind !== 'idle' || activeDownloadUrl === undefined) return;
+    if (autoDownloadStartedRef.current) return;
+    autoDownloadStartedRef.current = true;
+    handleStartDownload(false);
+  }, [
+    visible,
+    autoDownload,
+    activeIsNewer,
+    isDesktop,
+    canInstallInApp,
+    downloadState.kind,
+    activeDownloadUrl,
+    handleStartDownload,
+  ]);
 
   /**
    * 一键安装（安卓：把已下好的 APK 交给系统安装器；桌面：替换应用包并重启）。
@@ -256,10 +307,22 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
     }
   }, [canInstallInApp, downloadState, platform]);
 
+  /** 「稍后再说」：24 小时内不再提醒同一版本。 */
+  const handleLater = useCallback(() => {
+    if (activeRelease) void snoozeUpdateVersion(activeRelease.version);
+    onClose();
+  }, [activeRelease, onClose]);
+
+  /** 「跳过此版本」：该版本不再提醒；出现更高版本时会重新提醒。 */
+  const handleSkip = useCallback(() => {
+    if (activeRelease) void skipUpdateVersion(activeRelease.version);
+    onClose();
+  }, [activeRelease, onClose]);
+
   if (!visible || !activeRelease) return null;
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleLater}>
       <View
         testID="auto-update-dialog-backdrop"
         className="flex-1 items-center justify-center bg-black/60 p-4"
@@ -268,7 +331,7 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
           accessibilityRole="button"
           accessibilityLabel="关闭更新弹窗"
           className="absolute inset-0"
-          onPress={onClose}
+          onPress={handleLater}
         />
         <View
           testID="auto-update-dialog-card"
@@ -324,6 +387,7 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
                   accessibilityRole="button"
                   accessibilityLabel="切换到正式版"
                   onPress={() => setSelectedChannel('stable')}
+                  disabled={downloadState.kind === 'downloading' || installing}
                   className={cn(
                     'flex-1 items-center justify-center rounded-lg border py-1.5 px-2',
                     selectedChannel === 'stable'
@@ -346,6 +410,7 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
                   accessibilityRole="button"
                   accessibilityLabel="切换到测试版"
                   onPress={() => setSelectedChannel('beta')}
+                  disabled={downloadState.kind === 'downloading' || installing}
                   className={cn(
                     'flex-1 items-center justify-center rounded-lg border py-1.5 px-2',
                     selectedChannel === 'beta'
@@ -502,44 +567,57 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
           ) : null}
 
           {/* Footer 按钮操作区 */}
-          <View className="flex-row items-center justify-end gap-2.5 pt-2">
-            <Button
-              label="稍后再说"
-              variant="secondary"
-              onPress={onClose}
-              disabled={downloadState.kind === 'downloading' || installing}
-            />
-            {downloadState.kind === 'done' ? (
+          <View className="flex-row items-center justify-between gap-2.5 pt-2">
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="跳过此版本"
+              onPress={handleSkip}
+              disabled={installing}
+              className="shrink-0 active:opacity-70"
+            >
+              <Text className="font-sans text-xs text-muted dark:text-muted-dark">跳过此版本</Text>
+            </Pressable>
+            <View className="flex-row items-center gap-2.5">
               <Button
-                label={
-                  canInstallInApp
-                    ? installing
-                      ? '正在打开安装程序…'
-                      : '立即安装'
-                    : installing
-                      ? '正在安装并重启…'
-                      : '立即安装并重启'
-                }
-                variant="primary"
-                onPress={() => {
-                  void handleInstall();
-                }}
+                label="稍后再说"
+                variant="secondary"
+                onPress={handleLater}
                 disabled={installing}
               />
-            ) : (
-              <Button
-                label={
-                  isDesktop || canInstallInApp
-                    ? downloadState.kind === 'downloading'
-                      ? '下载中…'
-                      : '立即更新'
-                    : '前往下载'
-                }
-                variant="primary"
-                onPress={handleStartDownload}
-                disabled={downloadState.kind === 'downloading'}
-              />
-            )}
+              {downloadState.kind === 'done' ? (
+                <Button
+                  label={
+                    canInstallInApp
+                      ? installing
+                        ? '正在打开安装程序…'
+                        : '立即安装'
+                      : installing
+                        ? '正在安装并重启…'
+                        : '立即安装并重启'
+                  }
+                  variant="primary"
+                  onPress={() => {
+                    void handleInstall();
+                  }}
+                  disabled={installing}
+                />
+              ) : (
+                <Button
+                  label={
+                    isDesktop || canInstallInApp
+                      ? downloadState.kind === 'downloading'
+                        ? '下载中…'
+                        : '立即更新'
+                      : '前往下载'
+                  }
+                  variant="primary"
+                  onPress={() => {
+                    handleStartDownload(true);
+                  }}
+                  disabled={downloadState.kind === 'downloading'}
+                />
+              )}
+            </View>
           </View>
         </View>
       </View>
@@ -559,20 +637,24 @@ export function AutoUpdateNotifier() {
   const [prefChannel, setPrefChannel] = useState<UpdateChannelPreference>('stable');
 
   const mountedRef = useRef(true);
+  /** 弹窗打开期间不重复触发检查（用户正在读更新说明）。 */
+  const visibleRef = useRef(false);
+
+  useEffect(() => {
+    visibleRef.current = modalVisible;
+  }, [modalVisible]);
 
   useEffect(() => {
     mountedRef.current = true;
-    const timer = setTimeout(async () => {
+
+    const runCheck = async () => {
       try {
         const autoCheck = await getAutoUpdateCheckPreference();
-        if (!autoCheck || !mountedRef.current) return;
+        if (!autoCheck || !mountedRef.current || visibleRef.current) return;
 
         const pref = await getUpdateChannelPreference();
-        if (!mountedRef.current) return;
-        setPrefChannel(pref);
-
         const result = await fetchDualChannelReleases();
-        if (!result.ok || !mountedRef.current) return;
+        if (!result.ok || !mountedRef.current || visibleRef.current) return;
 
         const currentVer = currentAppVersion();
         const { stable, beta } = result.releases;
@@ -596,20 +678,31 @@ export function AutoUpdateNotifier() {
 
         if (!targetRelease) return;
 
-        // 若本次会话尚未提醒过该版本，则弹出提示
-        if (!announcedVersions.has(targetRelease.version)) {
-          announcedVersions.add(targetRelease.version);
-          setReleases({ stable, beta });
-          setModalVisible(true);
-        }
+        // 用户「稍后再说」未到期，或已「跳过此版本」→ 保持安静。
+        if (await isUpdateSuppressed(targetRelease.version)) return;
+        if (!mountedRef.current || visibleRef.current) return;
+
+        setPrefChannel(pref);
+        setReleases({ stable, beta });
+        setModalVisible(true);
       } catch {
         // 静默检查，异常不阻断应用
       }
-    }, 1500);
+    };
+
+    const initialTimer = setTimeout(() => {
+      void runCheck();
+    }, INITIAL_CHECK_DELAY_MS);
+    // 长期运行的桌面应用不会错过发版：启动检查之后每 6 小时复查一次。
+    // 每次复查都会重新读取设置，用户中途关掉「自动检查更新」会立即生效。
+    const intervalTimer = setInterval(() => {
+      void runCheck();
+    }, AUTO_UPDATE_CHECK_INTERVAL_MS);
 
     return () => {
       mountedRef.current = false;
-      clearTimeout(timer);
+      clearTimeout(initialTimer);
+      clearInterval(intervalTimer);
     };
   }, []);
 

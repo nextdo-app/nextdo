@@ -1786,7 +1786,7 @@ export default function SettingsScreen() {
                 自动检查更新
               </Text>
               <Text className="font-sans text-[11px] text-muted dark:text-muted-dark leading-tight">
-                开启后应用启动时自动检测新版本，若有更新将展示更新说明供您确认
+                开启后应用启动时及运行期间定时检测新版本，发现更新会展示更新说明供您确认
               </Text>
             </View>
             <Pressable
@@ -1811,6 +1811,41 @@ export default function SettingsScreen() {
               />
             </Pressable>
           </View>
+
+          {/* 自动下载更新开关（仅能应用内安装的桌面端 / 安卓版有意义） */}
+          {update.isDesktop || update.canInstallInApp ? (
+            <View className="flex-row items-center justify-between py-1 border-t border-border/40 dark:border-border-dark/40 pt-2">
+              <View className="gap-0.5 flex-1 min-w-0 pr-3">
+                <Text className="font-sans text-xs font-semibold text-ink dark:text-ink-dark">
+                  自动下载更新
+                </Text>
+                <Text className="font-sans text-[11px] text-muted dark:text-muted-dark leading-tight">
+                  发现新版本后自动在后台下载安装包，下载完成后一键安装并重启
+                </Text>
+              </View>
+              <Pressable
+                accessibilityRole="switch"
+                accessibilityLabel="自动下载更新"
+                accessibilityState={{ checked: update.autoDownloadEnabled }}
+                onPress={() => {
+                  void update.setAutoDownloadEnabled(!update.autoDownloadEnabled);
+                }}
+                className={cn(
+                  'h-6 w-11 rounded-full p-0.5 justify-center shrink-0',
+                  update.autoDownloadEnabled
+                    ? 'bg-accent dark:bg-accent-dark'
+                    : 'bg-surface-container dark:bg-surface-container-dark',
+                )}
+              >
+                <View
+                  className={cn(
+                    'h-5 w-5 rounded-full bg-white shadow-sm',
+                    update.autoDownloadEnabled ? 'self-end' : 'self-start',
+                  )}
+                />
+              </Pressable>
+            </View>
+          ) : null}
 
           <Button
             label={update.checking ? '检查中…' : '检查更新'}

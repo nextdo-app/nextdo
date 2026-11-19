@@ -339,9 +339,21 @@
 - ONE flow behind two entry points: `apps/mobile/lib/app-update.ts` (feed fetch,
   version compare, installer pick, Tauri IPC wrappers) →
   `hooks/use-app-update.ts` (Settings card state machine) and
-  `components/auto-update-dialog.tsx` (startup notifier — at most one prompt per
-  version per session). Neither entry point owns a second copy of the version
-  rules; the dialog is not a second implementation of the hook.
+  `components/auto-update-dialog.tsx` (background notifier). Neither entry point
+  owns a second copy of the version rules; the dialog is not a second
+  implementation of the hook.
+- **Background checks run at startup and every 6 hours** while the app stays
+  open (`AUTO_UPDATE_CHECK_INTERVAL_MS`), so a long-running desktop window does
+  not miss a release. Each pass re-reads the preferences, so turning 「自动检查更新」
+  off in Settings takes effect on the next pass.
+- **Dismissals are persisted per exact version**: 「稍后再说」 snoozes the version
+  for 24 hours (`snoozeUpdateVersion` / `isUpdateSuppressed`), 「跳过此版本」 keeps
+  it quiet until a higher version appears (`skipUpdateVersion`). The notifier
+  never re-prompts a suppressed version in a later session.
+- **Auto-download** (`getAutoDownloadPreference`, default on) starts the in-app
+  package download as soon as the dialog is shown, but only where in-app
+  install exists (Tauri shell / Android). The install itself is always the
+  user's explicit action.
 - The ChangeLog in both places is the GitHub release **body**, rendered as-is
   (source contract: the release-notes pitfall in
   `project/quality-guidelines.md`). Do not re-parse or re-format it.

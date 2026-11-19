@@ -15,6 +15,7 @@ import {
   detectUpdatePlatform,
   downloadAndroidUpdate,
   fetchDualChannelReleases,
+  getAutoDownloadPreference,
   getAutoUpdateCheckPreference,
   getChannelLabel,
   getReleaseChannel,
@@ -27,6 +28,7 @@ import {
   pickDownloads,
   pollDesktopDownloadProgress,
   releasePageUrl,
+  setAutoDownloadPreference,
   setAutoUpdateCheckPreference,
   setUpdateChannelPreference,
   startDesktopDownload,
@@ -99,6 +101,10 @@ export interface UseAppUpdateResult {
   autoCheckEnabled: boolean;
   /** 切换并持久化自动检查更新偏好。 */
   setAutoCheckEnabled: (enabled: boolean) => Promise<void>;
+  /** 是否开启自动下载更新（默认开启）。 */
+  autoDownloadEnabled: boolean;
+  /** 切换并持久化自动下载更新偏好。 */
+  setAutoDownloadEnabled: (enabled: boolean) => Promise<void>;
   /** 检查进行中（按钮禁用 + 「检查中…」）。 */
   checking: boolean;
   /** 上一次检查的结论；还没查过是 `null`。 */
@@ -155,6 +161,7 @@ export function useAppUpdate(): UseAppUpdateResult {
     channel !== 'stable' ? 'beta' : 'stable',
   );
   const [autoCheckEnabled, setAutoCheckEnabledState] = useState(true);
+  const [autoDownloadEnabled, setAutoDownloadEnabledState] = useState(true);
 
   // 架构要问系统（桌面壳走 IPC，浏览器走 UA 高熵字段），是异步的，所以是 state。
   const [macArch, setMacArch] = useState<MacArch | null>(null);
@@ -176,6 +183,9 @@ export function useAppUpdate(): UseAppUpdateResult {
     });
     void getAutoUpdateCheckPreference().then((enabled) => {
       if (mountedRef.current) setAutoCheckEnabledState(enabled);
+    });
+    void getAutoDownloadPreference().then((enabled) => {
+      if (mountedRef.current) setAutoDownloadEnabledState(enabled);
     });
     return () => {
       mountedRef.current = false;
@@ -206,6 +216,11 @@ export function useAppUpdate(): UseAppUpdateResult {
   const setAutoCheckEnabled = useCallback(async (enabled: boolean) => {
     setAutoCheckEnabledState(enabled);
     await setAutoUpdateCheckPreference(enabled);
+  }, []);
+
+  const setAutoDownloadEnabled = useCallback(async (enabled: boolean) => {
+    setAutoDownloadEnabledState(enabled);
+    await setAutoDownloadPreference(enabled);
   }, []);
 
   const check = useCallback(() => {
@@ -478,6 +493,8 @@ export function useAppUpdate(): UseAppUpdateResult {
     setPreferredChannel,
     autoCheckEnabled,
     setAutoCheckEnabled,
+    autoDownloadEnabled,
+    setAutoDownloadEnabled,
     checking,
     outcome,
     selectedVersion,

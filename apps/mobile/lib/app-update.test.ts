@@ -18,6 +18,7 @@ import {
   fetchDualChannelReleases,
   fetchLatestRelease,
   formatReleaseDate,
+  getAutoDownloadPreference,
   getAutoUpdateCheckPreference,
   getChannelLabel,
   getReleaseChannel,
@@ -25,6 +26,7 @@ import {
   installDesktopUpdateAndRestart,
   isPrerelease,
   isTauriDesktop,
+  isUpdateSuppressed,
   latestReleaseUrl,
   openDownloadedInstaller,
   openExternalUrl,
@@ -38,8 +40,11 @@ import {
   pollDesktopDownloadProgress,
   releasePageUrl,
   releasesAtomUrl,
+  setAutoDownloadPreference,
   setAutoUpdateCheckPreference,
   setUpdateChannelPreference,
+  skipUpdateVersion,
+  snoozeUpdateVersion,
   startDesktopDownload,
   viaProxy,
   type LatestRelease,
@@ -743,6 +748,37 @@ describe('parseAtomFeedEntries & pickDualChannelReleases (Issue #18)', () => {
 
     await setAutoUpdateCheckPreference(true);
     expect(await getAutoUpdateCheckPreference()).toBe(true);
+  });
+
+  it('auto download defaults to on and persists the user choice', async () => {
+    expect(await getAutoDownloadPreference()).toBe(true);
+
+    await setAutoDownloadPreference(false);
+    expect(await getAutoDownloadPreference()).toBe(false);
+
+    await setAutoDownloadPreference(true);
+    expect(await getAutoDownloadPreference()).toBe(true);
+  });
+
+  it('a skipped version stays quiet, a newer version does not', async () => {
+    await skipUpdateVersion('9.9.1');
+    expect(await isUpdateSuppressed('9.9.1')).toBe(true);
+    // 更高版本照常提醒 —— 跳过只针对那一个版本。
+    expect(await isUpdateSuppressed('9.9.2')).toBe(false);
+  });
+
+  it('snoozing suppresses the version for 24 hours only', async () => {
+    jest.useFakeTimers();
+    try {
+      jest.setSystemTime(new Date('2026-11-19T00:00:00Z'));
+      await snoozeUpdateVersion('9.9.3');
+      expect(await isUpdateSuppressed('9.9.3')).toBe(true);
+
+      jest.setSystemTime(new Date('2026-11-20T01:00:00Z'));
+      expect(await isUpdateSuppressed('9.9.3')).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('pickDualChannelReleases identifies latest stable and beta separately', () => {
