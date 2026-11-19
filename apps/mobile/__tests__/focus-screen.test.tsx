@@ -652,4 +652,29 @@ describe('Focus screen', () => {
     );
     await waitFor(() => expect(screen.getByText('结束专注')).toBeTruthy());
   });
+
+  it('clamps an over-cap estimate to 180 minutes and explains why', async () => {
+    renderRouter('app', { initialUrl: '/focus/f-1?kind=next&preset=240' });
+    await waitFor(() => expect(screen.getByText('选择本次专注时长')).toBeTruthy());
+
+    expect(
+      screen.getByText(/该行动估时 240 分钟，超过单次专注上限 180 分钟，本次按 180 分钟开始/),
+    ).toBeTruthy();
+    expect(screen.getByText('开始专注 (180 分钟)')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('开始专注 (180 分钟)'));
+    await waitFor(() => expect(mockDb.startFocusSession).toHaveBeenCalledTimes(1));
+    expect(mockDb.startFocusSession.mock.calls[0][1].plannedMinutes).toBe(180);
+  });
+
+  it('auto-starts the clamped session for an over-cap estimate instead of doing nothing', async () => {
+    renderRouter('app', { initialUrl: '/focus/f-1?kind=next&preset=240&autoStart=1' });
+    await waitFor(() =>
+      expect(mockDb.startFocusSession).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ mode: 'preset', plannedMinutes: 180 }),
+      ),
+    );
+    await waitFor(() => expect(screen.getByText('结束专注')).toBeTruthy());
+  });
 });
