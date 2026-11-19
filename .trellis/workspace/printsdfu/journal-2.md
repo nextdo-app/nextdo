@@ -376,3 +376,54 @@ Topics: [.trellis/research/now-screen-presentation.md](../../research/now-screen
 ### Git Commits
 
 (No associated commits)
+
+
+## Session 75: Now 页审查修复与 beta.28 发布
+<!-- trellis-session: v=3 fp=fe12f25f31cf913e -->
+
+**Date**: 2026-11-18
+**Task**: Now 页审查修复与 beta.28 发布
+**Branch**: `main`
+
+### Summary
+
+按 reviewer 两轮审阅修复：hero 溢出菜单固定行动 ID 并从最新 eligible 取行动（编辑器读最新备注，目标离开则关闭）；updateNextAction 在写事务内读取当前行、只覆盖编辑字段并保留推迟/跳过状态，done 行动不再重新武装提醒；推荐卡补两行备注预览；engine-context 读取不覆盖加载期间的新选择，Web 存储写入失败上抛且满额可读时仍走真实存储；挂载读取在用户更新后不再改界面值或错误状态；习惯块说明统一为最多 3 个。pnpm verify:web 全绿（1608 tests），浏览器四状态实测（含写入失败态）。PR #86 已合并，0.1.9-beta.28 发布 10 个资产。
+Topics: [.trellis/research/now-screen-presentation.md](../../research/now-screen-presentation.md)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `36d9805` | fix(now): keep edits and engine settings consistent across refreshes |
+| `742d7bc` | Merge pull request #86 from nextdo-app/fix/now-review-findings |
+| `fd275e4` | chore(release): bump version to 0.1.9-beta.28 |
+
+### Testing
+
+- pnpm verify:web：lint、typecheck、core 275 / server 133 / db 361 / mobile 839 tests、web build 全部通过
+- headless Chrome 实测 /projects 与 /now：菜单打开、备注预览、15 分钟过滤后菜单关闭、设置写入失败提示；截图在 .verify/now-review-findings/
+
+### Next Steps
+
+- 可选未做：240 分钟专注时长提示、now.tsx 轮换查找优化
+
+
+## Session 76: 资料库可选启用规则与 Focus bug 优先级
+<!-- trellis-session: v=3 fp=ea6eec5660a43170 -->
+
+**Date**: 2026-11-19
+**Task**: 资料库可选启用规则与 Focus bug 优先级
+**Branch**: `main`
+
+### Summary
+
+用户确认资料库（ReferenceItems）为可选启用功能，用户可以关闭或不启用；当前先修 Focus 估时超过 180 分钟时的静默回退 bug，资料库 MVP 后做。
+Topics: [.trellis/research/reference-library.md](../../research/reference-library.md)
+
+### Git Commits
+
+(No associated commits)
+
+### Next Steps
+
+- 修 Focus 240 分钟静默回退；资料库 MVP 待启动。

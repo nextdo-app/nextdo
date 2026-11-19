@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 74
-- **Last Active**: 2026-11-18
+- **Total Sessions**: 76
+- **Last Active**: 2026-11-19
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~378 | Active |
+| `journal-2.md` | ~429 | Active |
 | `journal-1.md` | ~1990 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 76 | 2026-11-19 | 资料库可选启用规则与 Focus bug 优先级 | - | `main` |
+| 75 | 2026-11-18 | Now 页审查修复与 beta.28 发布 | `36d9805`, `742d7bc`, `fd275e4` | `main` |
 | 74 | 2026-11-18 | 现在页修复与换一个规则 | - | `main` |
 | 73 | 2026-11-12 | Now 与专注视图交互及按键优化 | `0de228e` | `feature/now-focus-ux` |
 | 72 | 2026-11-10 | Owner token homepage security release | `9b556d0`, `229ee2f` | `fix/owner-token-homepage` |
