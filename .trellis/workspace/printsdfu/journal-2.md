@@ -444,3 +444,20 @@ Topics: [.trellis/spec/project/quality-guidelines.md](../../spec/project/quality
 ### Git Commits
 
 (No associated commits)
+
+
+## Session 78: 修正 README 中 Web/PWA 提醒承诺（#93）
+<!-- trellis-session: v=3 fp=8a6369ed7dfcb8a6 -->
+
+**Date**: 2026-11-22
+**Task**: 修正 README 中 Web/PWA 提醒承诺（#93）
+**Branch**: `docs/web-push-93`
+
+### Summary
+
+README 平台表与 PWA 章节改为明确标注 Web/PWA 提醒尚未接通（#92 前台断链、#93 后台 Web Push 未实现）；原生 App/桌面端提醒不受影响。仅文档改动，未实现订阅与服务端发送。
+Topics: [README.md](../../../README.md)
+
+### Git Commits
+
+(No associated commits)

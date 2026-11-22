@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 77
-- **Last Active**: 2026-11-19
+- **Total Sessions**: 78
+- **Last Active**: 2026-11-22
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~446 | Active |
+| `journal-2.md` | ~463 | Active |
 | `journal-1.md` | ~1990 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 78 | 2026-11-22 | 修正 README 中 Web/PWA 提醒承诺（#93） | - | `docs/web-push-93` |
 | 77 | 2026-11-19 | 取消交付前验证的截图要求 | - | `main` |
 | 76 | 2026-11-19 | 资料库可选启用规则与 Focus bug 优先级 | - | `main` |
 | 75 | 2026-11-18 | Now 页审查修复与 beta.28 发布 | `36d9805`, `742d7bc`, `fd275e4` | `main` |
