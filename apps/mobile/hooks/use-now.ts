@@ -22,6 +22,7 @@ import {
 } from '@nextdo/core';
 import { useActionPool } from './use-action-pool';
 import { useAppClock } from './use-app-clock';
+import { useExternalCalendarBlocks } from './use-external-calendar-blocks';
 import {
   DEFAULT_ENGINE_CONTEXT,
   useEngineContextSettings,
@@ -65,11 +66,14 @@ export interface NowData {
 export interface UseNowResult {
   data: NowData | null;
   error: string | null;
+  /** Issue #100: the last system-calendar import failed; previous blocks kept. */
+  calendarImportError: string | null;
 }
 
 export function useNow(context?: EngineContextSettings | null): UseNowResult {
   const now = useAppClock();
   const poolQuery = useActionPool(now);
+  const externalCalendar = useExternalCalendarBlocks();
   // Always call the settings hook (Rules of Hooks) — the screen owns ONE
   // instance and passes it in so the pool recomputes on chip changes;
   // without an explicit context this falls back to loading the store here.
@@ -84,6 +88,9 @@ export function useNow(context?: EngineContextSettings | null): UseNowResult {
     // out by location and legacy actions with `contextIds` still surface.
     const output = recommend({
       ...pool,
+      // Issue #100: the OS calendar's busy time is a hard schedule block,
+      // exactly like another CalendarAction's block.
+      calendar: [...pool.calendar, ...externalCalendar.blocks],
       context: { contextIds: [], availableMinutes: effectiveContext.availableMinutes },
       now,
     });
@@ -127,9 +134,13 @@ export function useNow(context?: EngineContextSettings | null): UseNowResult {
       poolEmpty: pool.actions.length === 0,
       recommendedConsecutiveSkips: recommended?.consecutiveSkips ?? 0,
     };
-  }, [poolQuery.data, effectiveContext, now]);
+  }, [poolQuery.data, effectiveContext, now, externalCalendar.blocks]);
 
-  return { data, error: poolQuery.error };
+  return {
+    data,
+    error: poolQuery.error,
+    calendarImportError: externalCalendar.error,
+  };
 }
 
 /** True when the engine wants the Now screen to offer re-clarify (PRD R3). */

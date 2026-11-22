@@ -16,6 +16,7 @@ interface FakeCalendar {
   allowsModifications?: boolean;
   ownerAccount?: { name?: string };
   createEvent: jest.Mock;
+  listEvents: jest.Mock;
 }
 
 const mockGetCalendars = jest.fn<Promise<FakeCalendar[]>, []>();
@@ -28,10 +29,17 @@ jest.mock('expo-calendar', () => ({
   requestCalendarPermissions: async () => ({ granted: true, status: 'granted' }),
 }));
 
-import { ensureCalendar, findCalendar, listCalendars } from './device';
+import {
+  createCalendarEvent,
+  ensureCalendar,
+  findCalendar,
+  listCalendars,
+  listEventsForImport,
+} from './device';
+import { NEXTDO_EVENT_NOTE } from './reconcile';
 
 function calendar(id: string, title: string, extra: Partial<FakeCalendar> = {}): FakeCalendar {
-  return { id, title, createEvent: jest.fn(), ...extra };
+  return { id, title, createEvent: jest.fn(), listEvents: jest.fn(async () => []), ...extra };
 }
 
 describe('native calendar target', () => {
@@ -114,5 +122,97 @@ describe('native calendar target', () => {
 
     expect(await findCalendar('cal-gmail')).toBe(gmail);
     expect(await findCalendar('cal-gone')).toBeNull();
+  });
+
+  it('listEventsForImport merges every calendar and only returns plain data', async () => {
+    const gmail = calendar('cal-gmail', 'Personal');
+    const work = calendar('cal-work', 'Work');
+    gmail.listEvents.mockResolvedValue([
+      {
+        id: 'evt-gmail',
+        title: '组会',
+        startDate: new Date('2026-11-21T09:00:00.000Z'),
+        endDate: new Date('2026-11-21T10:00:00.000Z'),
+        allDay: false,
+        availability: 'busy',
+        status: 'confirmed',
+        notes: '',
+      },
+    ]);
+    work.listEvents.mockResolvedValue([
+      {
+        id: 'evt-work',
+        title: '评审',
+        // The SDK accepts string dates too; the boundary normalizes them.
+        startDate: '2026-11-21T11:00:00.000Z',
+        endDate: '2026-11-21T12:00:00.000Z',
+        allDay: true,
+        availability: 'free',
+        status: 'canceled',
+        notes: '由 Nextdo 自动同步',
+      },
+    ]);
+    mockGetCalendars.mockResolvedValue([gmail, work]);
+
+    const start = new Date('2026-11-21T00:00:00.000Z');
+    const end = new Date('2026-11-22T00:00:00.000Z');
+    const events = await listEventsForImport(start, end);
+
+    expect(events).toEqual([
+      {
+        id: 'evt-gmail',
+        title: '组会',
+        startsAt: '2026-11-21T09:00:00.000Z',
+        endsAt: '2026-11-21T10:00:00.000Z',
+        allDay: false,
+        availability: 'busy',
+        status: 'confirmed',
+        notes: '',
+      },
+      {
+        id: 'evt-work',
+        title: '评审',
+        startsAt: '2026-11-21T11:00:00.000Z',
+        endsAt: '2026-11-21T12:00:00.000Z',
+        allDay: true,
+        availability: 'free',
+        status: 'canceled',
+        notes: '由 Nextdo 自动同步',
+      },
+    ]);
+    expect(gmail.listEvents).toHaveBeenCalledWith(start, end);
+    expect(work.listEvents).toHaveBeenCalledWith(start, end);
+  });
+
+  it('writes the user note AND the origin marker on create (review R2)', async () => {
+    const gmail = calendar('cal-gmail', 'Personal');
+    gmail.createEvent.mockResolvedValue({ id: 'evt-mirror' });
+
+    const mapping = await createCalendarEvent(gmail as never, {
+      actionId: 'ca-1',
+      title: '准备合同',
+      startsAt: '2026-11-21T10:30:00.000Z',
+      endsAt: '2026-11-21T11:00:00.000Z',
+      notes: '带合同，会议室 B',
+    });
+
+    expect(mapping?.eventId).toBe('evt-mirror');
+    expect(gmail.createEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        // The note survives for the user; the marker makes the event
+        // recognisable as Nextdo's own mirror on another device.
+        notes: `带合同，会议室 B\n\n${NEXTDO_EVENT_NOTE}`,
+      }),
+    );
+  });
+
+  it('listEventsForImport fails loudly so the caller can keep its snapshot', async () => {
+    const gmail = calendar('cal-gmail', 'Personal');
+    gmail.listEvents.mockRejectedValue(new Error('calendar access revoked'));
+    mockGetCalendars.mockResolvedValue([gmail]);
+
+    await expect(
+      listEventsForImport(new Date(), new Date()),
+    ).rejects.toThrow('calendar access revoked');
   });
 });

@@ -56,8 +56,9 @@ type CandidateAction = NextCandidate | HabitCandidate | CalendarCandidate;
 
 interface EngineInput {
   actions: CandidateAction[];    // open NextActions + today's open HabitDays + CalendarActions (today or starting soon)
-  calendar: CalendarBlock[];     // hard schedule blocks — v1: other open CalendarActions
-                                 // (manual time blocks + system-calendar import: post-MVP).
+  calendar: CalendarBlock[];     // hard schedule blocks — v1: other open CalendarActions;
+                                 // issue #100 adds read-only OS-calendar busy events
+                                 // (manual time blocks: post-MVP).
   projects: { id: string; value: number; status: string }[]; // ALL non-deleted projects (incl.
                                                              // non-active — the engine applies
                                                              // the `active` check itself)

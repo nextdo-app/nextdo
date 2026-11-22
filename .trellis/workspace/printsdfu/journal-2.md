@@ -457,6 +457,24 @@ Topics: [.trellis/spec/project/quality-guidelines.md](../../spec/project/quality
 
 交付 issue #97：新增同步 settings 表（确定性 id setting:<key>），主题、专注时长与 Now 可用时间跨设备同步，通知、日历、更新与习惯提醒保留本机；客户端桥以 DB 行为同步事实来源、本地缓存只负责首帧。门禁 pnpm verify:web 通过（1652 测试），浏览器实测覆盖播种、删本地缓存后由 DB 恢复、专注时长写入与双标签页实时同步。
 Topics: [.trellis/research/settings-sync.md](../../research/settings-sync.md)
+## Session 78: 外部日历：系统日历只读忙碌导入（issue #100）
+<!-- trellis-session: v=3 fp=77342bdc4a96b9af -->
+
+**Date**: 2026-11-21
+**Task**: 外部日历：系统日历只读忙碌导入（issue #100）
+**Branch**: `feat/external-calendar-import`
+
+### Summary
+
+交付 issue #100 的只读部分：系统日历定时忙碌事件作为引擎硬日程约束。新增纯过滤器 import.ts、设备读取 listEventsForImport、useExternalCalendarBlocks（挂载/5 分钟/回前台刷新，失败保留旧快照并提示）、设置开关 calendarImportEnabled（设备本地，默认关闭）与 Now 接入。跳过全天、free、canceled 与 Nextdo 自身镜像事件。CalDAV 与双向同步未实现，已记入 backlog。门禁 r2 全绿（1662 tests），浏览器冒烟通过（Web 不渲染开关，显示平台不支持）。
+Topics: [.trellis/research/external-calendar-import.md](../../research/external-calendar-import.md)
+
+### Main Changes
+
+- 新增 apps/mobile/lib/calendar-sync/import.ts 纯函数忙碌过滤与窗口常量
+- device/index 增加 listEventsForImport；reconcile 导出 NEXTDO_EVENT_NOTE
+- 新增 hooks/use-external-calendar-blocks.ts 并接入 use-now/now 屏；设置页新增导入开关
+- notification-settings 增加 calendarImportEnabled 解析与合并保存
 
 ### Git Commits
 
@@ -482,6 +500,31 @@ Topics: [.trellis/research/settings-sync.md](../../research/settings-sync.md)
 
 处理 #97 首轮审查的 R1/R2/R3：R1 播种只读设备存储，避免首读默认值（theme system / engine 60）覆盖账本偏好；R2 两份云部署文档补 settings Sync Rule，并按当前源码重建仓库直贴版 server/deploy/worker.js，新增产物一致性测试；R3 settings 写失败保留 pending 意图、bridge 跳过旧行、全局重试横幅，补单测与浏览器注入写失败/恢复场景。门禁 pnpm verify:web --no-serve 通过（1662 测试），浏览器全部场景 ok。
 Topics: [.trellis/research/settings-sync.md](../../research/settings-sync.md)
+- pnpm verify:web --no-serve：1662 tests 全过（core 275 / server 133 / db 370 / mobile 884），web 构建成功
+- headless Chrome 冒烟：Now/Settings 正常，Web 正确隐藏导入开关，控制台无相关错误
+
+### Next Steps
+
+- CalDAV / 双向同步按 backlog 推进；真机验证日历读取与权限弹窗
+
+
+## Session 79: 外部日历导入：review R1/R2 修正
+<!-- trellis-session: v=3 fp=200a7173e75bcb52 -->
+
+**Date**: 2026-11-21
+**Task**: 外部日历导入：review R1/R2 修正
+**Branch**: `feat/external-calendar-import`
+
+### Summary
+
+按 reviewer 首轮意见修正 issue #100 只读导入。R1：读取能力与写入能力分开判断，新增 isCalendarImportSupported()（仅 native 为 true），useCalendarPermission 暴露 importSupported；macOS 桌面壳可写不可读，设置页不渲染导入开关并显示说明。R2：每次写日历事件都在用户备注后追加来源标记（nextdoEventNotes），导入改按 notes.includes 识别，跨设备无本地映射也能排除镜像；签名包含标记，旧事件在下一次同步时更新一次补标记。新增桌面能力、设置页入口、跨设备镜像、旧签名迁移测试。门禁 r3 全绿（1668 tests），浏览器冒烟覆盖 Web 与模拟 macOS 壳。
+Topics: [.trellis/research/external-calendar-import.md](../../research/external-calendar-import.md)
+
+### Main Changes
+
+- reconcile: nextdoEventNotes 追加标记，签名纳入标记；device/desktop 写入带标记备注
+- index: isCalendarImportSupported；use-calendar-permission: importSupported；settings 按读取能力控制入口
+- import: 按 notes.includes(NEXTDO_EVENT_NOTE) 排除镜像
 
 ### Git Commits
 
@@ -544,3 +587,9 @@ Topics: [.trellis/research/settings-sync.md](../../research/settings-sync.md)
 ### Next Steps
 
 - 交回 reviewer 复审；通过后按授权处理下一个 issue。工作区未提交。
+- 新增 mirror-import/reconcile 迁移/device 备注/desktop 能力/settings 入口测试；pnpm verify:web --no-serve 1668 tests 全过
+- headless Chrome：Web 隐藏开关；模拟 macOS 壳显示写入、隐藏导入并给出说明
+
+### Next Steps
+
+- 等待 reviewer 复审；通过后清理 dist 与端口并进入下一个 issue

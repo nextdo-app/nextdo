@@ -27,9 +27,11 @@ import type {
   CalendarSyncMapping,
   CalendarSyncUpdate,
 } from './reconcile';
+import type { ImportableCalendarEvent } from './import';
 
 export type { CalendarTarget } from './target';
 export type CalendarPermission = device.CalendarPermission;
+export type { ImportableCalendarEvent } from './import';
 /** One calendar the settings picker can offer (Google / iCloud / local). */
 export type { WritableCalendar };
 
@@ -67,6 +69,17 @@ export async function resolveCalendarBackend(): Promise<CalendarBackend> {
 /** Whether this host can write to an OS calendar at all. */
 export async function isCalendarSupported(): Promise<boolean> {
   return (await resolveCalendarBackend()) !== null;
+}
+
+/**
+ * Whether this host can READ the OS calendar (issue #100 review R1).
+ *
+ * Reading is a separate capability from writing: the macOS bridge writes
+ * through EventKit but exposes no read command, so the settings screen must
+ * not offer an import switch there. Only the native backend can read.
+ */
+export async function isCalendarImportSupported(): Promise<boolean> {
+  return (await resolveCalendarBackend()) === 'native';
 }
 
 /** Read-only check — never shows the OS dialog. */
@@ -119,6 +132,21 @@ export async function listCalendars(): Promise<WritableCalendar[]> {
   const backend = await resolveCalendarBackend();
   if (backend !== 'native') return [];
   return device.listCalendars();
+}
+
+/**
+ * Issue #100: every OS-calendar event overlapping [start, end], for the
+ * read-only busy-time import. `null` means this host has no readable
+ * calendar: web has no calendar, and the macOS bridge exposes write commands
+ * only. A read failure throws — the caller keeps its previous snapshot.
+ */
+export async function listEventsForImport(
+  start: Date,
+  end: Date,
+): Promise<ImportableCalendarEvent[] | null> {
+  const backend = await resolveCalendarBackend();
+  if (backend === 'native') return device.listEventsForImport(start, end);
+  return null;
 }
 
 /** Create one event; null = a logged failure (retried on the next pass). */

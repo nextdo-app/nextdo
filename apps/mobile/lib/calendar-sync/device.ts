@@ -17,10 +17,12 @@ import { Linking } from 'react-native';
 import type { Alarm, ExpoCalendar, ExpoCalendarEvent } from 'expo-calendar';
 import {
   calendarEventSignature,
+  nextdoEventNotes,
   type CalendarSyncEventSpec,
   type CalendarSyncMapping,
   type CalendarSyncUpdate,
 } from './reconcile';
+import type { ImportableCalendarEvent } from './import';
 
 type ExpoCalendarModule = typeof import('expo-calendar');
 
@@ -29,8 +31,6 @@ const CALENDAR_TITLE = 'Nextdo';
 
 /** Fire the calendar alarm at the event's start (0 minutes before). */
 const ALARM_MINUTES_BEFORE = 0;
-
-const EVENT_NOTE = '由 Nextdo 自动同步';
 
 let calendarModule: ExpoCalendarModule | null | undefined;
 
@@ -139,6 +139,47 @@ export async function listCalendars(): Promise<WritableCalendar[]> {
 }
 
 /**
+ * Read every event overlapping [start, end] for the read-only import
+ * (issue #100). Returns null when this host has no calendar module at all;
+ * a read failure THROWS on purpose — the caller keeps its previous snapshot
+ * rather than silently treating a broken read as "no busy time".
+ *
+ * The raw native event objects stay here; only plain data crosses the
+ * boundary (the pure filter in `import.ts` owns the busy/all-day rules).
+ */
+export async function listEventsForImport(
+  start: Date,
+  end: Date,
+): Promise<ImportableCalendarEvent[] | null> {
+  const module = getCalendarModule();
+  if (module === null) return null;
+  const calendars = await module.getCalendars();
+  const perCalendar = await Promise.all(
+    calendars.map(async (calendar) => {
+      const events = await calendar.listEvents(start, end);
+      return events.map((event) => ({
+        id: event.id,
+        title: event.title ?? '',
+        startsAt: toEventIso(event.startDate),
+        endsAt: toEventIso(event.endDate),
+        allDay: event.allDay === true,
+        availability:
+          typeof event.availability === 'string' ? event.availability : null,
+        status: typeof event.status === 'string' ? event.status : null,
+        notes: typeof event.notes === 'string' ? event.notes : null,
+      }));
+    }),
+  );
+  return perCalendar.flat();
+}
+
+/** ISO-8601, or '' for an unusable native date (the filter drops it). */
+function toEventIso(value: string | Date): string {
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString();
+}
+
+/**
  * Resolve one calendar by id; null when it no longer exists.
  *
  * The id comes from the user's choice, persisted in the device-local sync
@@ -206,10 +247,12 @@ function eventDetails(spec: CalendarSyncEventSpec): CreateEventDetails {
     title: spec.title,
     startDate: new Date(spec.startsAt),
     endDate: new Date(spec.endsAt),
-    // The action's own note wins: for a reminder-delivered event it is the
-    // context the user would otherwise have to dig out of the original
-    // message or file.
-    notes: spec.notes ?? EVENT_NOTE,
+    // The action's own note wins, followed by the origin marker: for a
+    // reminder-delivered event the note is the context the user would
+    // otherwise have to dig out of the original message or file, and the
+    // marker lets another device's import recognise our mirror even when the
+    // note replaced the default description (issue #100 review R2).
+    notes: nextdoEventNotes(spec.notes),
     alarms,
   };
 }

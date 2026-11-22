@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   getCalendarPermission,
+  isCalendarImportSupported,
   isCalendarSupported,
   openCalendarSettings,
   requestCalendarPermission,
@@ -16,6 +17,10 @@ export interface UseCalendarPermissionResult {
   /** The OS can write to a calendar at all on this host (false until the
    *  platform probe resolves — the desktop answer comes from the shell). */
   supported: boolean;
+  /** The OS calendar can also be READ for the busy-time import (issue #100
+   *  review R1). Writing and reading are separate capabilities: the macOS
+   *  bridge writes but exposes no read command, so it is false there. */
+  importSupported: boolean;
   /** null until the first read resolves. */
   permission: CalendarPermission | null;
   requestAccess: () => Promise<CalendarPermission>;
@@ -24,18 +29,22 @@ export interface UseCalendarPermissionResult {
 
 export function useCalendarPermission(): UseCalendarPermissionResult {
   const [supported, setSupported] = useState(false);
+  const [importSupported, setImportSupported] = useState(false);
   const [permission, setPermission] = useState<CalendarPermission | null>(null);
 
   useEffect(() => {
     let disposed = false;
-    void isCalendarSupported().then((available) => {
-      if (disposed) return;
-      setSupported(available);
-      if (!available) return;
-      void getCalendarPermission().then((state) => {
-        if (!disposed) setPermission(state);
-      });
-    });
+    void Promise.all([isCalendarSupported(), isCalendarImportSupported()]).then(
+      ([available, canImport]) => {
+        if (disposed) return;
+        setSupported(available);
+        setImportSupported(canImport);
+        if (!available) return;
+        void getCalendarPermission().then((state) => {
+          if (!disposed) setPermission(state);
+        });
+      },
+    );
     return () => {
       disposed = true;
     };
@@ -51,5 +60,5 @@ export function useCalendarPermission(): UseCalendarPermissionResult {
     await openCalendarSettings();
   }, []);
 
-  return { supported, permission, requestAccess, openSystemSettings };
+  return { supported, importSupported, permission, requestAccess, openSystemSettings };
 }

@@ -69,6 +69,14 @@ export interface NotificationSettings {
    */
   calendarEnabled: boolean;
   /**
+   * Issue #100: read the OS calendar's timed busy events as hard schedule
+   * blocks for the engine (read-only import). Defaults OFF — it is a
+   * privacy-relevant read and needs the same calendar permission.
+   * Device-local on purpose: the calendars on this device are not the
+   * calendars on another.
+   */
+  calendarImportEnabled: boolean;
+  /**
    * Which channel delivers a reminder notification — EXACTLY one:
    *   `app`      — the app's own OS notification (default);
    *   `calendar` — a system calendar event with an alarm, so the OS calendar
@@ -96,6 +104,7 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   reminderSoundEnabled: true,
   soundTone: 'gentle',
   calendarEnabled: false,
+  calendarImportEnabled: false,
   reminderChannel: 'app',
 };
 
@@ -222,6 +231,10 @@ export function parseNotificationSettings(raw: string | null): NotificationSetti
       reminderSoundEnabled: pickBoolean(parsed.reminderSoundEnabled, defaults.reminderSoundEnabled),
       soundTone: pickEnum(parsed.soundTone, NOTIFICATION_SOUND_TONES, defaults.soundTone),
       calendarEnabled: pickBoolean(parsed.calendarEnabled, defaults.calendarEnabled),
+      calendarImportEnabled: pickBoolean(
+        parsed.calendarImportEnabled,
+        defaults.calendarImportEnabled,
+      ),
       reminderChannel: normalizeReminderChannel(parsed.reminderChannel, defaults.reminderChannel),
     };
   } catch {
@@ -274,6 +287,7 @@ export async function saveNotificationSettings(
     reminderSoundEnabled: patch.reminderSoundEnabled ?? current.reminderSoundEnabled,
     soundTone: patch.soundTone ?? current.soundTone,
     calendarEnabled: patch.calendarEnabled ?? current.calendarEnabled,
+    calendarImportEnabled: patch.calendarImportEnabled ?? current.calendarImportEnabled,
     reminderChannel: patch.reminderChannel ?? current.reminderChannel,
   };
   // Write FIRST, then adopt: a failed write must not leave the cache claiming

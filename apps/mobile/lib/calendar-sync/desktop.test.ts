@@ -28,10 +28,13 @@ import {
   createCalendarEvent,
   ensureCalendar,
   getCalendarPermission,
+  isCalendarImportSupported,
   isCalendarSupported,
+  listEventsForImport,
   openCalendarSettings,
   requestCalendarPermission,
 } from './index';
+import { nextdoEventNotes } from './reconcile';
 
 const SPEC = {
   actionId: 'action-1',
@@ -88,6 +91,11 @@ describe('desktop calendar boundary', () => {
     });
 
     await expect(isCalendarSupported()).resolves.toBe(true);
+    // Writing and reading are separate capabilities (issue #100 review R1):
+    // the macOS bridge has write commands only, so the import entry must be
+    // withheld even though the write switch is offered.
+    await expect(isCalendarImportSupported()).resolves.toBe(false);
+    await expect(listEventsForImport(new Date(), new Date())).resolves.toBeNull();
     await expect(getCalendarPermission()).resolves.toBe('granted');
     await expect(ensureCalendar()).resolves.toEqual({ kind: 'desktop', id: 'nextdo' });
 
@@ -129,7 +137,8 @@ describe('desktop calendar boundary', () => {
     ) as [string, { args: Record<string, unknown> }];
     expect(args.args).toEqual({
       title: SPEC.title,
-      notes: SPEC.notes,
+      // The user note is kept; the origin marker is appended after it.
+      notes: nextdoEventNotes(SPEC.notes),
       startsAt: Date.parse(SPEC.startsAt),
       durationMinutes: 15,
       alarmOffsetMinutes: 0,
