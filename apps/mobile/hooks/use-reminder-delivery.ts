@@ -11,8 +11,11 @@
  *   foreground  → native AppState 'active' / webview 'focus' → reconcile
  *                 (AC2: after OS-persisted scheduling this is drift
  *                 protection, not the primary trigger)
- *   tauri tick  → 30 s setInterval (desktop in-session delivery, design
- *                 §4.2 — ±35 s accuracy, PRD R3)
+ *   in-session
+ *   tick        → 30 s setInterval for the platforms without OS scheduling
+ *                 (tauri desktop, issue #92 plain web): future fires_at
+ *                 deliver while the app/page stays open (design §4.2 —
+ *                 ±35 s accuracy, PRD R3)
  *
  * The reconcile itself is PURE (`lib/reminders/reminder-scheduler.ts`,
  * unit-tested); this hook is only the wiring.
@@ -55,8 +58,9 @@ const WATCHED_TABLES = ['reminders', 'next_actions', 'calendar_actions', 'habit_
  *  table at once). */
 const ON_CHANGE_DEBOUNCE_MS = 1000;
 
-/** Design §4.2: the desktop tick (accuracy ±35 s, PRD R3). */
-const TAURI_TICK_MS = 30_000;
+/** Design §4.2: the in-session tick (accuracy ±35 s, PRD R3) — tauri and
+ *  plain web, neither of which has OS-side scheduling. */
+const IN_SESSION_TICK_MS = 30_000;
 
 /** R4: a notification tap lands on the Now tab. */
 const NOW_TAB_ROUTE = '/(tabs)/now';
@@ -92,15 +96,20 @@ export function useReminderDelivery(): UseReminderDeliveryResult {
   // Issue #63: `calendar` means the system calendar is the notifier — the
   // app must then hold NO pending notification, or the user is told twice.
   const reminderChannelRef = useRef(DEFAULT_NOTIFICATION_SETTINGS.reminderChannel);
+  // The stored switch must be read BEFORE any reconcile (see the mount
+  // effect). Web delivers immediately, so an early onChange poke with the
+  // default ON while the user's stored value is OFF would be an audible
+  // mistake — gate every trigger until the load settles.
+  const settingsReadyRef = useRef(false);
 
   const runReconcile = useCallback((): Promise<unknown> => {
-    const mode = adapter.platform === 'web' ? null : adapter.platform;
-    if (mode === null) return Promise.resolve();
+    if (!settingsReadyRef.current) return Promise.resolve();
+    const mode = adapter.platform;
     queueRef.current = queueRef.current
       .then(async () => {
         const rows = await listScheduledReminders(db);
         const pendingIds = await adapter.listPendingIds();
-        const tauriContext = adapter.tauriContext?.();
+        const sessionContext = adapter.sessionContext?.();
         // The calendar channel only exists on iOS/Android (`useCalendarSync`
         // is mounted there alone), so on any other platform the app keeps
         // delivering even with `reminderChannel: 'calendar'`. A denied or
@@ -120,8 +129,8 @@ export function useReminderDelivery(): UseReminderDeliveryResult {
           now: new Date(),
           rows,
           pendingIds,
-          ...(tauriContext !== undefined
-            ? { firedIds: tauriContext.firedIds, sessionStart: tauriContext.sessionStart }
+          ...(sessionContext !== undefined
+            ? { firedIds: sessionContext.firedIds, sessionStart: sessionContext.sessionStart }
             : {}),
         });
         // Field diagnostics for the desktop delivery path (no-op outside
@@ -179,6 +188,11 @@ export function useReminderDelivery(): UseReminderDeliveryResult {
         if (disposed) return;
         masterEnabledRef.current = settings.masterEnabled;
         reminderChannelRef.current = settings.reminderChannel;
+        // Issue #92 review: the in-session adapters (web) must see the
+        // switch AT THE MOMENT they call the browser API, not only when the
+        // reconcile output was produced — a flip during the service-worker
+        // wait must suppress the send.
+        adapter.setDeliveryEnabled?.(settings.masterEnabled);
         // Issue #54: the adapter needs the sound preferences before it arms
         // anything (the silent channel / `sound: false` live there).
         await adapter.setSoundPreferences?.({
@@ -193,6 +207,9 @@ export function useReminderDelivery(): UseReminderDeliveryResult {
           error instanceof Error ? error : new Error(String(error)),
         );
       }
+      // Every trigger below is gated on this flag; the mount reconcile (and
+      // any later poke) is the first chance to act on the stored switch.
+      settingsReadyRef.current = true;
       void runReconcile();
       void adapter
         .permission()
@@ -208,9 +225,9 @@ export function useReminderDelivery(): UseReminderDeliveryResult {
   }, [adapter, runReconcile]);
 
   // Data changes (local writes + sync inflow) — debounced (design §5.2).
-  // Skipped on plain web: the noop adapter has nothing to reconcile.
+  // Every platform consumes this now: web delivery is foreground-only but a
+  // new/changed reminder must still be reconciled immediately.
   useEffect(() => {
-    if (adapter.platform === 'web') return;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const dispose = powersync.onChange(
       {
@@ -230,9 +247,8 @@ export function useReminderDelivery(): UseReminderDeliveryResult {
   }, [powersync, runReconcile, adapter]);
 
   // Foreground return (AC2 drift protection): native AppState 'active' /
-  // tauri webview 'focus'.
+  // webview 'focus'. Plain web uses the same window focus event.
   useEffect(() => {
-    if (adapter.platform === 'web') return;
     if (Platform.OS === 'web') {
       const host = globalThis as {
         addEventListener?: (type: string, listener: () => void) => void;
@@ -262,6 +278,11 @@ export function useReminderDelivery(): UseReminderDeliveryResult {
     return subscribeToNotificationSettings((settings) => {
       masterEnabledRef.current = settings.masterEnabled;
       reminderChannelRef.current = settings.reminderChannel;
+      // Issue #92 review: the live gate must flip synchronously, BEFORE the
+      // async sound-preferences work — an apply already awaiting the
+      // service worker checks it right before sending.
+      adapter.setDeliveryEnabled?.(settings.masterEnabled);
+      settingsReadyRef.current = true;
       void Promise.resolve(
         adapter.setSoundPreferences?.({
           enabled: settings.reminderSoundEnabled,
@@ -271,15 +292,16 @@ export function useReminderDelivery(): UseReminderDeliveryResult {
     });
   }, [adapter, runReconcile]);
 
-  // The desktop tick (tauri only — in-session delivery, design §4.2).
+  // The in-session tick (tauri + plain web — neither has OS scheduling;
+  // design §4.2). Web delivery therefore requires the page to stay open.
   useEffect(() => {
-    if (adapter.platform !== 'tauri') return;
+    if (adapter.platform !== 'tauri' && adapter.platform !== 'web') return;
     const intervalId = setInterval(() => {
-      // R2: with the switch off there is nothing to deliver, and tauri holds
-      // no OS-side schedule to withdraw — skip the DB read entirely.
+      // R2: with the switch off there is nothing to deliver, and these
+      // modes hold no OS-side schedule to withdraw — skip the DB read.
       if (!masterEnabledRef.current) return;
       void runReconcile();
-    }, TAURI_TICK_MS);
+    }, IN_SESSION_TICK_MS);
     return () => {
       clearInterval(intervalId);
     };

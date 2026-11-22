@@ -6,7 +6,8 @@
  *   (the notification still fires after the app is force-killed);
  * - `tauri` (desktop webview): tauri-plugin-notification — in-session
  *   delivery only (the desktop plugin cannot schedule, research-verified);
- * - `web` (plain browser): no-op (R6).
+ * - `web` (plain browser): Notification API / service worker — in-session
+ *   delivery only while the page is open (issue #92).
  *
  * The hook (`hooks/use-reminder-delivery.ts`) is the only consumer. The
  * adapters are THIN wrappers over the platform modules — the pure decision
@@ -62,8 +63,21 @@ export interface DeliveryAdapter {
    */
   listPendingIds(): Promise<Set<string>>;
   /** Apply one reconcile output (the adapter honors the parts its mode
-   *  produces: native → schedule/cancel, tauri → fireNow). */
+   *  produces: native → schedule/cancel, tauri/web → fireNow). An adapter
+   *  whose fire path awaits before the notification call must re-check
+   *  `setDeliveryEnabled` after that await (the web adapter does — a switch
+   *  flipped during the wait must not deliver). */
   apply(output: ReconcileOutput): Promise<void>;
+  /**
+   * The hook's latest effective delivery decision (currently consumed by
+   * the web adapter). The web adapter keeps this as a LIVE gate — `apply`
+   * consults it again after the awaited service-worker/permission step, so
+   * turning the in-app switch off during that wait suppresses the send.
+   * Optional: native schedules in the OS and withdraws through `apply`'s
+   * cancel operations; the tauri fire path has no awaited service-worker
+   * step and does not implement this yet.
+   */
+  setDeliveryEnabled?(enabled: boolean): void;
   /** The current OS permission state (R5). */
   permission(): Promise<ReminderPermissionState>;
   /** Ask the OS (native: the system prompt, only while undetermined;
@@ -74,11 +88,12 @@ export interface DeliveryAdapter {
    *  `ACTION_APP_NOTIFICATION_SETTINGS` with the package, falling back to
    *  the app details page. No-op on tauri/web. */
   openSystemSettings(): Promise<void>;
-  /** Tauri-only reconcile context (the in-session fired set + session
-   *  start) — native/web adapters omit it (their modes don't consume it). */
-  tauriContext?(): { firedIds: ReadonlySet<string>; sessionStart: Date };
+  /** In-session modes (tauri/web): the delivered-id set + session start
+   *  consumed by `computeReconcile`'s dedupe; native omits it. */
+  sessionContext?(): { firedIds: ReadonlySet<string>; sessionStart: Date };
   /** Issue #54: apply the reminder-sound switch/tone. Optional so the
-   *  web/noop adapters ignore it; the hook calls it after the initial
+   *  web adapter ignores it (browser notifications have no app-tone
+   *  channel); the hook calls it after the initial
    *  settings load and on every settings change, then re-reconciles. May be
    *  async (native re-arms pending notifications when the switch flips). */
   setSoundPreferences?(preferences: ReminderSoundPreferences): void | Promise<void>;

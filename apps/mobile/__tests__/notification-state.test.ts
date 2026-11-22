@@ -64,6 +64,24 @@ describe('describeNotificationState — the effective state (issue #45 R5)', () 
     expect(describeNotificationState(true, tauri('granted')).detail).toContain('应用关闭期间不会提醒');
   });
 
+  it('web granted states the foreground-only boundary (issue #92)', () => {
+    const state = describeNotificationState(true, web('granted'));
+    expect(state.detail).toContain('页面关闭后不会提醒');
+  });
+
+  it('web denied → 浏览器通知未开启 and points at the browser site permission (issue #92)', () => {
+    const state = describeNotificationState(true, web('denied'));
+    expect(state.title).toBe('浏览器通知未开启');
+    expect(state.detail).toContain('允许此网站发送通知');
+  });
+
+  it('web undetermined asks for the browser gesture and states the page-open boundary (issue #92)', () => {
+    const state = describeNotificationState(true, web('undetermined'));
+    expect(state.title).toBe('等待系统授权');
+    expect(state.detail).toContain('点下方按钮允许此网站发送通知');
+    expect(state.detail).toContain('页面打开时送达');
+  });
+
   it('loading (either side still null) → 检查中, with no claim either way', () => {
     expect(describeNotificationState(null, native('granted')).detail).toBe('检查中…');
     expect(describeNotificationState(true, null).detail).toBe('检查中…');

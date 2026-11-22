@@ -210,7 +210,7 @@ export function createTauriAdapter(): DeliveryAdapter {
       // directly (the Settings block only shows text on tauri).
     },
 
-    tauriContext(): { firedIds: ReadonlySet<string>; sessionStart: Date } {
+    sessionContext(): { firedIds: ReadonlySet<string>; sessionStart: Date } {
       return { firedIds, sessionStart: sessionStart ?? new Date() };
     },
 

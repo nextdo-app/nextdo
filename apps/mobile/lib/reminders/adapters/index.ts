@@ -2,7 +2,7 @@
  * Platform selection (design §4.3):
  *
  *   Platform.OS === 'web'
- *     ? (isTauriRuntime() ? tauri : noop)
+ *     ? (isTauriRuntime() ? tauri : web)
  *     : native
  *
  * The adapter is a MODULE SINGLETON: the root-layout delivery hook and
