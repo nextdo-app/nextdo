@@ -27,13 +27,17 @@
 6. **同步服务器产品定位（决策项）**（09-30 新增）
    - 现状：用户自行部署 Postgres + PowerSync 栈，在设置页填两地址 + token（09-28 任务拍板「用户自选」）。自用可行；公开发布门槛过高。
    - 需拍板：v1 同步定位 = 个人服务器模式 + 文档说明，还是官方公共同步服务器（后者此前定为 post-MVP）。
+7. **外部日历双向同步与 CalDAV（issue #100 未完成部分）**（11-21 新增）
+   - 现状：已交付系统日历只读导入 —— 定时忙碌事件作为引擎硬日程约束（`.trellis/research/external-calendar-import.md`）。
+   - 缺口：CalDAV / Google Calendar / Apple Calendar 账号导入；把应用内日程写回外部日历；双向同步的冲突规则与用户确认流程。
+   - 依据：issue #100「先做只读导入，再做双向」；README 路线图。
 
 ## 候选（长期）
 
-7. Clarify 进阶字段（时间窗口、场景绑定）（原候选 #4）
-8. 引擎上下文的 settings 表化（进同步面）（原候选 #5）
-9. CalendarAction 支持 projectId（journal-1 session 10 Next Steps）
-10. 商店素材与版本细节：splash 屏（`app.json` 无 splash 配置）、EAS `submit` 配置为空、版本号不齐（mobile 0.1.2 / desktop 0.1.1 / 根 0.1.1）（09-30 新增）
+8. Clarify 进阶字段（时间窗口、场景绑定）（原候选 #4）
+9. 引擎上下文的 settings 表化（进同步面）（原候选 #5）
+10. CalendarAction 支持 projectId（journal-1 session 10 Next Steps）
+11. 商店素材与版本细节：splash 屏（`app.json` 无 splash 配置）、EAS `submit` 配置为空、版本号不齐（mobile 0.1.2 / desktop 0.1.1 / 根 0.1.1）（09-30 新增）
 
 ## 09-30 清理的过时条目
 

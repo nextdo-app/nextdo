@@ -271,6 +271,16 @@ jest.mock('@powersync/react', () => {
 // (mocked: idle OS state — nothing pending, permission undetermined).
 jest.mock('expo-notifications', () => mockExpoNotifications);
 
+// Issue #100 review R1: READING the OS calendar is a separate capability from
+// writing. jest runs as iOS, so the host can write; this flag decides only
+// whether the busy-time import entry is offered. The tests below flip it to
+// prove the switch follows read support (a write-only host must not show it).
+const mockCalendarImportSupported = { value: false };
+jest.mock('@/lib/calendar-sync', () => ({
+  ...jest.requireActual('@/lib/calendar-sync'),
+  isCalendarImportSupported: async () => mockCalendarImportSupported.value,
+}));
+
 import { mockExpoNotifications } from './mocks/expo-notifications';
 
 import { render } from '@testing-library/react-native';
@@ -361,6 +371,7 @@ beforeEach(() => {
   mockConnectorConfigs = [];
   mockClipboardString = '';
   hook = null;
+  mockCalendarImportSupported.value = false;
   // Idle OS permission state (the notifications block tests override it
   // per case — task 09-30 R5).
   mockUpdateFetch = jest.fn();
@@ -1916,6 +1927,32 @@ describe('settings habit reminders block', () => {
 });
 
 /* ------------------------------------------------------------------ *
+ * 系统日历导入入口按「读取能力」显示（issue #100 review R1）
+ * ------------------------------------------------------------------ */
+describe('calendar import entry follows READ capability (#100 R1)', () => {
+  it('a write-only host gets no import switch and an explanation', async () => {
+    mockCalendarImportSupported.value = false;
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+
+    // The write switch is available (jest runs as iOS) …
+    expect(screen.getByText('写入系统日历')).toBeTruthy();
+    // … but the import entry must not be offered when reading is unsupported.
+    expect(screen.queryByText('导入系统日历忙碌时间')).toBeNull();
+    expect(screen.getByText('当前平台可以写入系统日历，但暂不支持读取外部日程。')).toBeTruthy();
+  });
+
+  it('a read-capable host renders the import switch', async () => {
+    mockCalendarImportSupported.value = true;
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+
+    expect(screen.getByText('导入系统日历忙碌时间')).toBeTruthy();
+    expect(screen.queryByText('当前平台可以写入系统日历，但暂不支持读取外部日程。')).toBeNull();
+  });
+});
+
+/* ------------------------------------------------------------------ *
  * connect() input branches the button cannot reach (canSubmit requires
  * an address; the token is required but NOT button-gated) — driven
  * through the real hook, for BOTH input shapes.
@@ -1997,4 +2034,3 @@ describe('connect() input branches (button cannot reach)', () => {
   //  Settings screen, so a duplicate render-only harness here would assert
   //  the same thing with more moving parts.
 });
-

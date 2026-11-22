@@ -75,6 +75,32 @@ describe('buildCalendarSyncPlan', () => {
     expect(plan.toDelete).toEqual([]);
   });
 
+  it('updates a pre-#100 mapping once so its event gains the origin marker', () => {
+    // A mirror written before the marker existed: its stored signature has
+    // the plain user note. The next pass must rewrite it once, otherwise a
+    // second device cannot recognise it as Nextdo's own event (review R2).
+    const row = action({ id: 'ca-1', note: '带合同' });
+    const startsAtMs = new Date(row.startsAt).getTime();
+    const oldSignature = [
+      row.title,
+      new Date(startsAtMs).toISOString(),
+      new Date(startsAtMs + row.estMinutes * MIN).toISOString(),
+      '带合同',
+    ].join('\u0000');
+
+    const plan = buildCalendarSyncPlan({
+      enabled: true,
+      actions: [row],
+      mappings: { 'ca-1': { eventId: 'evt-1', signature: oldSignature } },
+      now: NOW,
+    });
+
+    expect(plan.toCreate).toEqual([]);
+    expect(plan.toUpdate).toHaveLength(1);
+    expect(plan.toUpdate[0]!.eventId).toBe('evt-1');
+    expect(plan.toUpdate[0]!.notes).toBe('带合同');
+  });
+
   it('is idempotent: an unchanged action stays retained, nothing to write', () => {
     const unchanged = spec({ id: 'ca-1' });
     const mappings: CalendarSyncMappings = {

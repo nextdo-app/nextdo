@@ -21,7 +21,7 @@
  */
 import { logger } from '@nextdo/core';
 import type { CalendarPermission } from './device';
-import { calendarEventSignature, type CalendarSyncEventSpec, type CalendarSyncMapping, type CalendarSyncUpdate } from './reconcile';
+import { calendarEventSignature, nextdoEventNotes, type CalendarSyncEventSpec, type CalendarSyncMapping, type CalendarSyncUpdate } from './reconcile';
 
 /** The Tauri v2 IPC bridge injected into the webview (see `adapters/tauri.ts`). */
 interface TauriInternals {
@@ -113,7 +113,9 @@ function upsertArgs(spec: CalendarSyncEventSpec, eventId?: string): Record<strin
     args: {
       ...(eventId === undefined ? {} : { eventId }),
       title: spec.title,
-      ...(spec.notes === undefined ? {} : { notes: spec.notes }),
+      // Always present: the user note (when any) plus the origin marker that
+      // lets another device's import recognise this mirror (issue #100 R2).
+      notes: nextdoEventNotes(spec.notes),
       startsAt: startsAtMs,
       durationMinutes: Math.max(durationMs, 60_000) / 60_000,
       // The event's start IS the reminder moment — the system calendar

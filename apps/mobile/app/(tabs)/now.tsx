@@ -640,7 +640,7 @@ export default function NowScreen() {
   const now = useAppClock();
   const { isDark } = useAppTheme();
   const { settings, update, error: settingsError } = useEngineContextSettings();
-  const { data, error } = useNow(settings);
+  const { data, error, calendarImportError } = useNow(settings);
   const { skip, error: skipError } = useSkipAction();
   const { snooze, error: snoozeError } = useSnoozeAction();
   const { trash, error: trashError } = useTrashAction();
@@ -959,6 +959,11 @@ export default function NowScreen() {
         ) : null}
         {settingsError !== null ? (
           <Text className="mt-2 font-sans text-sm text-danger">{errorMessage(settingsError)}</Text>
+        ) : null}
+        {calendarImportError !== null ? (
+          <Text className="mt-2 font-sans text-xs text-muted dark:text-muted-dark">
+            {calendarImportError}
+          </Text>
         ) : null}
 
         <View className="mt-3 gap-3.5">

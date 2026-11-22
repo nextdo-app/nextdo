@@ -1171,6 +1171,61 @@ export default function SettingsScreen() {
                     </>
                   )}
                 </View>
+
+                {/*
+                  * Issue #100（只读导入）：把系统日历里的定时忙碌事件作为引擎
+                  * 的硬日程约束。默认关闭——读取日历是隐私相关权限，开启时
+                  * 复用同一个授权请求。这里只读，不写回系统日历。
+                  *
+                  * 读取能力与写入能力分开判断（review R1）：macOS 桌面桥
+                  * 只能写、不能读，那里不显示开关，否则开了也没有效果。
+                  */}
+                {calendarPermission.importSupported ? (
+                  <>
+                    <View className="mt-3 flex-row items-center justify-between gap-2 border-t border-border/40 pt-3 dark:border-border-dark/40">
+                      <View className="flex-1 min-w-0 pr-2">
+                        <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+                          导入系统日历忙碌时间
+                        </Text>
+                        <Text className="mt-0.5 font-sans text-[11px] leading-tight text-muted dark:text-muted-dark">
+                          读取系统日历里的定时事件（跳过全天和「空闲」事件），与外部日程冲突的日历行动不会被推荐。只读，不会修改系统日历。
+                        </Text>
+                      </View>
+                      <View className="shrink-0">
+                        <Switch
+                          accessibilityLabel="导入系统日历忙碌时间"
+                          value={notificationSettings?.calendarImportEnabled ?? false}
+                          onValueChange={(val) => {
+                            if (!val) {
+                              void updateSettings({ calendarImportEnabled: false });
+                              return;
+                            }
+                            void calendarPermission.requestAccess().then((next) => {
+                              if (next === 'granted') {
+                                void updateSettings({ calendarImportEnabled: true });
+                              }
+                            });
+                          }}
+                          trackColor={switchTrackColor}
+                          thumbColor={switchThumbColor}
+                          {...({ activeThumbColor: switchThumbColor } as object)}
+                        />
+                      </View>
+                    </View>
+                    {!notificationSettings?.calendarImportEnabled &&
+                    calendarPermission.permission === 'denied' ? (
+                      <Text className="mt-1.5 font-sans text-[11px] leading-relaxed text-muted dark:text-muted-dark">
+                        未获得日历权限，暂时无法导入。请在系统设置中允许 Nextdo 访问日历后重试。
+                      </Text>
+                    ) : null}
+                  </>
+                ) : (
+                  <View className="mt-3 border-t border-border/40 pt-3 dark:border-border-dark/40">
+                    <Text className="font-sans text-[11px] leading-relaxed text-muted dark:text-muted-dark">
+                      当前平台可以写入系统日历，但暂不支持读取外部日程。
+                    </Text>
+                  </View>
+                )}
               </>
             ) : (
               <View className="flex-row items-start gap-3">

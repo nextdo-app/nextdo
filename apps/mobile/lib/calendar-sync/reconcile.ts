@@ -13,6 +13,25 @@
  */
 import { markdownToPlainText, type CalendarAction } from '@nextdo/core';
 
+/**
+ * The origin marker appended to EVERY event Nextdo writes (issue #54).
+ * Issue #100's read-only import uses it to avoid feeding Nextdo's own
+ * mirrored events back into the engine as external "busy" blocks — including
+ * on another device, where no local mapping exists (issue #100 review R2).
+ * It is appended AFTER the user note, never instead of it.
+ */
+export const NEXTDO_EVENT_NOTE = '由 Nextdo 自动同步';
+
+/**
+ * The description written to an OS event: the user note (when present)
+ * followed by the origin marker. Keeping both means the note still reaches
+ * another calendar app while every mirror remains recognisable on any device.
+ */
+export function nextdoEventNotes(notes?: string): string {
+  const trimmed = notes?.trim() ?? '';
+  return trimmed === '' ? NEXTDO_EVENT_NOTE : `${trimmed}\n\n${NEXTDO_EVENT_NOTE}`;
+}
+
 export interface CalendarSyncEventSpec {
   actionId: string;
   title: string;
@@ -62,9 +81,16 @@ export interface CalendarSyncPlan {
   retained: CalendarSyncMappings;
 }
 
-/** The persisted fingerprint of one event's user-visible content. */
+/**
+ * The persisted fingerprint of one event's user-visible content.
+ *
+ * Includes the origin marker because it is part of what was written: adding
+ * the marker to an older mirrored event (written before issue #100) changes
+ * this signature, so the next sync pass updates that event once and the
+ * cross-device import can then recognise it.
+ */
 export function calendarEventSignature(spec: CalendarSyncEventSpec): string {
-  return [spec.title, spec.startsAt, spec.endsAt, spec.notes ?? ''].join('\u0000');
+  return [spec.title, spec.startsAt, spec.endsAt, nextdoEventNotes(spec.notes)].join('\u0000');
 }
 
 export interface CalendarSyncPlanInput {
