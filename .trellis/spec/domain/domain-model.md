@@ -151,9 +151,16 @@ A single concrete step (Proposal §5.3: "运行 baseline A", never "完成论文
 
 ### WaitingForItem
 Delegated or blocked on someone/something else (Proposal §5.2).
-- `title`, `waitingOn` (who/what), `expectedBy?`, `followUpAt?`.
-- When `followUpAt` passes, the item appears in the **Daily Review** list — it never
-  enters the engine pool.
+- `title`, `waitingOn` (who/what), `expectedBy?`, `followUpAt?` (both editable
+  on the Waiting screen — issue #94).
+- `expectedBy` is a date field (stored at that day's end): once its
+  device-local day is today or past, the item appears in the **Daily /
+  Weekly Review** waiting list.
+- `followUpAt` is a moment: the item appears once that exact instant has
+  passed (a date-only pick is stored at that day's end, so it becomes due
+  then). A later time today is not yet due — the Waiting screen shows it as
+  跟进, not 待跟进.
+- Either way the item never enters the engine pool.
 
 ### CalendarAction
 Time-bound action (Proposal §5.2). `title`, `startsAt` (ISO datetime) + the shared
