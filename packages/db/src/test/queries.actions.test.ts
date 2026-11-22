@@ -778,6 +778,28 @@ describe('skipAction', () => {
       await close();
     }
   });
+
+  it('refuses a done action and leaves its skip counters untouched (issue #99)', async () => {
+    // A stale notification: the action was completed after delivery, and the
+    // user then taps 跳过 on the old notification. The skip must not write to
+    // the done row.
+    const { db, close } = await open(true);
+    try {
+      await expect(
+        skipAction(db, { actionKind: 'next', actionId: A.done, now: FIXTURE_NOW }),
+      ).rejects.toMatchObject({ code: 'action.not-open' });
+      const row = await db
+        .selectFrom('next_actions')
+        .selectAll()
+        .where('id', '=', A.done)
+        .executeTakeFirst();
+      expect(row?.status).toBe('done');
+      expect(row?.consecutive_skips).toBe(0);
+      expect(row?.last_skipped_at).toBeNull();
+    } finally {
+      await close();
+    }
+  });
 });
 
 describe('snoozeAction', () => {
@@ -808,6 +830,44 @@ describe('snoozeAction', () => {
       await expect(
         snoozeAction(db, { actionKind: 'next', actionId: '01TST0000000000000000000099', snoozedUntil: target, now: FIXTURE_NOW }),
       ).rejects.toMatchObject({ code: 'action.not-found' });
+    } finally {
+      await close();
+    }
+  });
+
+  it('refuses a done action and arms no reminder (issue #99)', async () => {
+    // A stale notification: the action was completed after delivery, and the
+    // user then taps 推迟 10 分钟. Writing snoozedUntil + a scheduled reminder
+    // to the done row would make the delivery layer re-arm a notification for
+    // an action that is already finished.
+    const { db, close } = await open(true);
+    try {
+      const target = new Date(FIXTURE_NOW.getTime() + 3600_000);
+      const before = await db
+        .selectFrom('reminders')
+        .selectAll()
+        .where('action_id', '=', A.done)
+        .execute();
+      await expect(
+        snoozeAction(db, { actionKind: 'next', actionId: A.done, snoozedUntil: target, now: FIXTURE_NOW }),
+      ).rejects.toMatchObject({ code: 'action.not-open' });
+      const row = await db
+        .selectFrom('next_actions')
+        .selectAll()
+        .where('id', '=', A.done)
+        .executeTakeFirst();
+      expect(row?.status).toBe('done');
+      expect(row?.snoozed_until).toBeNull();
+      expect(row?.last_snoozed_at).toBeNull();
+      const after = await db
+        .selectFrom('reminders')
+        .selectAll()
+        .where('action_id', '=', A.done)
+        .execute();
+      // The fixture row (cancelled) is unchanged and no scheduled reminder
+      // was created.
+      expect(after).toHaveLength(before.length);
+      expect(after.filter((reminder) => reminder.state === 'scheduled')).toHaveLength(0);
     } finally {
       await close();
     }
@@ -913,11 +973,18 @@ describe('reopenAction — the restore transaction (issue 27)', () => {
   it('puts a done action back to open, clearing snooze state and skips', async () => {
     const { db, close } = await open(true);
     try {
+      // Seed the snooze/skip state directly: `snoozeAction` now refuses a
+      // done row (issue #99), and this test is about the restore transaction
+      // clearing whatever state a done row carries — not about how it got
+      // there.
       const target = new Date(FIXTURE_NOW.getTime() + 3600_000);
-      await snoozeAction(db, { actionKind: 'next', actionId: A.done, now: FIXTURE_NOW, snoozedUntil: target });
       await db
         .updateTable('next_actions')
-        .set({ consecutive_skips: 3 })
+        .set({
+          snoozed_until: toIso(target),
+          last_snoozed_at: toIso(FIXTURE_NOW),
+          consecutive_skips: 3,
+        })
         .where('id', '=', A.done)
         .execute();
 

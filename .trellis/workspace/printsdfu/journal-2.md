@@ -486,6 +486,17 @@ Topics: [.trellis/research/external-calendar-import.md](../../research/external-
 
 在行动编辑弹窗加入适用日、可选时间段与前置行动（单选），保存走完整行语义，清空即写 undefined/NULL；updateNextAction 合并行补上 dependsOnId/windowStart/windowEnd/windowDays，此前这些字段保存会被静默丢弃。新增 useActionDependencyOptions：排除自身与直接/间接依赖自身的行动以防成环，候选读取失败时保留原依赖。Now 屏被过滤区块在存在可执行行动时也显示，window-mismatch 与 dependency 行可直接打开编辑。测试：db 读写与清空、now-screen 三条（保存/过滤中可编辑/清空）。门禁 pnpm verify:web --no-serve 全绿 1645；浏览器实测窗口外过滤、依赖未完成过滤、清除恢复、完成依赖恢复、写入失败保留、候选读取失败保留原依赖。
 Topics: [.trellis/research/next-action-window-deps.md](../../research/next-action-window-deps.md)
+## Session 78: 通知内联操作：完成 / 推迟 / 跳过
+<!-- trellis-session: v=3 fp=9392147e9ad55fdf -->
+
+**Date**: 2026-11-21
+**Task**: 通知内联操作：完成 / 推迟 / 跳过
+**Branch**: `feat/notification-inline-actions`
+
+### Summary
+
+实现 issue #99：原生提醒注册「完成 / 推迟 10 分钟 / 跳过」动作目录，响应经适配器分发到 delivery hook，分别执行 completeAction / snoozeAction / skipAction；失败以根布局中文横幅提示；web 直接通知点击聚焦窗口，桌面/未知动作降级为打开应用。新增纯解析、适配器、hook 与横幅测试；门禁 1664 项与 Web 冒烟通过。详见 research 主题。
+Topics: [.trellis/research/notification-inline-actions.md](../../research/notification-inline-actions.md)
 
 ### Git Commits
 
@@ -520,6 +531,17 @@ Topics: [.trellis/research/next-action-window-deps.md](../../research/next-actio
 
 处理第二轮 4 项 P2：1) 弹窗改为只有用户实际改过的窗口/依赖字段才进 patch，候选读取失败或仍在加载时省略 dependsOnId，改标题不再覆盖另一处刚保存的依赖；2) 候选列表外的日历/习惯前置在未改动时保留，只有「无依赖」显式清除；3) 单边时间窗口未改动时不校验完整性，可只改标题，修改时间段后恢复完整起止校验；4) updateNextAction 在同一写事务内沿依赖链回溯，自身或重复 id 抛 action.dependency-cycle，覆盖两个已打开编辑器互选对方的场景，并映射中文错误。测试新增：db 成环（两节点/自身/三节点链）与旧快照回归；now 屏读取失败省略键、日历依赖保留与显式清除、单边窗口。门禁 pnpm verify:web --no-serve 全绿 1650（core275/server133/db373/mobile869）。浏览器 r3 全部通过：适用日/时间段过滤、回填、刷新、清除、依赖、两类故障注入、hooksWarnings=0。reviewer 曾被人类重启，已重发完整材料。
 Topics: [.trellis/research/next-action-window-deps.md](../../research/next-action-window-deps.md)
+## Session 79: 修复 #99 审查问题：旧通知状态校验与完成范围
+<!-- trellis-session: v=3 fp=30ca0409957b86bc -->
+
+**Date**: 2026-11-21
+**Task**: 修复 #99 审查问题：旧通知状态校验与完成范围
+**Branch**: `feat/notification-inline-actions`
+
+### Summary
+
+按 reviewer 要求，推迟/跳过在规范事务内检查行动仍为 open；旧通知不能给已完成行动写 snooze/skip 或新建 scheduled reminder，失败以 action.not-open 走中文横幅。新增 db 与 hook 回归，恢复事务测试改为直接写入状态。确认 #99 为部分完成：当前交付前台路径（opensAppToForeground），后台事务保留在 backlog。门禁 1669 项与 Web 冒烟通过。
+Topics: [.trellis/research/notification-inline-actions.md](../../research/notification-inline-actions.md)
 
 ### Git Commits
 

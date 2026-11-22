@@ -51,6 +51,11 @@ export const mockExpoNotifications = {
 
   // Handler + listeners (the adapter registers them on init).
   setNotificationHandler: jest.fn(),
+  // Issue #99: the reminder inline-action category (idle: accepts silently).
+  setNotificationCategoryAsync: jest.fn(async (identifier: string) => ({
+    identifier,
+    actions: [],
+  })),
   addNotificationResponseReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
   addNotificationReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
 

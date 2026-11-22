@@ -704,6 +704,28 @@ export async function reopenAction(
   });
 }
 
+/**
+ * The open-status guard shared by snooze and skip (issue #99 review).
+ * Both are only meaningful on an action the user can still act on — and a
+ * notification action can arrive arbitrarily late: the user may have
+ * completed (or deleted) the action elsewhere after the reminder was
+ * delivered. Writing snooze/skip state to a `done` row would resurrect a
+ * delivered reminder or inflate the skip streak of a completed action.
+ * The check runs INSIDE the write transaction (on the row the write uses),
+ * so a concurrent completion cannot slip between check and update.
+ */
+function assertActionOpen(
+  actionKind: ActionKind,
+  row: { status: string | null },
+): void {
+  if (row.status !== 'open') {
+    throw new ValidationNextdoError(
+      'action.not-open',
+      `Cannot act on a ${actionKind} action whose status is ${row.status ?? 'unknown'}`,
+    );
+  }
+}
+
 /** "换一个": consecutiveSkips += 1, lastSkippedAt = now (no reminder is ever
  *  created from skips — domain-model.md Reminder rules). */
 export async function skipAction(
@@ -713,8 +735,9 @@ export async function skipAction(
   const { actionKind, actionId, now } = args;
   const nowIso = toIso(now);
   const table = ACTION_TABLES[actionKind];
-  const row = await loadActionRow(db, actionKind, actionId);
   await db.transaction().execute(async (tx) => {
+    const row = await loadActionRow(tx, actionKind, actionId);
+    assertActionOpen(actionKind, row);
     await tx
       .updateTable(table)
       .set({
@@ -749,7 +772,8 @@ export async function snoozeActionInTransaction(
   const nowIso = toIso(now);
   const snoozedUntilIso = toIso(snoozedUntil);
   const table = ACTION_TABLES[actionKind];
-  await loadActionRow(db, actionKind, actionId);
+  const row = await loadActionRow(db, actionKind, actionId);
+  assertActionOpen(actionKind, row);
   const reminder = snoozeReminderSpec(snoozedUntil);
   await db
     .updateTable(table)

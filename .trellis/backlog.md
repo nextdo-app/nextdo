@@ -7,10 +7,6 @@
 
 ## 当前推荐（P0 — 公开发布前必须关闭）
 
-1. **提醒通知投递**（09-30 升为 P0；原候选「推送通知」）
-   - 现状：snooze 事务已写 `reminders` 行（`packages/db/src/queries/actions.ts`，`fires_at` / `intensity` 齐备），但 app 侧**没有任何投递逻辑** —— `expo-notifications` 未安装、无本地通知调度、无权限申请、无客户端代码读 reminders 表。用户点「稍后」后手机永远不会提醒。
-   - 形态（实现前细化）：expo-notifications + 本地通知调度（消费 reminders 行，app 重启后补排程）；提醒三档强度映射；通知内直接「完成 / 推迟 / 跳过」操作（Proposal §8）。
-   - 依据：Proposal MVP 表 Reminder 与 Snooze 均为「必须」；09-30 核查。
 2. **iOS 分发**（09-30 新增）
    - 现状：`.github/workflows/release.yml` 覆盖桌面三平台 + Android 按 ABI 拆 APK（EAS）；iOS 被明确排除在流水线外（需 Apple 签名凭证）。主力机是 iPhone 的话这是发布阻断项。
    - 形态：EAS iOS 构建（App Store Connect / 至少 TestFlight），接入 release 流水线。
@@ -31,12 +27,16 @@
    - 现状：已交付系统日历只读导入 —— 定时忙碌事件作为引擎硬日程约束（`.trellis/research/external-calendar-import.md`）。
    - 缺口：CalDAV / Google Calendar / Apple Calendar 账号导入；把应用内日程写回外部日历；双向同步的冲突规则与用户确认流程。
    - 依据：issue #100「先做只读导入，再做双向」；README 路线图。
+8. **通知动作的后台事务（issue #99 未完成部分）**（11-21 新增）
+   - 现状：issue #99 的前台路径已交付 —— 三个按钮保持 `opensAppToForeground: true`，系统打开应用后执行 `completeAction` / `snoozeAction` / `skipAction`。应用被杀死或处于后台时不是纯后台执行。
+   - 缺口：Android 可用 `expo-task-manager` + `Notifications.registerTaskAsync` 在通知动作的后台任务中执行事务，需新增原生依赖、在后台上下文初始化本地数据库，并用真实设备验证；iOS 终止态不支持通知动作的后台 JS 任务。
+   - 依据：issue #99「操作在后台完成对应事务」；`.trellis/research/notification-inline-actions.md`「未完成」。
 
 ## 候选（长期）
 
-7. Clarify 进阶字段（时间窗口、场景绑定）（原候选 #4）
-8. CalendarAction 支持 projectId（journal-1 session 10 Next Steps）
-9. 商店素材与版本细节：splash 屏（`app.json` 无 splash 配置）、EAS `submit` 配置为空、版本号不齐（mobile 0.1.2 / desktop 0.1.1 / 根 0.1.1）（09-30 新增）
+9. Clarify 进阶字段（时间窗口、场景绑定）（原候选 #4）
+10. CalendarAction 支持 projectId（journal-1 session 10 Next Steps）
+11. 商店素材与版本细节：splash 屏（`app.json` 无 splash 配置）、EAS `submit` 配置为空、版本号不齐（mobile 0.1.2 / desktop 0.1.1 / 根 0.1.1）（09-30 新增）
 
 ## 09-30 清理的过时条目
 
@@ -55,6 +55,10 @@
 ## 11-20 清理的过时条目
 
 - ~~引擎上下文的 settings 表化（进同步面）~~（原候选 #8）：已由 issue #97 交付 —— 新增同步 `settings` 表；主题、专注时长与 Now 可用时间跨设备同步，通知 / 日历 / 更新设置保留本机（见 `.trellis/research/settings-sync.md`）。
+
+## 11-21 清理的过时条目
+
+- ~~提醒通知投递~~（原 P0 #1）：09-30-reminder-notification-delivery 已交付 expo-notifications 本地调度、三档强度、权限与点击路由；剩余的通知内联「完成 / 推迟 / 跳过」由 issue #99 交付（`.trellis/research/notification-inline-actions.md`）。
 
 ## 备注
 
