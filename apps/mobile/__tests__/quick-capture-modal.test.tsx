@@ -43,12 +43,12 @@ describe('QuickCaptureModal', () => {
     fireEvent.press(screen.getByText('记录'));
 
     await waitFor(() => {
-      expect(onAdd).toHaveBeenCalledWith('买牛奶和咖啡豆');
+      expect(onAdd).toHaveBeenCalledWith('买牛奶和咖啡豆', null);
     });
 
     // R1 handoff: the parent gets the item (it opens the Clarify wizard).
     await waitFor(() => {
-      expect(onCaptured).toHaveBeenCalledWith(ITEM);
+      expect(onCaptured).toHaveBeenCalledWith(ITEM, null);
     });
     // The draft is reset for the next capture.
     expect(screen.getByPlaceholderText(/记下任何事/).props.value).toBe('');
@@ -73,7 +73,7 @@ describe('QuickCaptureModal', () => {
     fireEvent.press(screen.getByText('记录并澄清'));
 
     await waitFor(() => {
-      expect(onCapturedAndClarify).toHaveBeenCalledWith(ITEM);
+      expect(onCapturedAndClarify).toHaveBeenCalledWith(ITEM, null);
     });
     // A clarify handoff is NOT a plain save — the parent gets exactly one.
     expect(onCaptured).not.toHaveBeenCalled();
@@ -109,7 +109,7 @@ describe('QuickCaptureModal', () => {
     fireEvent.press(screen.getByText('记录'));
 
     await waitFor(() => {
-      expect(onAdd).toHaveBeenCalledWith('保存失败');
+      expect(onAdd).toHaveBeenCalledWith('保存失败', null);
     });
     expect(onCaptured).not.toHaveBeenCalled();
     // The draft is kept so the user can retry.
@@ -147,10 +147,10 @@ describe('QuickCaptureModal', () => {
     fireEvent(input, 'keyPress', { nativeEvent: { key: 'Enter' } });
 
     await waitFor(() => {
-      expect(onAdd).toHaveBeenCalledWith('键盘回车录入');
+      expect(onAdd).toHaveBeenCalledWith('键盘回车录入', null);
     });
     await waitFor(() => {
-      expect(onCaptured).toHaveBeenCalledWith(ITEM);
+      expect(onCaptured).toHaveBeenCalledWith(ITEM, null);
     });
   });
 
@@ -183,9 +183,9 @@ describe('QuickCaptureModal', () => {
       nativeEvent: { key: 'Enter', isComposing: false, keyCode: 13 },
     });
 
-    await waitFor(() => expect(onCaptured).toHaveBeenCalledWith(ITEM));
+    await waitFor(() => expect(onCaptured).toHaveBeenCalledWith(ITEM, null));
     expect(onAdd).toHaveBeenCalledTimes(1);
-    expect(onAdd).toHaveBeenCalledWith(ITEM.title);
+    expect(onAdd).toHaveBeenCalledWith(ITEM.title, null);
     expect(input.props.value).toBe('');
   });
 
@@ -215,5 +215,86 @@ describe('QuickCaptureModal', () => {
     fireEvent(input, 'keyPress', { nativeEvent: { key: 'Escape' } });
 
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('previews a parsed calendar suggestion and hands it to the parent (issue #101)', async () => {
+    const onAdd = jest.fn(async () => ITEM);
+    const onCapturedAndClarify = jest.fn();
+    render(
+      <QuickCaptureModal
+        visible={true}
+        onClose={jest.fn()}
+        onAdd={onAdd}
+        onCapturedAndClarify={onCapturedAndClarify}
+      />,
+    );
+
+    fireEvent.changeText(screen.getByPlaceholderText(/记下任何事/), '明天下午3点开会');
+    // The preview appears under the input; the raw title is untouched.
+    expect(screen.getByText('日程')).toBeTruthy();
+    expect(screen.getByText('撤销')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('记录并澄清'));
+
+    await waitFor(() => {
+      expect(onAdd).toHaveBeenCalledWith(
+        '明天下午3点开会',
+        expect.objectContaining({ kind: 'calendar' }),
+      );
+    });
+    await waitFor(() => {
+      expect(onCapturedAndClarify).toHaveBeenCalledWith(
+        ITEM,
+        expect.objectContaining({ kind: 'calendar' }),
+      );
+    });
+  });
+
+  it('撤销解析 removes the preview and saves without a schedule (issue #101)', async () => {
+    const onAdd = jest.fn(async () => ITEM);
+    const onCaptured = jest.fn();
+    render(
+      <QuickCaptureModal
+        visible={true}
+        onClose={jest.fn()}
+        onAdd={onAdd}
+        onCaptured={onCaptured}
+      />,
+    );
+
+    const input = screen.getByPlaceholderText(/记下任何事/);
+    fireEvent.changeText(input, '明天下午3点前提交报告');
+    expect(screen.getByText('截止')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('撤销'));
+    expect(screen.queryByText('截止')).toBeNull();
+    // 撤销 never edits the text itself.
+    expect(input.props.value).toBe('明天下午3点前提交报告');
+
+    fireEvent.press(screen.getByText('记录'));
+    await waitFor(() => {
+      expect(onAdd).toHaveBeenCalledWith('明天下午3点前提交报告', null);
+    });
+    await waitFor(() => {
+      expect(onCaptured).toHaveBeenCalledWith(ITEM, null);
+    });
+  });
+
+  it('a dismissal does not leak into the next capture of the same text (#101 review)', async () => {
+    const onAdd = jest.fn(async () => ITEM);
+    render(<QuickCaptureModal visible={true} onClose={jest.fn()} onAdd={onAdd} />);
+
+    const input = screen.getByPlaceholderText(/记下任何事/);
+    fireEvent.changeText(input, '明天下午3点开会');
+    expect(screen.getByText('日程')).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('撤销时间解析'));
+    expect(screen.queryByText('日程')).toBeNull();
+
+    fireEvent.press(screen.getByText('记录'));
+    await waitFor(() => expect(input.props.value).toBe(''));
+
+    // A finished capture is a new input — the same text parses again.
+    fireEvent.changeText(input, '明天下午3点开会');
+    expect(screen.getByText('日程')).toBeTruthy();
   });
 });

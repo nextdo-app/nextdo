@@ -95,6 +95,7 @@ import { router } from 'expo-router';
 import { useProjects } from '@/hooks/use-projects';
 import { formatLocalDateTime } from '@/lib/format';
 import { ClarifyWizard, WizardBody } from '../components/clarify-wizard';
+import type { ClarifyPrefill } from '@/lib/clarify-flow';
 
 const mockedApplyClarify = applyClarify as jest.Mock;
 const mockedReclarifyAction = reclarifyAction as jest.Mock;
@@ -177,6 +178,7 @@ function renderWizard(
     currentProjectId?: string | null;
     capturedAt?: string | null;
     batch?: boolean;
+    prefill?: ClarifyPrefill | null;
   } = {},
 ) {
   return render(
@@ -188,6 +190,7 @@ function renderWizard(
       currentProjectId={props.currentProjectId ?? null}
       capturedAt={props.capturedAt ?? null}
       batch={props.batch}
+      prefill={props.prefill}
     />,
   );
 }
@@ -607,6 +610,103 @@ describe('WizardBody — calendar form (design §15: date/time pickers, no typed
     expect(call.answers.fixedTime).toBe(true);
     expect(call.target.startsAt).toBe(startsAt);
     expect(call.target.estMinutes).toBe(10);
+  });
+});
+
+describe('WizardBody — capture prefill (issue #101)', () => {
+  const DEADLINE_PREFILL: ClarifyPrefill = {
+    deadline: '2026-10-17T15:00',
+    startsAtDate: '2026-10-17',
+    startsAtTime: '15:00',
+    estMinutes: null,
+  };
+  const DEADLINE_ISO = new Date(2026, 9, 17, 15, 0).toISOString();
+
+  it('prefills the action form deadline (empty field only)', async () => {
+    renderWizard({ prefill: DEADLINE_PREFILL });
+    fireEvent.press(screen.getByText('可以，是行动'));
+    walkToActionForm();
+
+    // The deadline field carries the hint — the placeholder is gone.
+    expect(screen.queryByText('选择日期与时刻')).toBeNull();
+    expect(screen.getByLabelText('清除截止时间')).toBeTruthy();
+
+    fireEvent.press(screen.getByLabelText('10 分钟'));
+    fireEvent.press(screen.getByText('保存'));
+    expect(screen.getByText('决策摘要预览 · 归位就绪')).toBeTruthy();
+    fireEvent.press(screen.getByText('确认保存'));
+
+    await waitFor(() => expect(mockedApplyClarify).toHaveBeenCalledTimes(1));
+    expect(mockedApplyClarify.mock.calls[0][1].target.deadline).toBe(DEADLINE_ISO);
+  });
+
+  it('a user-cleared prefill does not come back', async () => {
+    renderWizard({ prefill: DEADLINE_PREFILL });
+    fireEvent.press(screen.getByText('可以，是行动'));
+    walkToActionForm();
+
+    fireEvent.press(screen.getByLabelText('清除截止时间'));
+    expect(screen.getByText('选择日期与时刻')).toBeTruthy();
+
+    fireEvent.press(screen.getByLabelText('10 分钟'));
+    fireEvent.press(screen.getByText('保存'));
+    fireEvent.press(screen.getByText('确认保存'));
+
+    await waitFor(() => expect(mockedApplyClarify).toHaveBeenCalledTimes(1));
+    // The cleared deadline is absent from the submission target.
+    expect(mockedApplyClarify.mock.calls[0][1].target.deadline ?? null).toBeNull();
+  });
+
+  it('switching forms does not resurrect a cleared deadline hint (#101 review)', () => {
+    renderWizard({ prefill: DEADLINE_PREFILL });
+    fireEvent.press(screen.getByText('可以，是行动'));
+    walkToActionForm();
+    fireEvent.press(screen.getByLabelText('清除截止时间'));
+    expect(screen.getByText('选择日期与时刻')).toBeTruthy();
+
+    // q5 → calendar form → back to q5 → action form.
+    fireEvent.press(screen.getByText('上一步'));
+    fireEvent.press(screen.getByText('是，固定时间'));
+    expect(screen.getByText('固定时间行动')).toBeTruthy();
+    // The calendar form took the start hint…
+    expect(screen.getByText('2026-10-17')).toBeTruthy();
+    expect(screen.getByText('15:00')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('上一步'));
+    fireEvent.press(screen.getByText('否，普通行动'));
+    // …but the cleared deadline stays cleared (no resurrection).
+    expect(screen.getByText('选择日期与时刻')).toBeTruthy();
+    expect(screen.queryByLabelText('清除截止时间')).toBeNull();
+  });
+
+  it('prefills the calendar form start and length', async () => {
+    renderWizard({
+      prefill: {
+        deadline: '',
+        startsAtDate: '2026-10-17',
+        startsAtTime: '15:00',
+        estMinutes: 30,
+      },
+    });
+    fireEvent.press(screen.getByText('可以，是行动'));
+    fireEvent.press(screen.getByText('不属于项目'));
+    fireEvent.press(screen.getByText('否'));
+    fireEvent.press(screen.getByText('是，我的事'));
+    fireEvent.press(screen.getByText('是，固定时间'));
+    expect(screen.getByText('固定时间行动')).toBeTruthy();
+
+    // The picker buttons already show the hinted date/time.
+    expect(screen.getByText('2026-10-17')).toBeTruthy();
+    expect(screen.getByText('15:00')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('保存'));
+    expect(screen.getByText('决策摘要预览 · 归位就绪')).toBeTruthy();
+    fireEvent.press(screen.getByText('确认保存'));
+
+    await waitFor(() => expect(mockedApplyClarify).toHaveBeenCalledTimes(1));
+    const call = mockedApplyClarify.mock.calls[0][1];
+    expect(call.target.startsAt).toBe(new Date(2026, 9, 17, 15, 0).toISOString());
+    expect(call.target.estMinutes).toBe(30);
   });
 });
 

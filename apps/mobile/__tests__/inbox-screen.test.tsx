@@ -160,6 +160,25 @@ describe('Inbox screen — capture / clarify decoupling (#58)', () => {
     expect(mockedAddInboxItem.mock.calls[0][1]).toMatchObject({ title: '内联捕获' });
   });
 
+  it('inline capture card: [记录并澄清] carries the parsed hint as route params (#101)', async () => {
+    const view = renderRouter('app', { initialUrl: '/(tabs)/inbox' });
+    await act(async () => {});
+
+    fireEvent.press(screen.getByText('稍后再说'));
+    const input = screen.getByPlaceholderText('有什么事情占据着你现在的注意力？');
+    fireEvent.changeText(input, '明天下午3点开会');
+    // The preview appears under the inline input; the title is untouched.
+    expect(screen.getByText('日程')).toBeTruthy();
+    fireEvent.press(screen.getByText('记录并澄清'));
+
+    await waitFor(() => expect(view.getPathname().startsWith('/clarify/')).toBe(true));
+    expect(mockedAddInboxItem.mock.calls[0][1]).toMatchObject({ title: '明天下午3点开会' });
+    const params = view.getSearchParams();
+    expect(typeof params.startsAt).toBe('string');
+    expect(params.estMinutes).toBe('30');
+    expect(params.deadline ?? undefined).toBeUndefined();
+  });
+
   it('inline capture card: [记录] / Enter saves and stays on the inbox', async () => {
     const view = renderRouter('app', { initialUrl: '/(tabs)/inbox' });
     await act(async () => {});

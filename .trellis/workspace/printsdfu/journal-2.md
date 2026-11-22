@@ -497,6 +497,17 @@ Topics: [.trellis/research/next-action-window-deps.md](../../research/next-actio
 
 实现 issue #99：原生提醒注册「完成 / 推迟 10 分钟 / 跳过」动作目录，响应经适配器分发到 delivery hook，分别执行 completeAction / snoozeAction / skipAction；失败以根布局中文横幅提示；web 直接通知点击聚焦窗口，桌面/未知动作降级为打开应用。新增纯解析、适配器、hook 与横幅测试；门禁 1664 项与 Web 冒烟通过。详见 research 主题。
 Topics: [.trellis/research/notification-inline-actions.md](../../research/notification-inline-actions.md)
+## Session 78: 自然语言捕获解析（#101 日期/时间增量）
+<!-- trellis-session: v=3 fp=df9f3c89cbe1e7e7 -->
+
+**Date**: 2026-11-22
+**Task**: 自然语言捕获解析（#101 日期/时间增量）
+**Branch**: `feat/natural-language-capture`
+
+### Summary
+
+实现 packages/core 本地解析器（日期/时间/截止或日程判定）、捕获预览（类型切换/修改/撤销，原文不改）、Clarify 路由参数预填（仅填空字段，23:59 折叠为仅日期）。不改 inbox_items schema。门禁 verify:web --no-serve 全绿 1688 项；浏览器实测速记预览、撤销、记录并澄清预填与内联卡片截止解析均符合预期。重复规则、项目/标签识别未做，已记 backlog。
+Topics: [.trellis/research/natural-language-capture.md](../../research/natural-language-capture.md)
 
 ### Git Commits
 
@@ -514,6 +525,17 @@ Topics: [.trellis/research/notification-inline-actions.md](../../research/notifi
 
 处理首轮审查 R1/R2：updateNextAction 新增 windowFields 参数，只覆盖调用方显式拥有的键；未提供的键保留事务内当前值，显式 undefined 仍清空。修复项目页旧快照 title-only 保存会撤销另一处刚设置的窗口/依赖；use-update-next-action 按 patch 中实际存在的键生成 windowFields。把 edit-action-modal 的 useAppInsets 移到条件 return 之前，消除隐藏→显示时的 React Hooks 顺序警告。补 db 回归（旧快照只改标题保留窗口/依赖）、项目页断言（第4参为空对象）。门禁 pnpm verify:web --no-serve 全绿 1646（core275/server133/db372/mobile866），gate 日志无 Hooks 警告。浏览器补测时间段：起止倒置与空适用日被拦截、07:30–08:30 窗口外过滤、重开回填、刷新持久化、关闭后恢复；hooksWarnings=0。
 Topics: [.trellis/research/next-action-window-deps.md](../../research/next-action-window-deps.md)
+## Session 79: 修复 #101 复审 R1–R6
+<!-- trellis-session: v=3 fp=593049ba6ae6e206 -->
+
+**Date**: 2026-11-22
+**Task**: 修复 #101 复审 R1–R6
+**Branch**: `feat/natural-language-capture`
+
+### Summary
+
+按复审修正：自然周前缀（下/下下/本周）、显式24小时值与中文分钟、今晚9:30简写合并、ISO/斜线日期与非法锚点返回 null、截止词优先于日历词、向导按字段记录预填状态、捕获成功后重置撤销覆盖值。core 27 项解析测试与 mobile 预填/撤销回归测试通过。门禁 verify:web --no-serve 全绿 1699 项；浏览器复验 03:00/21:30/15:20、本周三11/18、非法日期/时钟无预览、撤销不泄漏与 Clarify 预填。日志与证据在 job tmp。
+Topics: [.trellis/research/natural-language-capture.md](../../research/natural-language-capture.md)
 
 ### Git Commits
 
@@ -542,6 +564,17 @@ Topics: [.trellis/research/next-action-window-deps.md](../../research/next-actio
 
 按 reviewer 要求，推迟/跳过在规范事务内检查行动仍为 open；旧通知不能给已完成行动写 snooze/skip 或新建 scheduled reminder，失败以 action.not-open 走中文横幅。新增 db 与 hook 回归，恢复事务测试改为直接写入状态。确认 #99 为部分完成：当前交付前台路径（opensAppToForeground），后台事务保留在 backlog。门禁 1669 项与 Web 冒烟通过。
 Topics: [.trellis/research/notification-inline-actions.md](../../research/notification-inline-actions.md)
+## Session 80: 修复 #101 复审 R7–R8
+<!-- trellis-session: v=3 fp=a214edc8276b2c41 -->
+
+**Date**: 2026-11-22
+**Task**: 修复 #101 复审 R7–R8
+**Branch**: `feat/natural-language-capture`
+
+### Summary
+
+R7：单字前不再全段匹配，只有紧跟在时间后的前才作为截止表达，并排除前往/前端/前台/前面/前方；之前/以前/截止/截至仍任意位置生效。R8：MINUTE_WORD 与 chineseNumber 支持零前缀（零五=5），普通点式与今晚简写路径保留分钟。core 解析 28 项通过，reviewer 的 15 项验收/回归测试全过。最终门禁 verify:web --no-serve 1700 项全绿；浏览器复验前端会议/前往医院为日程、3点前提交为截止、三点零五→15:05。research 清理了纠偏过程表述。
+Topics: [.trellis/research/natural-language-capture.md](../../research/natural-language-capture.md)
 
 ### Git Commits
 
@@ -604,6 +637,18 @@ Topics: [.trellis/research/external-calendar-import.md](../../research/external-
 
 处理第三轮 2 项 P2：1) use-update-next-action 在 catch 中调用 errorMessage(err)，保留 action.dependency-cycle 等错误码的中文映射；now 屏新增经真实 hook 的断言：成环失败显示中文、弹窗保留、换前置后重试成功。2) updateNextAction 对最终 merged 行执行 assertValidNextAction，第 4 参 windowFields 的非法 HH:mm（如 9am）被拒绝且原行不变；db 回归覆盖。同步修正 hook 注释与 research 中 07:30–08:30 的过时叙述。门禁 pnpm verify:web --no-serve 全绿 1652（core275/server133/db374/mobile870），无 Hooks 警告；浏览器 run-98-r4.log 全通过，hooksWarnings=0。
 Topics: [.trellis/research/next-action-window-deps.md](../../research/next-action-window-deps.md)
+
+## Session 81: 修复 #101 复审 R9
+<!-- trellis-session: v=3 fp=1f853546ba2dac84 -->
+
+**Date**: 2026-11-22
+**Task**: 修复 #101 复审 R9
+**Branch**: `feat/natural-language-capture`
+
+### Summary
+
+R9：收窄前+面排除规则为 面(?!试)，使「3点前面试结束」判为 deadline，同时保留前往/前端普通词反例。core 解析 29 项通过，reviewer 独立测试 16 项全过。最终门禁 1701 项全绿；浏览器复验面试→截止、前往医院/前端会议→日程。research 同步规则、测试数与证据。
+Topics: [.trellis/research/natural-language-capture.md](../../research/natural-language-capture.md)
 
 ### Git Commits
 
