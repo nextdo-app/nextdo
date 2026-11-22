@@ -22,6 +22,7 @@ import {
 import { toCompilableQuery } from '../watch-query';
 import { completedActionFromRow, completedActionsQuery, type CompletedAction } from './actions';
 import { poolWatchQuery } from './pool';
+import { trashedItemFromRow, trashedItemsQuery, type TrashedItem } from './trash';
 import type { NextdoDb } from '../types';
 
 /** Inbox capture list (raw, non-deleted InboxItems, oldest first). */
@@ -225,5 +226,14 @@ export function somedayItemsWatchQuery(db: NextdoDb): CompilableQuery<SomedayMay
  */
 export function completedActionsWatchQuery(db: NextdoDb): CompilableQuery<CompletedAction> {
   return toCompilableQuery(completedActionsQuery(db), completedActionFromRow);
+}
+
+/**
+ * The trash screen's watch query — every soft-deleted user-facing row, newest
+ * delete first. Restoring a row clears `deleted_at` in the same table, so the
+ * watch drops it without an explicit reload.
+ */
+export function trashedItemsWatchQuery(db: NextdoDb): CompilableQuery<TrashedItem> {
+  return toCompilableQuery(trashedItemsQuery(db), trashedItemFromRow);
 }
 

@@ -62,6 +62,10 @@ export {
   updateNextAction,
 } from './queries/actions';
 export type { ActionDetails, CompletedAction } from './queries/actions';
+// Trash / recycle bin (issue #89): every soft-deleted user-facing row + the
+// restore transaction (deleted_at → null; reminders stay cancelled).
+export { listTrashedItems, restoreTrashedItem } from './queries/trash';
+export type { TrashedItem, TrashKind } from './queries/trash';
 // Reminder read (the delivery layer's source of truth — task 09-30).
 export { listScheduledReminders, listScheduledRemindersFor } from './queries/reminders';
 export type { ScheduledReminderRow } from './queries/reminders';
@@ -133,6 +137,7 @@ export {
   projectsWatchQuery,
   reviewRecordsWatchQuery,
   somedayItemsWatchQuery,
+  trashedItemsWatchQuery,
   waitingForWatchQuery,
 } from './queries/watch-queries';
 export type { ProjectCard, ProjectWithCoverage } from './queries/watch-queries';

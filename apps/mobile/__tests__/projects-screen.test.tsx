@@ -875,8 +875,10 @@ describe('Project detail', () => {
     expect(screen.getByText('编辑行动')).toBeTruthy();
     fireEvent.press(screen.getByText('取消'));
 
-    // Trash still reaches the db layer.
+    // Trash arms first, then reaches the db layer on the second tap (#89).
     fireEvent.press(screen.getByText('删除'));
+    expect(mockedTrashAction).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByText('确认删除？'));
     await waitFor(() =>
       expect(mockedTrashAction).toHaveBeenCalledWith(
         expect.anything(),

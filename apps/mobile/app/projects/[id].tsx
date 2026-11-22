@@ -683,6 +683,7 @@ export default function ProjectDetailScreen() {
   const [showHabitForm, setShowHabitForm] = useState(false);
   const [showEditProject, setShowEditProject] = useState(false);
   const [armedProjectTrash, setArmedProjectTrash] = useState(false);
+  const [armedActionTrashId, setArmedActionTrashId] = useState<string | null>(null);
   const [snoozeTarget, setSnoozeTarget] = useState<string | null>(null);
   const [windowConfirm, setWindowConfirm] = useState<{
     habitDayId: string;
@@ -901,11 +902,22 @@ export default function ProjectDetailScreen() {
                             void archive({ actionKind: 'next', actionId: action.id }).then(() => reload())
                           }
                         />
-                        <Button
-                          label="删除"
-                          variant="ghost"
-                          onPress={() => void trash({ actionKind: 'next', actionId: action.id }).then(reload)}
-                        />
+                        {armedActionTrashId === action.id ? (
+                          <Button
+                            label="确认删除？"
+                            variant="secondary"
+                            onPress={() => {
+                              setArmedActionTrashId(null);
+                              void trash({ actionKind: 'next', actionId: action.id }).then(reload);
+                            }}
+                          />
+                        ) : (
+                          <Button
+                            label="删除"
+                            variant="ghost"
+                            onPress={() => setArmedActionTrashId(action.id)}
+                          />
+                        )}
                       </View>
                     </>
                   )}

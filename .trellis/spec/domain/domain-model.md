@@ -66,7 +66,7 @@ Rules:
   transaction, with `ValidationNextdoError("project.needs-outcome")` if the outcome
   field is empty.
 - "Trash" is always soft delete (`deleted_at` set); the Trash screen is a query over
-  soft-deleted rows, with restore (clears `deleted_at`) and hard-purge.
+  soft-deleted rows, with restore (clears `deleted_at`). Hard-purge is not implemented yet.
 - Re-clarify (triggered by the engine, see Next Action Engine) re-enters this table at
   question 2 for the existing action: the outcome replaces the old action row
   (old row soft-deleted; `sourceInboxId` chain preserved via the new row's
