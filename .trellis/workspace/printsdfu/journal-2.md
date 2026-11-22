@@ -457,171 +457,6 @@ Topics: [.trellis/spec/project/quality-guidelines.md](../../spec/project/quality
 
 交付 issue #97：新增同步 settings 表（确定性 id setting:<key>），主题、专注时长与 Now 可用时间跨设备同步，通知、日历、更新与习惯提醒保留本机；客户端桥以 DB 行为同步事实来源、本地缓存只负责首帧。门禁 pnpm verify:web 通过（1652 测试），浏览器实测覆盖播种、删本地缓存后由 DB 恢复、专注时长写入与双标签页实时同步。
 Topics: [.trellis/research/settings-sync.md](../../research/settings-sync.md)
-## Session 78: 外部日历：系统日历只读忙碌导入（issue #100）
-<!-- trellis-session: v=3 fp=77342bdc4a96b9af -->
-
-**Date**: 2026-11-21
-**Task**: 外部日历：系统日历只读忙碌导入（issue #100）
-**Branch**: `feat/external-calendar-import`
-
-### Summary
-
-交付 issue #100 的只读部分：系统日历定时忙碌事件作为引擎硬日程约束。新增纯过滤器 import.ts、设备读取 listEventsForImport、useExternalCalendarBlocks（挂载/5 分钟/回前台刷新，失败保留旧快照并提示）、设置开关 calendarImportEnabled（设备本地，默认关闭）与 Now 接入。跳过全天、free、canceled 与 Nextdo 自身镜像事件。CalDAV 与双向同步未实现，已记入 backlog。门禁 r2 全绿（1662 tests），浏览器冒烟通过（Web 不渲染开关，显示平台不支持）。
-Topics: [.trellis/research/external-calendar-import.md](../../research/external-calendar-import.md)
-
-### Main Changes
-
-- 新增 apps/mobile/lib/calendar-sync/import.ts 纯函数忙碌过滤与窗口常量
-- device/index 增加 listEventsForImport；reconcile 导出 NEXTDO_EVENT_NOTE
-- 新增 hooks/use-external-calendar-blocks.ts 并接入 use-now/now 屏；设置页新增导入开关
-- notification-settings 增加 calendarImportEnabled 解析与合并保存
-## Session 78: NextAction 时间窗口与依赖输入入口（issue #98）
-<!-- trellis-session: v=3 fp=68943cf90a5e4817 -->
-
-**Date**: 2026-11-20
-**Task**: NextAction 时间窗口与依赖输入入口（issue #98）
-**Branch**: `feat/next-action-window-deps`
-
-### Summary
-
-在行动编辑弹窗加入适用日、可选时间段与前置行动（单选），保存走完整行语义，清空即写 undefined/NULL；updateNextAction 合并行补上 dependsOnId/windowStart/windowEnd/windowDays，此前这些字段保存会被静默丢弃。新增 useActionDependencyOptions：排除自身与直接/间接依赖自身的行动以防成环，候选读取失败时保留原依赖。Now 屏被过滤区块在存在可执行行动时也显示，window-mismatch 与 dependency 行可直接打开编辑。测试：db 读写与清空、now-screen 三条（保存/过滤中可编辑/清空）。门禁 pnpm verify:web --no-serve 全绿 1645；浏览器实测窗口外过滤、依赖未完成过滤、清除恢复、完成依赖恢复、写入失败保留、候选读取失败保留原依赖。
-Topics: [.trellis/research/next-action-window-deps.md](../../research/next-action-window-deps.md)
-## Session 78: 通知内联操作：完成 / 推迟 / 跳过
-<!-- trellis-session: v=3 fp=9392147e9ad55fdf -->
-
-**Date**: 2026-11-21
-**Task**: 通知内联操作：完成 / 推迟 / 跳过
-**Branch**: `feat/notification-inline-actions`
-
-### Summary
-
-实现 issue #99：原生提醒注册「完成 / 推迟 10 分钟 / 跳过」动作目录，响应经适配器分发到 delivery hook，分别执行 completeAction / snoozeAction / skipAction；失败以根布局中文横幅提示；web 直接通知点击聚焦窗口，桌面/未知动作降级为打开应用。新增纯解析、适配器、hook 与横幅测试；门禁 1664 项与 Web 冒烟通过。详见 research 主题。
-Topics: [.trellis/research/notification-inline-actions.md](../../research/notification-inline-actions.md)
-## Session 78: 自然语言捕获解析（#101 日期/时间增量）
-<!-- trellis-session: v=3 fp=df9f3c89cbe1e7e7 -->
-
-**Date**: 2026-11-22
-**Task**: 自然语言捕获解析（#101 日期/时间增量）
-**Branch**: `feat/natural-language-capture`
-
-### Summary
-
-实现 packages/core 本地解析器（日期/时间/截止或日程判定）、捕获预览（类型切换/修改/撤销，原文不改）、Clarify 路由参数预填（仅填空字段，23:59 折叠为仅日期）。不改 inbox_items schema。门禁 verify:web --no-serve 全绿 1688 项；浏览器实测速记预览、撤销、记录并澄清预填与内联卡片截止解析均符合预期。重复规则、项目/标签识别未做，已记 backlog。
-Topics: [.trellis/research/natural-language-capture.md](../../research/natural-language-capture.md)
-## Session 78: 回顾详情支持跳转项目/等待/Someday（#67）
-<!-- trellis-session: v=3 fp=346e5de0ee77850e -->
-
-**Date**: 2026-11-22
-**Task**: 回顾详情支持跳转项目/等待/Someday（#67）
-**Branch**: `feat/review-links-67`
-
-### Summary
-
-review-detail section 改为带 href 的条目；项目→/projects/<id>，等待→/waiting，Someday→/someday；行动与日程无详情路由保持纯文本。新增 lib 与详情页测试。门禁 1648 项通过；浏览器实测按用户 2026-11-22 明确要求跳过，不声称浏览器已验证。
-Topics: [.trellis/research/review-page.md](../../research/review-page.md)
-## Session 78: 刷新过时文档 sync.md 与 backlog（#104）
-<!-- trellis-session: v=3 fp=b58393b9f91336a1 -->
-
-**Date**: 2026-11-22
-**Task**: 刷新过时文档 sync.md 与 backlog（#104）
-**Branch**: `docs-refresh-104`
-
-### Summary
-
-docs/sync.md 改为当前行为：设置页有「立即同步」（重连+冲刷队列，8 秒超时）与上次同步时间，更新状态不可见范围。backlog：提醒投递改为剩余的通知内联操作（#99），Waiting For 改为剩余编辑/日期字段（#94），商店素材只剩 EAS submit.production；补 #102/#92/#93/#90 候选。仅文档改动，门禁 verify:web --no-serve 1641 项全绿。
-Topics: [docs/sync.md](../../../docs/sync.md)
-## Session 78: 修正 README 中 Web/PWA 提醒承诺（#93）
-<!-- trellis-session: v=3 fp=8a6369ed7dfcb8a6 -->
-
-**Date**: 2026-11-22
-**Task**: 修正 README 中 Web/PWA 提醒承诺（#93）
-**Branch**: `docs/web-push-93`
-
-### Summary
-
-README 平台表与 PWA 章节改为明确标注 Web/PWA 提醒尚未接通（#92 前台断链、#93 后台 Web Push 未实现）；原生 App/桌面端提醒不受影响。仅文档改动，未实现订阅与服务端发送。
-Topics: [README.md](../../../README.md)
-
-### Git Commits
-
-(No associated commits)
-
-
-## Session 79: issue #98 审查修复：窗口字段所有权与 Hooks 顺序
-<!-- trellis-session: v=3 fp=aa7f52470784d032 -->
-
-**Date**: 2026-11-20
-**Task**: issue #98 审查修复：窗口字段所有权与 Hooks 顺序
-**Branch**: `feat/next-action-window-deps`
-
-### Summary
-
-处理首轮审查 R1/R2：updateNextAction 新增 windowFields 参数，只覆盖调用方显式拥有的键；未提供的键保留事务内当前值，显式 undefined 仍清空。修复项目页旧快照 title-only 保存会撤销另一处刚设置的窗口/依赖；use-update-next-action 按 patch 中实际存在的键生成 windowFields。把 edit-action-modal 的 useAppInsets 移到条件 return 之前，消除隐藏→显示时的 React Hooks 顺序警告。补 db 回归（旧快照只改标题保留窗口/依赖）、项目页断言（第4参为空对象）。门禁 pnpm verify:web --no-serve 全绿 1646（core275/server133/db372/mobile866），gate 日志无 Hooks 警告。浏览器补测时间段：起止倒置与空适用日被拦截、07:30–08:30 窗口外过滤、重开回填、刷新持久化、关闭后恢复；hooksWarnings=0。
-Topics: [.trellis/research/next-action-window-deps.md](../../research/next-action-window-deps.md)
-## Session 79: 修复 #101 复审 R1–R6
-<!-- trellis-session: v=3 fp=593049ba6ae6e206 -->
-
-**Date**: 2026-11-22
-**Task**: 修复 #101 复审 R1–R6
-**Branch**: `feat/natural-language-capture`
-
-### Summary
-
-按复审修正：自然周前缀（下/下下/本周）、显式24小时值与中文分钟、今晚9:30简写合并、ISO/斜线日期与非法锚点返回 null、截止词优先于日历词、向导按字段记录预填状态、捕获成功后重置撤销覆盖值。core 27 项解析测试与 mobile 预填/撤销回归测试通过。门禁 verify:web --no-serve 全绿 1699 项；浏览器复验 03:00/21:30/15:20、本周三11/18、非法日期/时钟无预览、撤销不泄漏与 Clarify 预填。日志与证据在 job tmp。
-Topics: [.trellis/research/natural-language-capture.md](../../research/natural-language-capture.md)
-
-### Git Commits
-
-(No associated commits)
-
-
-## Session 80: issue #98 第二轮审查修复：字段所有权与成环校验
-<!-- trellis-session: v=3 fp=f8eb79503ab9b301 -->
-
-**Date**: 2026-11-21
-**Task**: issue #98 第二轮审查修复：字段所有权与成环校验
-**Branch**: `feat/next-action-window-deps`
-
-### Summary
-
-处理第二轮 4 项 P2：1) 弹窗改为只有用户实际改过的窗口/依赖字段才进 patch，候选读取失败或仍在加载时省略 dependsOnId，改标题不再覆盖另一处刚保存的依赖；2) 候选列表外的日历/习惯前置在未改动时保留，只有「无依赖」显式清除；3) 单边时间窗口未改动时不校验完整性，可只改标题，修改时间段后恢复完整起止校验；4) updateNextAction 在同一写事务内沿依赖链回溯，自身或重复 id 抛 action.dependency-cycle，覆盖两个已打开编辑器互选对方的场景，并映射中文错误。测试新增：db 成环（两节点/自身/三节点链）与旧快照回归；now 屏读取失败省略键、日历依赖保留与显式清除、单边窗口。门禁 pnpm verify:web --no-serve 全绿 1650（core275/server133/db373/mobile869）。浏览器 r3 全部通过：适用日/时间段过滤、回填、刷新、清除、依赖、两类故障注入、hooksWarnings=0。reviewer 曾被人类重启，已重发完整材料。
-Topics: [.trellis/research/next-action-window-deps.md](../../research/next-action-window-deps.md)
-## Session 79: 修复 #99 审查问题：旧通知状态校验与完成范围
-<!-- trellis-session: v=3 fp=30ca0409957b86bc -->
-
-**Date**: 2026-11-21
-**Task**: 修复 #99 审查问题：旧通知状态校验与完成范围
-**Branch**: `feat/notification-inline-actions`
-
-### Summary
-
-按 reviewer 要求，推迟/跳过在规范事务内检查行动仍为 open；旧通知不能给已完成行动写 snooze/skip 或新建 scheduled reminder，失败以 action.not-open 走中文横幅。新增 db 与 hook 回归，恢复事务测试改为直接写入状态。确认 #99 为部分完成：当前交付前台路径（opensAppToForeground），后台事务保留在 backlog。门禁 1669 项与 Web 冒烟通过。
-Topics: [.trellis/research/notification-inline-actions.md](../../research/notification-inline-actions.md)
-## Session 80: 修复 #101 复审 R7–R8
-<!-- trellis-session: v=3 fp=a214edc8276b2c41 -->
-
-**Date**: 2026-11-22
-**Task**: 修复 #101 复审 R7–R8
-**Branch**: `feat/natural-language-capture`
-
-### Summary
-
-R7：单字前不再全段匹配，只有紧跟在时间后的前才作为截止表达，并排除前往/前端/前台/前面/前方；之前/以前/截止/截至仍任意位置生效。R8：MINUTE_WORD 与 chineseNumber 支持零前缀（零五=5），普通点式与今晚简写路径保留分钟。core 解析 28 项通过，reviewer 的 15 项验收/回归测试全过。最终门禁 verify:web --no-serve 1700 项全绿；浏览器复验前端会议/前往医院为日程、3点前提交为截止、三点零五→15:05。research 清理了纠偏过程表述。
-Topics: [.trellis/research/natural-language-capture.md](../../research/natural-language-capture.md)
-
-### Git Commits
-
-(No associated commits)
-
-### Testing
-
-- pnpm verify:web；浏览器脚本 verify-97/capture.mjs，结果 ok=true（含 crossTab=true）
-
-### Next Steps
-
-- reviewer 复核；通过后按授权处理下一个 issue。工作区 .worktrees/settings-sync 未提交。
-
-
 ## Session 79: Issue #97 首轮审查修复
 <!-- trellis-session: v=3 fp=bb10a12600805a27 -->
 
@@ -639,61 +474,6 @@ Topics: [.trellis/research/settings-sync.md](../../research/settings-sync.md)
 ### Next Steps
 
 - CalDAV / 双向同步按 backlog 推进；真机验证日历读取与权限弹窗
-
-
-## Session 79: 外部日历导入：review R1/R2 修正
-<!-- trellis-session: v=3 fp=200a7173e75bcb52 -->
-
-**Date**: 2026-11-21
-**Task**: 外部日历导入：review R1/R2 修正
-**Branch**: `feat/external-calendar-import`
-
-### Summary
-
-按 reviewer 首轮意见修正 issue #100 只读导入。R1：读取能力与写入能力分开判断，新增 isCalendarImportSupported()（仅 native 为 true），useCalendarPermission 暴露 importSupported；macOS 桌面壳可写不可读，设置页不渲染导入开关并显示说明。R2：每次写日历事件都在用户备注后追加来源标记（nextdoEventNotes），导入改按 notes.includes 识别，跨设备无本地映射也能排除镜像；签名包含标记，旧事件在下一次同步时更新一次补标记。新增桌面能力、设置页入口、跨设备镜像、旧签名迁移测试。门禁 r3 全绿（1668 tests），浏览器冒烟覆盖 Web 与模拟 macOS 壳。
-Topics: [.trellis/research/external-calendar-import.md](../../research/external-calendar-import.md)
-
-### Main Changes
-
-- reconcile: nextdoEventNotes 追加标记，签名纳入标记；device/desktop 写入带标记备注
-- index: isCalendarImportSupported；use-calendar-permission: importSupported；settings 按读取能力控制入口
-- import: 按 notes.includes(NEXTDO_EVENT_NOTE) 排除镜像
-
-## Session 81: issue #98 第三轮审查修复：错误码映射与合并行校验
-<!-- trellis-session: v=3 fp=52dcc914f2eb0dc4 -->
-
-**Date**: 2026-11-21
-**Task**: issue #98 第三轮审查修复：错误码映射与合并行校验
-**Branch**: `feat/next-action-window-deps`
-
-### Summary
-
-处理第三轮 2 项 P2：1) use-update-next-action 在 catch 中调用 errorMessage(err)，保留 action.dependency-cycle 等错误码的中文映射；now 屏新增经真实 hook 的断言：成环失败显示中文、弹窗保留、换前置后重试成功。2) updateNextAction 对最终 merged 行执行 assertValidNextAction，第 4 参 windowFields 的非法 HH:mm（如 9am）被拒绝且原行不变；db 回归覆盖。同步修正 hook 注释与 research 中 07:30–08:30 的过时叙述。门禁 pnpm verify:web --no-serve 全绿 1652（core275/server133/db374/mobile870），无 Hooks 警告；浏览器 run-98-r4.log 全通过，hooksWarnings=0。
-Topics: [.trellis/research/next-action-window-deps.md](../../research/next-action-window-deps.md)
-
-## Session 81: 修复 #101 复审 R9
-<!-- trellis-session: v=3 fp=1f853546ba2dac84 -->
-
-**Date**: 2026-11-22
-**Task**: 修复 #101 复审 R9
-**Branch**: `feat/natural-language-capture`
-
-### Summary
-
-R9：收窄前+面排除规则为 面(?!试)，使「3点前面试结束」判为 deadline，同时保留前往/前端普通词反例。core 解析 29 项通过，reviewer 独立测试 16 项全过。最终门禁 1701 项全绿；浏览器复验面试→截止、前往医院/前端会议→日程。research 同步规则、测试数与证据。
-Topics: [.trellis/research/natural-language-capture.md](../../research/natural-language-capture.md)
-
-### Git Commits
-
-(No associated commits)
-
-### Testing
-
-- pnpm verify:web --no-serve；verify-97/capture.mjs，结果含 writeFailure 全部 true
-
-### Next Steps
-
-- 交回 reviewer 复审；通过后按授权处理下一个 issue。工作区未提交。
 
 
 ## Session 80: Issue #97 写失败意图持久化
@@ -750,3 +530,223 @@ Topics: [.trellis/research/settings-sync.md](../../research/settings-sync.md)
 ### Next Steps
 
 - 等待 reviewer 复审；通过后清理 dist 与端口并进入下一个 issue
+## Session 82: 外部日历：系统日历只读忙碌导入（issue #100）
+<!-- trellis-session: v=3 fp=77342bdc4a96b9af -->
+
+**Date**: 2026-11-21
+**Task**: 外部日历：系统日历只读忙碌导入（issue #100）
+**Branch**: `feat/external-calendar-import`
+
+### Summary
+
+交付 issue #100 的只读部分：系统日历定时忙碌事件作为引擎硬日程约束。新增纯过滤器 import.ts、设备读取 listEventsForImport、useExternalCalendarBlocks（挂载/5 分钟/回前台刷新，失败保留旧快照并提示）、设置开关 calendarImportEnabled（设备本地，默认关闭）与 Now 接入。跳过全天、free、canceled 与 Nextdo 自身镜像事件。CalDAV 与双向同步未实现，已记入 backlog。门禁 r2 全绿（1662 tests），浏览器冒烟通过（Web 不渲染开关，显示平台不支持）。
+Topics: [.trellis/research/external-calendar-import.md](../../research/external-calendar-import.md)
+
+### Main Changes
+
+- 新增 apps/mobile/lib/calendar-sync/import.ts 纯函数忙碌过滤与窗口常量
+- device/index 增加 listEventsForImport；reconcile 导出 NEXTDO_EVENT_NOTE
+- 新增 hooks/use-external-calendar-blocks.ts 并接入 use-now/now 屏；设置页新增导入开关
+- notification-settings 增加 calendarImportEnabled 解析与合并保存
+## Session 83: 外部日历导入：review R1/R2 修正
+<!-- trellis-session: v=3 fp=200a7173e75bcb52 -->
+
+**Date**: 2026-11-21
+**Task**: 外部日历导入：review R1/R2 修正
+**Branch**: `feat/external-calendar-import`
+
+### Summary
+
+按 reviewer 首轮意见修正 issue #100 只读导入。R1：读取能力与写入能力分开判断，新增 isCalendarImportSupported()（仅 native 为 true），useCalendarPermission 暴露 importSupported；macOS 桌面壳可写不可读，设置页不渲染导入开关并显示说明。R2：每次写日历事件都在用户备注后追加来源标记（nextdoEventNotes），导入改按 notes.includes 识别，跨设备无本地映射也能排除镜像；签名包含标记，旧事件在下一次同步时更新一次补标记。新增桌面能力、设置页入口、跨设备镜像、旧签名迁移测试。门禁 r3 全绿（1668 tests），浏览器冒烟覆盖 Web 与模拟 macOS 壳。
+Topics: [.trellis/research/external-calendar-import.md](../../research/external-calendar-import.md)
+
+### Main Changes
+
+- reconcile: nextdoEventNotes 追加标记，签名纳入标记；device/desktop 写入带标记备注
+- index: isCalendarImportSupported；use-calendar-permission: importSupported；settings 按读取能力控制入口
+- import: 按 notes.includes(NEXTDO_EVENT_NOTE) 排除镜像
+
+## Session 84: NextAction 时间窗口与依赖输入入口（issue #98）
+<!-- trellis-session: v=3 fp=68943cf90a5e4817 -->
+
+**Date**: 2026-11-20
+**Task**: NextAction 时间窗口与依赖输入入口（issue #98）
+**Branch**: `feat/next-action-window-deps`
+
+### Summary
+
+在行动编辑弹窗加入适用日、可选时间段与前置行动（单选），保存走完整行语义，清空即写 undefined/NULL；updateNextAction 合并行补上 dependsOnId/windowStart/windowEnd/windowDays，此前这些字段保存会被静默丢弃。新增 useActionDependencyOptions：排除自身与直接/间接依赖自身的行动以防成环，候选读取失败时保留原依赖。Now 屏被过滤区块在存在可执行行动时也显示，window-mismatch 与 dependency 行可直接打开编辑。测试：db 读写与清空、now-screen 三条（保存/过滤中可编辑/清空）。门禁 pnpm verify:web --no-serve 全绿 1645；浏览器实测窗口外过滤、依赖未完成过滤、清除恢复、完成依赖恢复、写入失败保留、候选读取失败保留原依赖。
+Topics: [.trellis/research/next-action-window-deps.md](../../research/next-action-window-deps.md)
+## Session 85: issue #98 审查修复：窗口字段所有权与 Hooks 顺序
+<!-- trellis-session: v=3 fp=aa7f52470784d032 -->
+
+**Date**: 2026-11-20
+**Task**: issue #98 审查修复：窗口字段所有权与 Hooks 顺序
+**Branch**: `feat/next-action-window-deps`
+
+### Summary
+
+处理首轮审查 R1/R2：updateNextAction 新增 windowFields 参数，只覆盖调用方显式拥有的键；未提供的键保留事务内当前值，显式 undefined 仍清空。修复项目页旧快照 title-only 保存会撤销另一处刚设置的窗口/依赖；use-update-next-action 按 patch 中实际存在的键生成 windowFields。把 edit-action-modal 的 useAppInsets 移到条件 return 之前，消除隐藏→显示时的 React Hooks 顺序警告。补 db 回归（旧快照只改标题保留窗口/依赖）、项目页断言（第4参为空对象）。门禁 pnpm verify:web --no-serve 全绿 1646（core275/server133/db372/mobile866），gate 日志无 Hooks 警告。浏览器补测时间段：起止倒置与空适用日被拦截、07:30–08:30 窗口外过滤、重开回填、刷新持久化、关闭后恢复；hooksWarnings=0。
+Topics: [.trellis/research/next-action-window-deps.md](../../research/next-action-window-deps.md)
+## Session 86: issue #98 第二轮审查修复：字段所有权与成环校验
+<!-- trellis-session: v=3 fp=f8eb79503ab9b301 -->
+
+**Date**: 2026-11-21
+**Task**: issue #98 第二轮审查修复：字段所有权与成环校验
+**Branch**: `feat/next-action-window-deps`
+
+### Summary
+
+处理第二轮 4 项 P2：1) 弹窗改为只有用户实际改过的窗口/依赖字段才进 patch，候选读取失败或仍在加载时省略 dependsOnId，改标题不再覆盖另一处刚保存的依赖；2) 候选列表外的日历/习惯前置在未改动时保留，只有「无依赖」显式清除；3) 单边时间窗口未改动时不校验完整性，可只改标题，修改时间段后恢复完整起止校验；4) updateNextAction 在同一写事务内沿依赖链回溯，自身或重复 id 抛 action.dependency-cycle，覆盖两个已打开编辑器互选对方的场景，并映射中文错误。测试新增：db 成环（两节点/自身/三节点链）与旧快照回归；now 屏读取失败省略键、日历依赖保留与显式清除、单边窗口。门禁 pnpm verify:web --no-serve 全绿 1650（core275/server133/db373/mobile869）。浏览器 r3 全部通过：适用日/时间段过滤、回填、刷新、清除、依赖、两类故障注入、hooksWarnings=0。reviewer 曾被人类重启，已重发完整材料。
+Topics: [.trellis/research/next-action-window-deps.md](../../research/next-action-window-deps.md)
+## Session 87: issue #98 第三轮审查修复：错误码映射与合并行校验
+<!-- trellis-session: v=3 fp=52dcc914f2eb0dc4 -->
+
+**Date**: 2026-11-21
+**Task**: issue #98 第三轮审查修复：错误码映射与合并行校验
+**Branch**: `feat/next-action-window-deps`
+
+### Summary
+
+处理第三轮 2 项 P2：1) use-update-next-action 在 catch 中调用 errorMessage(err)，保留 action.dependency-cycle 等错误码的中文映射；now 屏新增经真实 hook 的断言：成环失败显示中文、弹窗保留、换前置后重试成功。2) updateNextAction 对最终 merged 行执行 assertValidNextAction，第 4 参 windowFields 的非法 HH:mm（如 9am）被拒绝且原行不变；db 回归覆盖。同步修正 hook 注释与 research 中 07:30–08:30 的过时叙述。门禁 pnpm verify:web --no-serve 全绿 1652（core275/server133/db374/mobile870），无 Hooks 警告；浏览器 run-98-r4.log 全通过，hooksWarnings=0。
+Topics: [.trellis/research/next-action-window-deps.md](../../research/next-action-window-deps.md)
+
+## Session 88: 通知内联操作：完成 / 推迟 / 跳过
+<!-- trellis-session: v=3 fp=9392147e9ad55fdf -->
+
+**Date**: 2026-11-21
+**Task**: 通知内联操作：完成 / 推迟 / 跳过
+**Branch**: `feat/notification-inline-actions`
+
+### Summary
+
+实现 issue #99：原生提醒注册「完成 / 推迟 10 分钟 / 跳过」动作目录，响应经适配器分发到 delivery hook，分别执行 completeAction / snoozeAction / skipAction；失败以根布局中文横幅提示；web 直接通知点击聚焦窗口，桌面/未知动作降级为打开应用。新增纯解析、适配器、hook 与横幅测试；门禁 1664 项与 Web 冒烟通过。详见 research 主题。
+Topics: [.trellis/research/notification-inline-actions.md](../../research/notification-inline-actions.md)
+## Session 89: 修复 #99 审查问题：旧通知状态校验与完成范围
+<!-- trellis-session: v=3 fp=30ca0409957b86bc -->
+
+**Date**: 2026-11-21
+**Task**: 修复 #99 审查问题：旧通知状态校验与完成范围
+**Branch**: `feat/notification-inline-actions`
+
+### Summary
+
+按 reviewer 要求，推迟/跳过在规范事务内检查行动仍为 open；旧通知不能给已完成行动写 snooze/skip 或新建 scheduled reminder，失败以 action.not-open 走中文横幅。新增 db 与 hook 回归，恢复事务测试改为直接写入状态。确认 #99 为部分完成：当前交付前台路径（opensAppToForeground），后台事务保留在 backlog。门禁 1669 项与 Web 冒烟通过。
+Topics: [.trellis/research/notification-inline-actions.md](../../research/notification-inline-actions.md)
+## Session 90: 自然语言捕获解析（#101 日期/时间增量）
+<!-- trellis-session: v=3 fp=df9f3c89cbe1e7e7 -->
+
+**Date**: 2026-11-22
+**Task**: 自然语言捕获解析（#101 日期/时间增量）
+**Branch**: `feat/natural-language-capture`
+
+### Summary
+
+实现 packages/core 本地解析器（日期/时间/截止或日程判定）、捕获预览（类型切换/修改/撤销，原文不改）、Clarify 路由参数预填（仅填空字段，23:59 折叠为仅日期）。不改 inbox_items schema。门禁 verify:web --no-serve 全绿 1688 项；浏览器实测速记预览、撤销、记录并澄清预填与内联卡片截止解析均符合预期。重复规则、项目/标签识别未做，已记 backlog。
+Topics: [.trellis/research/natural-language-capture.md](../../research/natural-language-capture.md)
+## Session 91: 修复 #101 复审 R1–R6
+<!-- trellis-session: v=3 fp=593049ba6ae6e206 -->
+
+**Date**: 2026-11-22
+**Task**: 修复 #101 复审 R1–R6
+**Branch**: `feat/natural-language-capture`
+
+### Summary
+
+按复审修正：自然周前缀（下/下下/本周）、显式24小时值与中文分钟、今晚9:30简写合并、ISO/斜线日期与非法锚点返回 null、截止词优先于日历词、向导按字段记录预填状态、捕获成功后重置撤销覆盖值。core 27 项解析测试与 mobile 预填/撤销回归测试通过。门禁 verify:web --no-serve 全绿 1699 项；浏览器复验 03:00/21:30/15:20、本周三11/18、非法日期/时钟无预览、撤销不泄漏与 Clarify 预填。日志与证据在 job tmp。
+Topics: [.trellis/research/natural-language-capture.md](../../research/natural-language-capture.md)
+
+### Git Commits
+
+(No associated commits)
+
+
+## Session 92: 修复 #101 复审 R7–R8
+<!-- trellis-session: v=3 fp=a214edc8276b2c41 -->
+
+**Date**: 2026-11-22
+**Task**: 修复 #101 复审 R7–R8
+**Branch**: `feat/natural-language-capture`
+
+### Summary
+
+R7：单字前不再全段匹配，只有紧跟在时间后的前才作为截止表达，并排除前往/前端/前台/前面/前方；之前/以前/截止/截至仍任意位置生效。R8：MINUTE_WORD 与 chineseNumber 支持零前缀（零五=5），普通点式与今晚简写路径保留分钟。core 解析 28 项通过，reviewer 的 15 项验收/回归测试全过。最终门禁 verify:web --no-serve 1700 项全绿；浏览器复验前端会议/前往医院为日程、3点前提交为截止、三点零五→15:05。research 清理了纠偏过程表述。
+Topics: [.trellis/research/natural-language-capture.md](../../research/natural-language-capture.md)
+
+### Git Commits
+
+(No associated commits)
+
+### Testing
+
+- pnpm verify:web；浏览器脚本 verify-97/capture.mjs，结果 ok=true（含 crossTab=true）
+
+### Next Steps
+
+- reviewer 复核；通过后按授权处理下一个 issue。工作区 .worktrees/settings-sync 未提交。
+
+
+## Session 93: 修复 #101 复审 R9
+<!-- trellis-session: v=3 fp=1f853546ba2dac84 -->
+
+**Date**: 2026-11-22
+**Task**: 修复 #101 复审 R9
+**Branch**: `feat/natural-language-capture`
+
+### Summary
+
+R9：收窄前+面排除规则为 面(?!试)，使「3点前面试结束」判为 deadline，同时保留前往/前端普通词反例。core 解析 29 项通过，reviewer 独立测试 16 项全过。最终门禁 1701 项全绿；浏览器复验面试→截止、前往医院/前端会议→日程。research 同步规则、测试数与证据。
+Topics: [.trellis/research/natural-language-capture.md](../../research/natural-language-capture.md)
+
+### Git Commits
+
+(No associated commits)
+
+### Testing
+
+- pnpm verify:web --no-serve；verify-97/capture.mjs，结果含 writeFailure 全部 true
+
+### Next Steps
+
+- 交回 reviewer 复审；通过后按授权处理下一个 issue。工作区未提交。
+
+
+## Session 94: 回顾详情支持跳转项目/等待/Someday（#67）
+<!-- trellis-session: v=3 fp=346e5de0ee77850e -->
+
+**Date**: 2026-11-22
+**Task**: 回顾详情支持跳转项目/等待/Someday（#67）
+**Branch**: `feat/review-links-67`
+
+### Summary
+
+review-detail section 改为带 href 的条目；项目→/projects/<id>，等待→/waiting，Someday→/someday；行动与日程无详情路由保持纯文本。新增 lib 与详情页测试。门禁 1648 项通过；浏览器实测按用户 2026-11-22 明确要求跳过，不声称浏览器已验证。
+Topics: [.trellis/research/review-page.md](../../research/review-page.md)
+## Session 95: 刷新过时文档 sync.md 与 backlog（#104）
+<!-- trellis-session: v=3 fp=b58393b9f91336a1 -->
+
+**Date**: 2026-11-22
+**Task**: 刷新过时文档 sync.md 与 backlog（#104）
+**Branch**: `docs-refresh-104`
+
+### Summary
+
+docs/sync.md 改为当前行为：设置页有「立即同步」（重连+冲刷队列，8 秒超时）与上次同步时间，更新状态不可见范围。backlog：提醒投递改为剩余的通知内联操作（#99），Waiting For 改为剩余编辑/日期字段（#94），商店素材只剩 EAS submit.production；补 #102/#92/#93/#90 候选。仅文档改动，门禁 verify:web --no-serve 1641 项全绿。
+Topics: [docs/sync.md](../../../docs/sync.md)
+## Session 96: 修正 README 中 Web/PWA 提醒承诺（#93）
+<!-- trellis-session: v=3 fp=8a6369ed7dfcb8a6 -->
+
+**Date**: 2026-11-22
+**Task**: 修正 README 中 Web/PWA 提醒承诺（#93）
+**Branch**: `docs/web-push-93`
+
+### Summary
+
+README 平台表与 PWA 章节改为明确标注 Web/PWA 提醒尚未接通（#92 前台断链、#93 后台 Web Push 未实现）；原生 App/桌面端提醒不受影响。仅文档改动，未实现订阅与服务端发送。
+Topics: [README.md](../../../README.md)
+
+### Git Commits
+
+(No associated commits)
+
+

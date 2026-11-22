@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 81
-- **Last Active**: 2026-11-20
+- **Total Sessions**: 96
+- **Last Active**: 2026-11-22
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~546 | Active |
+| `journal-2.md` | ~752 | Active |
 | `journal-1.md` | ~1990 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,21 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 96 | 2026-11-22 | 修正 README 中 Web/PWA 提醒承诺（#93） | - | `docs/web-push-93` |
+| 95 | 2026-11-22 | 刷新过时文档 sync.md 与 backlog（#104） | - | `docs-refresh-104` |
+| 94 | 2026-11-22 | 回顾详情支持跳转项目/等待/Someday（#67） | - | `feat/review-links-67` |
+| 93 | 2026-11-22 | 修复 #101 复审 R9 | - | `feat/natural-language-capture` |
+| 92 | 2026-11-22 | 修复 #101 复审 R7–R8 | - | `feat/natural-language-capture` |
+| 91 | 2026-11-22 | 修复 #101 复审 R1–R6 | - | `feat/natural-language-capture` |
+| 90 | 2026-11-22 | 自然语言捕获解析（#101 日期/时间增量） | - | `feat/natural-language-capture` |
+| 89 | 2026-11-21 | 修复 #99 审查问题：旧通知状态校验与完成范围 | - | `feat/notification-inline-actions` |
+| 88 | 2026-11-21 | 通知内联操作：完成 / 推迟 / 跳过 | - | `feat/notification-inline-actions` |
+| 87 | 2026-11-21 | issue #98 第三轮审查修复：错误码映射与合并行校验 | - | `feat/next-action-window-deps` |
+| 86 | 2026-11-21 | issue #98 第二轮审查修复：字段所有权与成环校验 | - | `feat/next-action-window-deps` |
+| 85 | 2026-11-20 | issue #98 审查修复：窗口字段所有权与 Hooks 顺序 | - | `feat/next-action-window-deps` |
+| 84 | 2026-11-20 | NextAction 时间窗口与依赖输入入口（issue #98） | - | `feat/next-action-window-deps` |
+| 83 | 2026-11-21 | 外部日历导入：review R1/R2 修正 | - | `feat/external-calendar-import` |
+| 82 | 2026-11-21 | 外部日历：系统日历只读忙碌导入（issue #100） | - | `feat/external-calendar-import` |
 | 81 | 2026-11-20 | Issue #97 多标签页 pending 持久化 | - | `feat/settings-sync` |
 | 80 | 2026-11-20 | Issue #97 写失败意图持久化 | - | `feat/settings-sync` |
 | 79 | 2026-11-20 | Issue #97 首轮审查修复 | - | `feat/settings-sync` |
