@@ -42,7 +42,13 @@ export function reviewDetailSections(record: ReviewRecord, currentTitles: Record
     section('停滞项目', snapshot.stalledProjects),
     section('未来 7 天日程', snapshot.calendarNext7),
     { title: '项目状态决定', lines: answers.projectDecisions.map((entry) => `${title(entry.id)} → ${PROJECT_STATUS_LABELS[entry.to]}`) },
-    { title: 'Someday 决定', lines: answers.somedayDecisions.map((entry) => `${title(entry.id)} → ${somedayLabels[entry.to]}`) },
+    { title: 'Someday 决定', lines: answers.somedayDecisions.map((entry) => {
+      const label = `${title(entry.id)} → ${somedayLabels[entry.to]}`;
+      // Issue #91: a project promotion without a first action has no row to
+      // carry the source note; the record keeps it and shows it here.
+      const note = entry.promotion?.sourceNote?.trim();
+      return note === undefined || note === '' ? label : `${label}\n原备注：${note}`;
+    }) },
     section('本次跟进（仅记录）', answers.followUpsRaised),
     { title: '本次确认', lines: [`收件箱已清空：${answers.inboxCleared ? '是' : '否'}`, `日程安排合理：${answers.calendarReasonable ? '是' : '否'}`] },
   ];

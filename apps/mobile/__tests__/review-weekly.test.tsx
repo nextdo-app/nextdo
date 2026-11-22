@@ -258,3 +258,68 @@ describe('weekly review — submit', () => {
     await waitFor(() => expect(view.getPathname()).toBe('/review'));
   });
 });
+
+describe('weekly review — Someday promotion (issue #91)', () => {
+  it('turns a Someday item into an action and submits the promotion payload', async () => {
+    const view = await renderWeekly();
+    fireEvent.press(screen.getByLabelText('Someday 学吉他 选择：转为行动'));
+    fireEvent.changeText(screen.getByLabelText('行动标题：学吉他'), '练音阶');
+    fireEvent.changeText(screen.getByLabelText('行动时长：学吉他'), '15');
+    fireEvent.press(screen.getByText('提交回顾'));
+    await waitFor(() => expect(mockedSubmit).toHaveBeenCalledTimes(1));
+    expect(mockedSubmit.mock.calls[0][1].record.answers.somedayDecisions).toEqual([
+      { id: 's-1', to: 'action', promotion: { title: '练音阶', estMinutes: 15 } },
+      { id: 's-2', to: 'keep' },
+    ]);
+    await waitFor(() => expect(view.getPathname()).toBe('/review'));
+  });
+
+  it('blocks a project promotion without an outcome and keeps the form', async () => {
+    const view = await renderWeekly();
+    fireEvent.press(screen.getByLabelText('Someday 旅行计划 选择：转为项目'));
+    fireEvent.press(screen.getByText('提交回顾'));
+    await waitFor(() =>
+      expect(
+        screen.getByText('「旅行计划」转为项目需要填写项目结果（"完成"是什么样）'),
+      ).toBeTruthy(),
+    );
+    expect(mockedSubmit).not.toHaveBeenCalled();
+    expect(view.getPathname()).toBe('/review/weekly');
+  });
+
+  it('submits a project promotion with an optional first action', async () => {
+    await renderWeekly();
+    fireEvent.press(screen.getByLabelText('Someday 旅行计划 选择：转为项目'));
+    fireEvent.changeText(screen.getByLabelText('项目名称：旅行计划'), '冰岛旅行');
+    fireEvent.changeText(screen.getByLabelText('项目结果：旅行计划'), '订好全程机票与住宿');
+    fireEvent.press(screen.getByText('同时创建首个行动：否'));
+    fireEvent.changeText(screen.getByLabelText('首个行动标题：旅行计划'), '列出预算');
+    fireEvent.changeText(screen.getByLabelText('首个行动时长：旅行计划'), '25');
+    fireEvent.press(screen.getByText('提交回顾'));
+    await waitFor(() => expect(mockedSubmit).toHaveBeenCalledTimes(1));
+    expect(mockedSubmit.mock.calls[0][1].record.answers.somedayDecisions).toEqual([
+      { id: 's-1', to: 'keep' },
+      {
+        id: 's-2',
+        to: 'project',
+        promotion: {
+          title: '冰岛旅行',
+          outcome: '订好全程机票与住宿',
+          firstAction: { title: '列出预算', estMinutes: 25 },
+        },
+      },
+    ]);
+  });
+
+  it('keeps the first-action toggle off by default and submits a project alone', async () => {
+    await renderWeekly();
+    fireEvent.press(screen.getByLabelText('Someday 旅行计划 选择：转为项目'));
+    fireEvent.changeText(screen.getByLabelText('项目结果：旅行计划'), '订好全程机票与住宿');
+    fireEvent.press(screen.getByText('提交回顾'));
+    await waitFor(() => expect(mockedSubmit).toHaveBeenCalledTimes(1));
+    expect(mockedSubmit.mock.calls[0][1].record.answers.somedayDecisions).toEqual([
+      { id: 's-1', to: 'keep' },
+      { id: 's-2', to: 'project', promotion: { title: '旅行计划', outcome: '订好全程机票与住宿' } },
+    ]);
+  });
+});

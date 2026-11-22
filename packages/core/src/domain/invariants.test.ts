@@ -344,6 +344,54 @@ describe('assertReviewRecord', () => {
     ).toBe('validation.weeklyReview.somedayDecisions');
   });
 
+  it('accepts action and project promotion payloads', () => {
+    assertReviewRecord({
+      ...weekly,
+      answers: {
+        ...weekly.answers,
+        somedayDecisions: [
+          { id: 's-1', to: 'action', promotion: { title: '练音阶', estMinutes: 15, value: 4 } },
+          {
+            id: 's-2',
+            to: 'project',
+            promotion: {
+              title: '学吉他',
+              outcome: '弹一首完整的歌',
+              firstAction: { title: '找老师', estMinutes: 20 },
+              sourceNote: '预算 20 万\n联系张工',
+            },
+          },
+        ],
+      },
+    });
+  });
+
+  it.each([
+    ['a project without an outcome', { id: 's-1', to: 'project', promotion: { title: '学吉他' } }],
+    ['a blank project outcome', { id: 's-1', to: 'project', promotion: { title: '学吉他', outcome: '   ' } }],
+    ['a blank action title', { id: 's-1', to: 'action', promotion: { title: ' ' } }],
+    ['a non-positive estimate', { id: 's-1', to: 'action', promotion: { title: '学吉他', estMinutes: 0 } }],
+    ['an out-of-range value', { id: 's-1', to: 'action', promotion: { title: '学吉他', value: 7 } }],
+    [
+      'a malformed first action',
+      { id: 's-1', to: 'project', promotion: { title: 'p', outcome: 'o', firstAction: { estMinutes: -1 } } },
+    ],
+    ['a non-object promotion', { id: 's-1', to: 'action', promotion: 'x' }],
+    [
+      'a non-string source note',
+      { id: 's-1', to: 'project', promotion: { title: 'p', outcome: 'o', sourceNote: 3 } },
+    ],
+  ] as const)('rejects %s with the shared decision error', (_label, decision) => {
+    expect(
+      thrown(() =>
+        assertReviewRecord({
+          ...weekly,
+          answers: { ...weekly.answers, somedayDecisions: [decision as never] },
+        }),
+      ).code,
+    ).toBe('validation.weeklyReview.somedayDecisions');
+  });
+
   it.each([
     ['daily reschedule entry', {
       ...daily,

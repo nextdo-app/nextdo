@@ -185,6 +185,36 @@ describe('Review details', () => {
     expect(screen.getByText('日程安排合理：是')).toBeTruthy();
   });
 
+  it('shows the source note kept on a project promotion', async () => {
+    const old = recordsRef.records[1]!;
+    mockedDetails.mockResolvedValueOnce({
+      record: {
+        ...old,
+        snapshot: { ...old.snapshot, titles: { 's-1': '装修计划' } },
+        answers: {
+          ...old.answers,
+          somedayDecisions: [
+            {
+              id: 's-1',
+              to: 'project',
+              promotion: {
+                title: '装修',
+                outcome: '完工验收',
+                sourceNote: '预算 20 万\n联系张工 138xxxx',
+              },
+            },
+          ],
+        },
+      },
+      currentTitles: {},
+    });
+    renderRouter('app', { initialUrl: '/review/r-2' });
+    await waitFor(() => expect(screen.getByText('Someday 决定')).toBeTruthy());
+    expect(screen.getByText(/装修计划 → 转为项目/)).toBeTruthy();
+    expect(screen.getByText(/原备注：预算 20 万/)).toBeTruthy();
+    expect(screen.getByText(/联系张工 138xxxx/)).toBeTruthy();
+  });
+
   it('distinguishes loading from missing and offers a back path', async () => {
     let resolve: (value: null) => void = () => undefined;
     mockedDetails.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));

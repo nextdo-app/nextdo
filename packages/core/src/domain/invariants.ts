@@ -398,13 +398,61 @@ function assertWeeklyReviewShape(snapshot: WeeklyReviewSnapshot, answers: Weekly
   }
   const SOMEDAY_TARGETS = ['project', 'action', 'keep', 'trash'];
   const PROJECT_TARGETS = ['active', 'on-hold', 'done', 'dropped'];
+  const invalidSomeday = (detail: string): never => {
+    throw new ValidationNextdoError('validation.weeklyReview.somedayDecisions', detail);
+  };
   for (const entry of answers.somedayDecisions) {
     assertNonEmptyString(entry.id, 'weeklyReview.answers.somedayDecisions.id');
     if (!SOMEDAY_TARGETS.includes(entry.to)) {
-      throw new ValidationNextdoError(
-        'validation.weeklyReview.somedayDecisions',
-        `somedayDecisions.to must be one of ${SOMEDAY_TARGETS.join('|')}`,
-      );
+      invalidSomeday(`somedayDecisions.to must be one of ${SOMEDAY_TARGETS.join('|')}`);
+    }
+    // Issue #91: promotion payload. Validate every field the DB layer will
+    // use, so a malformed record fails before any transaction starts.
+    const promotion: unknown = entry.promotion;
+    if (promotion !== undefined) {
+      if (promotion === null || typeof promotion !== 'object') {
+        invalidSomeday('somedayDecisions.promotion must be an object');
+      }
+      const p = promotion as Record<string, unknown>;
+      if (p.title !== undefined && (typeof p.title !== 'string' || p.title.trim() === '')) {
+        invalidSomeday('somedayDecisions.promotion.title must be a non-empty string');
+      }
+      if (p.estMinutes !== undefined && (typeof p.estMinutes !== 'number' || !(p.estMinutes > 0))) {
+        invalidSomeday('somedayDecisions.promotion.estMinutes must be > 0');
+      }
+      if (
+        p.value !== undefined &&
+        (typeof p.value !== 'number' || !Number.isInteger(p.value) || p.value < 1 || p.value > 5)
+      ) {
+        invalidSomeday('somedayDecisions.promotion.value must be an integer in 1..5');
+      }
+      if (p.outcome !== undefined && typeof p.outcome !== 'string') {
+        invalidSomeday('somedayDecisions.promotion.outcome must be a string');
+      }
+      if (p.sourceNote !== undefined && typeof p.sourceNote !== 'string') {
+        invalidSomeday('somedayDecisions.promotion.sourceNote must be a string');
+      }
+      const first = p.firstAction;
+      if (first !== undefined) {
+        if (first === null || typeof first !== 'object') {
+          invalidSomeday('somedayDecisions.promotion.firstAction must be an object');
+        }
+        const f = first as Record<string, unknown>;
+        if (f.title !== undefined && (typeof f.title !== 'string' || f.title.trim() === '')) {
+          invalidSomeday('somedayDecisions.promotion.firstAction.title must be a non-empty string');
+        }
+        if (f.estMinutes !== undefined && (typeof f.estMinutes !== 'number' || !(f.estMinutes > 0))) {
+          invalidSomeday('somedayDecisions.promotion.firstAction.estMinutes must be > 0');
+        }
+      }
+    }
+    // A project without an outcome is rejected by `assertValidProject`; fail
+    // here so the review submission never reaches the DB with that shape.
+    if (entry.to === 'project') {
+      const outcome = (promotion as { outcome?: unknown } | undefined)?.outcome;
+      if (typeof outcome !== 'string' || outcome.trim() === '') {
+        invalidSomeday('Promoting to a project requires a non-empty outcome');
+      }
     }
   }
   for (const entry of answers.projectDecisions) {
