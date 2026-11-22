@@ -12,6 +12,13 @@ import { ValidationNextdoError } from '../lib/errors';
 export const NEXT_ACTION_DEFAULT_VALUE = 3 as const;
 
 /**
+ * Issue #91: a Someday item carries no estimate. Promotion defaults to this
+ * when the decision supplies none (the weekly review shows it as an
+ * editable, prefilled number).
+ */
+export const SOMEDAY_PROMOTION_DEFAULT_EST_MINUTES = 10;
+
+/**
  * Issue #62: what kind of action the user picked in the action form.
  * `waiting` / `delegated` become a WaitingForItem (never a NextAction);
  * `none` means "project without a first action" (project form only).

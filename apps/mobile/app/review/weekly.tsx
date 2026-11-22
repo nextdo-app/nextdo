@@ -1,11 +1,14 @@
-/** Weekly checklist with live defaults, legal status choices, and atomic submission. */
+/** Weekly checklist with live defaults, legal status choices, and atomic submission.
+ *  Issue #91: Someday rows can be promoted to an action or project here; the
+ *  promotion is part of the same atomic review write as the record. */
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { router, useFocusEffect } from 'expo-router';
 import { Button, Card, Tag } from '@nextdo/ui';
 import {
   PROJECT_TRANSITIONS,
+  SOMEDAY_PROMOTION_DEFAULT_EST_MINUTES,
   type ProjectStatus,
   type SomedayDecision,
   type WeeklyReviewAnswers,
@@ -18,7 +21,50 @@ import { useSubmitReview } from '@/hooks/use-submit-review';
 import { formatLocalDate, formatLocalDateTime } from '@/lib/format';
 
 
-type SomedayChoice = 'keep' | 'trash';
+/**
+ * Issue #91: the four weekly Someday decisions. Promotion needs a few
+ * fields; they default to a usable row so the review stays a checklist
+ * first, a form second.
+ */
+type SomedayChoice = 'keep' | 'trash' | 'action' | 'project';
+
+const SOMEDAY_CHOICE_LABELS: Record<SomedayChoice, string> = {
+  keep: '保留',
+  action: '转为行动',
+  project: '转为项目',
+  trash: '删除',
+};
+
+interface PromotionDraft {
+  actionTitle: string;
+  actionEstMinutes: string;
+  projectTitle: string;
+  projectOutcome: string;
+  firstAction: boolean;
+  firstActionTitle: string;
+  firstActionEstMinutes: string;
+}
+
+const INPUT_CLASS =
+  'rounded-md border border-border/80 bg-surface p-2.5 text-sm text-ink placeholder:text-muted shadow-sm focus:border-accent dark:border-border-dark dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark';
+
+function defaultPromotionDraft(title: string): PromotionDraft {
+  return {
+    actionTitle: title,
+    actionEstMinutes: String(SOMEDAY_PROMOTION_DEFAULT_EST_MINUTES),
+    projectTitle: title,
+    projectOutcome: '',
+    firstAction: false,
+    firstActionTitle: title,
+    firstActionEstMinutes: String(SOMEDAY_PROMOTION_DEFAULT_EST_MINUTES),
+  };
+}
+
+/** A positive minute estimate, or null when the text is not usable. */
+function parseMinutes(value: string): number | null {
+  const minutes = Number(value.trim());
+  return Number.isFinite(minutes) && minutes > 0 ? minutes : null;
+}
 
 export default function WeeklyReviewScreen() {
   const { data, error, reload } = useWeeklyReviewData();
@@ -31,6 +77,8 @@ export default function WeeklyReviewScreen() {
   const [followUps, setFollowUps] = useState<string[]>([]);
   const [projectStatuses, setProjectStatuses] = useState<Record<string, ProjectStatus>>({});
   const [somedayChoices, setSomedayChoices] = useState<Record<string, SomedayChoice>>({});
+  const [somedayDrafts, setSomedayDrafts] = useState<Record<string, PromotionDraft>>({});
+  const [formError, setFormError] = useState<string | null>(null);
   const waitingItems = useMemo(
     () =>
       (data?.snapshot.waitingFollowUps ?? [])
@@ -72,11 +120,84 @@ export default function WeeklyReviewScreen() {
     setFollowUps((prev) => (prev.includes(id) ? prev.filter((entry) => entry !== id) : [...prev, id]));
   };
 
-  const buildAnswers = (): WeeklyReviewAnswers => {
-    const somedayDecisions: SomedayDecision[] = data.somedays.map((item) => ({
-      id: item.id,
-      to: (somedayChoices[item.id] ?? 'keep') as SomedayDecision['to'],
+  const promotionDraft = (id: string, title: string): PromotionDraft =>
+    somedayDrafts[id] ?? defaultPromotionDraft(title);
+
+  const patchPromotionDraft = (id: string, title: string, patch: Partial<PromotionDraft>) => {
+    setSomedayDrafts((prev) => ({
+      ...prev,
+      [id]: { ...(prev[id] ?? defaultPromotionDraft(title)), ...patch },
     }));
+  };
+
+  const chooseSomeday = (id: string, choice: SomedayChoice) => {
+    setFormError(null);
+    setSomedayChoices((prev) => ({ ...prev, [id]: choice }));
+  };
+
+  /** Screen-level validation: catch an unusable promotion before the DB call. */
+  const promotionProblem = (): string | null => {
+    for (const item of data.somedays) {
+      const choice = somedayChoices[item.id] ?? 'keep';
+      if (choice !== 'action' && choice !== 'project') continue;
+      const draft = promotionDraft(item.id, item.title);
+      if (choice === 'action') {
+        if (draft.actionTitle.trim() === '') return `「${item.title}」转为行动需要填写行动标题`;
+        if (parseMinutes(draft.actionEstMinutes) === null) return `「${item.title}」的行动时长必须大于 0 分钟`;
+        continue;
+      }
+      if (draft.projectTitle.trim() === '') return `「${item.title}」转为项目需要填写项目名称`;
+      if (draft.projectOutcome.trim() === '') {
+        return `「${item.title}」转为项目需要填写项目结果（"完成"是什么样）`;
+      }
+      if (draft.firstAction) {
+        if (draft.firstActionTitle.trim() === '') return `「${item.title}」的首个行动需要填写标题`;
+        if (parseMinutes(draft.firstActionEstMinutes) === null) {
+          return `「${item.title}」的首个行动时长必须大于 0 分钟`;
+        }
+      }
+    }
+    return null;
+  };
+
+  const buildAnswers = (): WeeklyReviewAnswers => {
+    const somedayDecisions: SomedayDecision[] = data.somedays.map((item): SomedayDecision => {
+      const choice = somedayChoices[item.id] ?? 'keep';
+      if (choice === 'action') {
+        const draft = promotionDraft(item.id, item.title);
+        return {
+          id: item.id,
+          to: 'action',
+          promotion: {
+            title: draft.actionTitle.trim(),
+            estMinutes:
+              parseMinutes(draft.actionEstMinutes) ?? SOMEDAY_PROMOTION_DEFAULT_EST_MINUTES,
+          },
+        };
+      }
+      if (choice === 'project') {
+        const draft = promotionDraft(item.id, item.title);
+        return {
+          id: item.id,
+          to: 'project',
+          promotion: {
+            title: draft.projectTitle.trim(),
+            outcome: draft.projectOutcome.trim(),
+            ...(draft.firstAction
+              ? {
+                  firstAction: {
+                    title: draft.firstActionTitle.trim(),
+                    estMinutes:
+                      parseMinutes(draft.firstActionEstMinutes) ??
+                      SOMEDAY_PROMOTION_DEFAULT_EST_MINUTES,
+                  },
+                }
+              : {}),
+          },
+        };
+      }
+      return { id: item.id, to: choice };
+    });
     const projectDecisions = data.projects.map((project) => ({
       id: project.id,
       to: projectChoice(project.id, project.status),
@@ -92,6 +213,12 @@ export default function WeeklyReviewScreen() {
 
   const submit = async () => {
     if (submitting) return;
+    const problem = promotionProblem();
+    if (problem !== null) {
+      setFormError(problem);
+      return;
+    }
+    setFormError(null);
     const recorded = await submitReview({ kind: 'weekly', snapshot, answers: buildAnswers() });
     if (recorded) goBack('/(tabs)/review');
   };
@@ -228,9 +355,12 @@ export default function WeeklyReviewScreen() {
           </View>
         ) : null}
 
-        {/* Someday（保留/删除） */}
+        {/* Someday（保留 / 转为行动 / 转为项目 / 删除） */}
         <View className="gap-2">
           <Text className="text-base font-medium text-ink dark:text-ink-dark">Someday（{data.somedays.length}）</Text>
+          <Text className="text-sm text-muted dark:text-muted-dark">
+            转为行动会进入「现在」的执行池；转为项目会创建进行中的项目，可同时带上首个行动。转换后原条目移出本清单。
+          </Text>
           {data.somedays.length === 0 ? (
             <Card>
               <Text className="text-sm text-muted dark:text-muted-dark">没有"有空再说"的条目。</Text>
@@ -238,21 +368,108 @@ export default function WeeklyReviewScreen() {
           ) : (
             data.somedays.map((item) => {
               const choice = somedayChoices[item.id] ?? 'keep';
+              const draft = promotionDraft(item.id, item.title);
               return (
                 <Card key={item.id} className="gap-2">
                   <Text className="text-sm text-ink dark:text-ink-dark">{item.title}</Text>
-                  <View className="flex-row gap-2">
-                    <Button
-                      label="保留"
-                      variant={choice === 'keep' ? 'primary' : 'secondary'}
-                      onPress={() => setSomedayChoices((prev) => ({ ...prev, [item.id]: 'keep' }))}
-                    />
-                    <Button
-                      label="删除"
-                      variant={choice === 'trash' ? 'primary' : 'ghost'}
-                      onPress={() => setSomedayChoices((prev) => ({ ...prev, [item.id]: 'trash' }))}
-                    />
+                  <View className="flex-row flex-wrap gap-2">
+                    {(Object.keys(SOMEDAY_CHOICE_LABELS) as SomedayChoice[]).map((option) => (
+                      <Pressable
+                        key={option}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Someday ${item.title} 选择：${SOMEDAY_CHOICE_LABELS[option]}`}
+                        accessibilityState={{ selected: choice === option }}
+                        onPress={() => chooseSomeday(item.id, option)}
+                        className={
+                          choice === option
+                            ? 'min-h-11 justify-center rounded-full bg-accent px-3 py-2 dark:bg-accent-dark'
+                            : 'min-h-11 justify-center rounded-full border border-border px-3 py-2 dark:border-border-dark'
+                        }
+                      >
+                        <Text
+                          className={
+                            choice === option
+                              ? 'text-sm text-on-accent'
+                              : 'text-sm text-ink dark:text-ink-dark'
+                          }
+                        >
+                          {SOMEDAY_CHOICE_LABELS[option]}
+                        </Text>
+                      </Pressable>
+                    ))}
                   </View>
+                  {choice === 'action' ? (
+                    <View className="gap-1.5">
+                      <Text className="text-xs text-muted dark:text-muted-dark">行动标题</Text>
+                      <TextInput
+                        className={INPUT_CLASS}
+                        accessibilityLabel={`行动标题：${item.title}`}
+                        value={draft.actionTitle}
+                        onChangeText={(value) => patchPromotionDraft(item.id, item.title, { actionTitle: value })}
+                      />
+                      <Text className="text-xs text-muted dark:text-muted-dark">预计分钟</Text>
+                      <TextInput
+                        className={INPUT_CLASS}
+                        accessibilityLabel={`行动时长：${item.title}`}
+                        value={draft.actionEstMinutes}
+                        onChangeText={(value) => patchPromotionDraft(item.id, item.title, { actionEstMinutes: value })}
+                        keyboardType="number-pad"
+                        inputMode="numeric"
+                      />
+                    </View>
+                  ) : null}
+                  {choice === 'project' ? (
+                    <View className="gap-1.5">
+                      <Text className="text-xs text-muted dark:text-muted-dark">项目名称</Text>
+                      <TextInput
+                        className={INPUT_CLASS}
+                        accessibilityLabel={`项目名称：${item.title}`}
+                        value={draft.projectTitle}
+                        onChangeText={(value) => patchPromotionDraft(item.id, item.title, { projectTitle: value })}
+                      />
+                      <Text className="text-xs text-muted dark:text-muted-dark">
+                        项目结果（"完成"是什么样）
+                      </Text>
+                      <TextInput
+                        className={INPUT_CLASS}
+                        accessibilityLabel={`项目结果：${item.title}`}
+                        value={draft.projectOutcome}
+                        onChangeText={(value) => patchPromotionDraft(item.id, item.title, { projectOutcome: value })}
+                        multiline
+                      />
+                      <Button
+                        label={draft.firstAction ? '同时创建首个行动：是 ✓' : '同时创建首个行动：否'}
+                        variant={draft.firstAction ? 'secondary' : 'ghost'}
+                        onPress={() =>
+                          patchPromotionDraft(item.id, item.title, { firstAction: !draft.firstAction })
+                        }
+                      />
+                      {draft.firstAction ? (
+                        <View className="gap-1.5">
+                          <Text className="text-xs text-muted dark:text-muted-dark">首个行动标题</Text>
+                          <TextInput
+                            className={INPUT_CLASS}
+                            accessibilityLabel={`首个行动标题：${item.title}`}
+                            value={draft.firstActionTitle}
+                            onChangeText={(value) =>
+                              patchPromotionDraft(item.id, item.title, { firstActionTitle: value })
+                            }
+                          />
+                          <Text className="text-xs text-muted dark:text-muted-dark">首个行动预计分钟</Text>
+                          <TextInput
+                            className={INPUT_CLASS}
+                            accessibilityLabel={`首个行动时长：${item.title}`}
+                            value={draft.firstActionEstMinutes}
+                            onChangeText={(value) =>
+                              patchPromotionDraft(item.id, item.title, { firstActionEstMinutes: value })
+                            }
+                            keyboardType="number-pad"
+                            inputMode="numeric"
+                          />
+                        </View>
+                      ) : null}
+                    </View>
+                  ) : null}
                 </Card>
               );
             })
@@ -281,6 +498,7 @@ export default function WeeklyReviewScreen() {
 
         {/* 提交 */}
         <View className="gap-2">
+          {formError !== null ? <Text className="text-sm text-danger dark:text-danger-dark">{formError}</Text> : null}
           {recordError !== null ? <Text className="text-sm text-danger">提交失败，本次变更均未保存。选择已保留，可重试。{recordError}</Text> : null}
           <Button label="刷新回顾数据" variant="ghost" onPress={reload} disabled={submitting} />
           <Button label={submitting ? '提交中…' : '提交回顾'} onPress={() => void submit()} disabled={submitting} />

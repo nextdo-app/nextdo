@@ -594,6 +594,263 @@ describe('submitReview atomic decisions and history', () => {
     expect(await listReviewRecords(db)).toHaveLength(3);
   });
 
+  it('promotes a Someday item to an open NextAction and records the decision', async () => {
+    const { db } = await open(true);
+    const record = makeWeekly({ snapshot: await buildWeeklyReviewSnapshot(db, FIXTURE_NOW) });
+    const someday = await db
+      .selectFrom('someday_maybe_items')
+      .selectAll()
+      .where('deleted_at', 'is', null)
+      .executeTakeFirstOrThrow();
+    record.answers.somedayDecisions = [
+      { id: someday.id, to: 'action', promotion: { title: '练音阶', estMinutes: 15 } },
+    ];
+
+    const saved = await submitReview(db, { record, now: FIXTURE_NOW });
+
+    const action = await db
+      .selectFrom('next_actions')
+      .selectAll()
+      .where('title', '=', '练音阶')
+      .executeTakeFirstOrThrow();
+    expect(action).toMatchObject({
+      status: 'open',
+      est_minutes: 15,
+      value: 3,
+      deleted_at: null,
+      project_id: null,
+      // The parked item's note is context, not clutter — keep it on the action.
+      note: someday.note,
+    });
+    expect(
+      (await db
+        .selectFrom('someday_maybe_items')
+        .select('deleted_at')
+        .where('id', '=', someday.id)
+        .executeTakeFirst())?.deleted_at,
+    ).toBe(toIso(FIXTURE_NOW));
+    // The record is the audit trail of the conversion itself.
+    if (saved.kind !== 'weekly') throw new Error('expected a weekly record');
+    expect(saved.answers.somedayDecisions).toEqual(record.answers.somedayDecisions);
+  });
+
+  it('promotes a Someday item to an active project with an optional first action', async () => {
+    const { db } = await open(true);
+    const record = makeWeekly({ snapshot: await buildWeeklyReviewSnapshot(db, FIXTURE_NOW) });
+    const someday = await db
+      .selectFrom('someday_maybe_items')
+      .selectAll()
+      .where('deleted_at', 'is', null)
+      .executeTakeFirstOrThrow();
+    record.answers.somedayDecisions = [
+      {
+        id: someday.id,
+        to: 'project',
+        promotion: {
+          title: '学吉他',
+          outcome: '完整弹一首歌',
+          firstAction: { title: '找老师', estMinutes: 20 },
+        },
+      },
+    ];
+
+    await submitReview(db, { record, now: FIXTURE_NOW });
+
+    const project = await db
+      .selectFrom('projects')
+      .selectAll()
+      .where('title', '=', '学吉他')
+      .executeTakeFirstOrThrow();
+    expect(project).toMatchObject({
+      status: 'active',
+      outcome: '完整弹一首歌',
+      value: 3,
+      deleted_at: null,
+    });
+    const action = await db
+      .selectFrom('next_actions')
+      .selectAll()
+      .where('title', '=', '找老师')
+      .executeTakeFirstOrThrow();
+    expect(action).toMatchObject({
+      project_id: project.id,
+      est_minutes: 20,
+      value: 3,
+      status: 'open',
+      note: someday.note,
+    });
+    expect(
+      (await db
+        .selectFrom('someday_maybe_items')
+        .select('deleted_at')
+        .where('id', '=', someday.id)
+        .executeTakeFirst())?.deleted_at,
+    ).toBe(toIso(FIXTURE_NOW));
+  });
+
+  it('keeps a project promotion\'s source note on the record when no first action exists', async () => {
+    const { db } = await open(true);
+    const record = makeWeekly({ snapshot: await buildWeeklyReviewSnapshot(db, FIXTURE_NOW) });
+    const someday = await db
+      .selectFrom('someday_maybe_items')
+      .selectAll()
+      .where('deleted_at', 'is', null)
+      .executeTakeFirstOrThrow();
+    const note = '预算 20 万\n联系张工 138xxxx';
+    await db.updateTable('someday_maybe_items').set({ note }).where('id', '=', someday.id).execute();
+    record.answers.somedayDecisions = [
+      { id: someday.id, to: 'project', promotion: { title: '装修', outcome: '完工验收' } },
+    ];
+
+    const saved = await submitReview(db, { record, now: FIXTURE_NOW });
+
+    if (saved.kind !== 'weekly') throw new Error('expected a weekly record');
+    expect(saved.answers.somedayDecisions[0]?.promotion?.sourceNote).toBe(note);
+    // The caller's input object is not mutated by the enrichment.
+    expect(record.answers.somedayDecisions[0]?.promotion?.sourceNote).toBeUndefined();
+
+    const project = await db
+      .selectFrom('projects')
+      .selectAll()
+      .where('title', '=', '装修')
+      .executeTakeFirstOrThrow();
+    // No action is invented for the first-action choice the user did not make.
+    expect(
+      await db.selectFrom('next_actions').select('id').where('project_id', '=', project.id).execute(),
+    ).toEqual([]);
+    expect(
+      (await db
+        .selectFrom('someday_maybe_items')
+        .select('deleted_at')
+        .where('id', '=', someday.id)
+        .executeTakeFirst())?.deleted_at,
+    ).toBe(toIso(FIXTURE_NOW));
+    // The explicit viewing entry: the saved record carries the note.
+    const details = await getReviewDetails(db, record.id);
+    const decision =
+      details?.record.kind === 'weekly' ? details.record.answers.somedayDecisions[0] : undefined;
+    expect(decision?.promotion?.sourceNote).toBe(note);
+  });
+
+  it('rolls back a project promotion and its source note when the review INSERT fails; retry succeeds once', async () => {
+    const { db } = await open(true);
+    const record = makeWeekly({ snapshot: await buildWeeklyReviewSnapshot(db, FIXTURE_NOW) });
+    const someday = await db
+      .selectFrom('someday_maybe_items')
+      .selectAll()
+      .where('deleted_at', 'is', null)
+      .executeTakeFirstOrThrow();
+    const note = '预算 20 万';
+    await db.updateTable('someday_maybe_items').set({ note }).where('id', '=', someday.id).execute();
+    record.answers.somedayDecisions = [
+      { id: someday.id, to: 'project', promotion: { title: '装修', outcome: '完工验收' } },
+    ];
+    await sql
+      .raw("CREATE TRIGGER fail_review_write INSTEAD OF INSERT ON review_records BEGIN SELECT RAISE(ABORT, 'injected review failure'); END")
+      .execute(db);
+
+    await expect(submitReview(db, { record, now: FIXTURE_NOW })).rejects.toThrow(
+      'injected review failure',
+    );
+    expect(await db.selectFrom('projects').select('id').where('title', '=', '装修').execute()).toEqual(
+      [],
+    );
+    expect(
+      (await db
+        .selectFrom('someday_maybe_items')
+        .select('deleted_at')
+        .where('id', '=', someday.id)
+        .executeTakeFirst())?.deleted_at,
+    ).toBeNull();
+
+    await sql.raw('DROP TRIGGER fail_review_write').execute(db);
+    await submitReview(db, { record, now: FIXTURE_NOW });
+    expect(
+      await db.selectFrom('projects').select('id').where('title', '=', '装修').execute(),
+    ).toHaveLength(1);
+    const savedRecord = (await listReviewRecords(db)).find((entry) => entry.id === record.id);
+    if (savedRecord === undefined || savedRecord.kind !== 'weekly') {
+      throw new Error('expected the saved weekly record');
+    }
+    expect(savedRecord.answers.somedayDecisions[0]?.promotion?.sourceNote).toBe(note);
+    await expect(submitReview(db, { record, now: FIXTURE_NOW })).rejects.toMatchObject({
+      code: 'review.already-submitted',
+    });
+    expect(
+      await db.selectFrom('projects').select('id').where('title', '=', '装修').execute(),
+    ).toHaveLength(1);
+  });
+
+  it('rejects a project promotion without an outcome before any write', async () => {
+    const { db } = await open(true);
+    const record = makeWeekly({ snapshot: await buildWeeklyReviewSnapshot(db, FIXTURE_NOW) });
+    const someday = await db
+      .selectFrom('someday_maybe_items')
+      .selectAll()
+      .where('deleted_at', 'is', null)
+      .executeTakeFirstOrThrow();
+    record.answers.somedayDecisions = [
+      { id: someday.id, to: 'project', promotion: { title: '学吉他' } },
+    ];
+
+    await expect(submitReview(db, { record, now: FIXTURE_NOW })).rejects.toMatchObject({
+      code: 'validation.weeklyReview.somedayDecisions',
+    });
+    expect(
+      await db.selectFrom('projects').select('id').where('title', '=', '学吉他').execute(),
+    ).toEqual([]);
+    expect(
+      (await db
+        .selectFrom('someday_maybe_items')
+        .select('deleted_at')
+        .where('id', '=', someday.id)
+        .executeTakeFirst())?.deleted_at,
+    ).toBeNull();
+    expect(await listReviewRecords(db)).toHaveLength(2);
+  });
+
+  it('rolls back a promoted action when the review INSERT fails; retry creates it once', async () => {
+    const { db } = await open(true);
+    const record = makeWeekly({ snapshot: await buildWeeklyReviewSnapshot(db, FIXTURE_NOW) });
+    const someday = await db
+      .selectFrom('someday_maybe_items')
+      .selectAll()
+      .where('deleted_at', 'is', null)
+      .executeTakeFirstOrThrow();
+    record.answers.somedayDecisions = [
+      { id: someday.id, to: 'action', promotion: { title: '只创建一次', estMinutes: 10 } },
+    ];
+    await sql
+      .raw("CREATE TRIGGER fail_review_write INSTEAD OF INSERT ON review_records BEGIN SELECT RAISE(ABORT, 'injected review failure'); END")
+      .execute(db);
+
+    await expect(submitReview(db, { record, now: FIXTURE_NOW })).rejects.toThrow(
+      'injected review failure',
+    );
+    expect(
+      await db.selectFrom('next_actions').select('id').where('title', '=', '只创建一次').execute(),
+    ).toEqual([]);
+    expect(
+      (await db
+        .selectFrom('someday_maybe_items')
+        .select('deleted_at')
+        .where('id', '=', someday.id)
+        .executeTakeFirst())?.deleted_at,
+    ).toBeNull();
+
+    await sql.raw('DROP TRIGGER fail_review_write').execute(db);
+    await submitReview(db, { record, now: FIXTURE_NOW });
+    expect(
+      await db.selectFrom('next_actions').select('id').where('title', '=', '只创建一次').execute(),
+    ).toHaveLength(1);
+    await expect(submitReview(db, { record, now: FIXTURE_NOW })).rejects.toMatchObject({
+      code: 'review.already-submitted',
+    });
+    expect(
+      await db.selectFrom('next_actions').select('id').where('title', '=', '只创建一次').execute(),
+    ).toHaveLength(1);
+  });
+
   it('rejects overlapping, foreign, stale, and past-date daily choices without writes', async () => {
     const { db } = await open();
     await insertNextAction(db, { id: 'a', createdAt: at(0) });

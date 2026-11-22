@@ -70,6 +70,7 @@ export type {
   ReviewRecord,
   SomedayDecision,
   SomedayMaybeItem,
+  SomedayPromotion,
   Value,
   WaitingForItem,
   WeeklyProjectSnapshot,
@@ -77,7 +78,11 @@ export type {
   WeeklyReviewRecord,
   WeeklyReviewSnapshot,
 } from './domain/types';
-export { NEXT_ACTION_DEFAULT_VALUE, classifyInboxItem } from './domain/clarify';
+export {
+  NEXT_ACTION_DEFAULT_VALUE,
+  SOMEDAY_PROMOTION_DEFAULT_EST_MINUTES,
+  classifyInboxItem,
+} from './domain/clarify';
 export type { ClarifyAnswers, ClarifyOutcome } from './domain/clarify';
 export {
   ACTION_STATUSES,

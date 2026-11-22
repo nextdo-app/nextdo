@@ -20,6 +20,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   'review.invalid-date': '请选择尚未到达的日期，排期时间为当地 08:00',
   'review.stale-action': '行动状态已变化，请刷新回顾后重试',
   'review.already-submitted': '这次回顾已经提交，请返回回顾记录',
+  // Issue #91: promotion payload backstop (the screen validates first).
+  'validation.weeklyReview.somedayDecisions':
+    'Someday 转换信息不完整：转为项目必须填写项目结果，标题不能为空，时长需大于 0',
   // Core invariants
   'validation.waitingForItem.waitingOn': '请填写在等谁 / 什么',
   'validation.calendarAction.startsAt': '请选择开始时间',

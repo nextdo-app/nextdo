@@ -258,9 +258,44 @@ export type WeeklyReviewSnapshot = {
   calendarNext7: string[];
 };
 
+/**
+ * Fields for turning a Someday/Maybe item into real work (issue #91). The
+ * decision's `to` says which row to create; these fields fill it.
+ *
+ * - action: every field is optional — title defaults to the Someday title,
+ *   estimate to `SOMEDAY_PROMOTION_DEFAULT_EST_MINUTES`, value to
+ *   `NEXT_ACTION_DEFAULT_VALUE`.
+ * - project: `outcome` is REQUIRED (a project without one is rejected by
+ *   the domain); title defaults to the Someday title, value to 3, and the
+ *   first action is optional.
+ */
+export type SomedayPromotion = {
+  title?: string;
+  estMinutes?: number;
+  value?: Value;
+  /** Project only: the "done" sentence; core rejects an empty outcome. */
+  outcome?: string;
+  /** Project only: when present, create this first NextAction too. */
+  firstAction?: {
+    title?: string;
+    estMinutes?: number;
+  };
+  /**
+   * The source Someday note, recorded by the DB layer when a project has no
+   * first action to carry it (no action row means no note field). Review
+   * detail exposes it; the source row is soft-deleted after promotion.
+   */
+  sourceNote?: string;
+};
+
 export type SomedayDecision = {
   id: string;
   to: 'project' | 'action' | 'keep' | 'trash';
+  /**
+   * Required for 'project' (a non-empty outcome is mandatory); optional for
+   * 'action' (defaults apply); ignored for keep / trash.
+   */
+  promotion?: SomedayPromotion;
 };
 
 export type ProjectDecision = {

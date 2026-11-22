@@ -39,7 +39,7 @@ import {
 import { projectActionCoverage } from './projects';
 import type { Kysely } from 'kysely';
 import { completeActionInTransaction, loadActionRow, snoozeActionInTransaction } from './actions';
-import { trashSomedayMaybeItem } from './someday';
+import { promoteSomedayMaybeItemInTransaction, trashSomedayMaybeItem } from './someday';
 import type { NextdoDb } from '../types';
 
 export async function listReviewRecords(
@@ -155,9 +155,6 @@ export async function submitReview(
     assertMembers(record.answers.followUpsRaised, record.snapshot.waitingFollowUps);
     const somedayIds = record.answers.somedayDecisions.map((entry) => entry.id);
     assertMembers(somedayIds, somedayIds);
-    if (record.answers.somedayDecisions.some((entry) => entry.to !== 'keep' && entry.to !== 'trash')) {
-      throw new ValidationNextdoError('review.invalid-decision', 'Review supports keeping or trashing Someday items');
-    }
   }
   return db.transaction().execute(async (tx) => {
     const existing = await tx.selectFrom('review_records').select('id').where('id', '=', record.id).executeTakeFirst();
@@ -175,7 +172,21 @@ export async function submitReview(
     }));
     const saved: ReviewRecord = record.kind === 'daily'
       ? { ...record, snapshot: { ...record.snapshot, titles } }
-      : { ...record, snapshot: { ...record.snapshot, titles } };
+      : {
+          ...record,
+          snapshot: { ...record.snapshot, titles },
+          // Clone the Someday decisions: a project promotion may attach the
+          // source note below, and the caller's input object must not change.
+          answers: {
+            ...record.answers,
+            somedayDecisions: record.answers.somedayDecisions.map((decision) => ({
+              ...decision,
+              ...(decision.promotion !== undefined
+                ? { promotion: { ...decision.promotion } }
+                : {}),
+            })),
+          },
+        };
     if (record.kind === 'daily') {
       const { answers } = record;
       const decisions = [...answers.completedActionIds, ...answers.tomorrowMustDo, ...answers.skippedNoted,
@@ -207,10 +218,42 @@ export async function submitReview(
         if (row === undefined) throw new StorageNextdoError('waitingForItem.not-found', 'Waiting item no longer exists');
       }
       for (const decision of record.answers.somedayDecisions) {
-        if (decision.to === 'trash') await trashSomedayMaybeItem(tx, { id: decision.id, now });
-        else {
+        if (decision.to === 'trash') {
+          await trashSomedayMaybeItem(tx, { id: decision.id, now });
+        } else if (decision.to === 'keep') {
           const row = await tx.selectFrom('someday_maybe_items').select('id').where('id', '=', decision.id).where('deleted_at', 'is', null).executeTakeFirst();
           if (row === undefined) throw new StorageNextdoError('somedayMaybeItem.not-found', 'Someday item no longer exists');
+        } else {
+          // Issue #91: 'action' / 'project' — create the target row(s) and
+          // retire the Someday item inside this same transaction, so a
+          // failure at the record INSERT rolls the creation back too.
+          const promotion = await promoteSomedayMaybeItemInTransaction(tx, {
+            id: decision.id,
+            to: decision.to,
+            promotion: decision.promotion,
+            now,
+          });
+          if (
+            decision.to === 'project' &&
+            decision.promotion?.firstAction === undefined &&
+            saved.kind === 'weekly'
+          ) {
+            // A project has no note field, and no first action was created to
+            // carry the source note. Store the note (from the live row, not
+            // the client) on the record itself: review detail is the explicit
+            // place to read it after the Someday row is soft-deleted.
+            const entry = saved.answers.somedayDecisions.find((item) => item.id === decision.id);
+            if (entry !== undefined) {
+              const note = promotion.sourceNote?.trim();
+              const nextPromotion = { ...(entry.promotion ?? {}) };
+              if (note !== undefined && note !== '') {
+                nextPromotion.sourceNote = promotion.sourceNote;
+              } else {
+                delete nextPromotion.sourceNote;
+              }
+              entry.promotion = nextPromotion;
+            }
+          }
         }
       }
     }

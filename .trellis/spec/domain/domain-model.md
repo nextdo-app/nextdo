@@ -165,11 +165,18 @@ action kinds**. A
 (see Next Action Engine). An action is never both `NextAction` and `CalendarAction`.
 
 ### SomedayMaybeItem
-`title`, `note?`. The weekly review currently re-asks only **keep** or **trash**
-(`apps/mobile/app/review/weekly.tsx`); promotion into a Project / NextAction is
-NOT implemented — the `SomedayDecision.to` union still lists `"project"` /
-`"action"`, but `reviews.ts` rejects them (`review.invalid-decision`). Treat
-those two values as an unimplemented extension, not as current behavior.
+`title`, `note?`. The weekly review asks **keep**, **trash**, or **promotion**
+into a NextAction / Project (issue #91). `SomedayDecision.promotion?` carries
+the created row's fields: an action may omit it (title defaults to the
+Someday title, estimate 10, value 3); a project REQUIRES a non-empty outcome,
+takes an optional first action, and defaults its title/value the same way.
+`submitReview` creates the target row(s) and soft-deletes the Someday item in
+the SAME transaction as the review record — a failure writes nothing, and the
+record's `somedayDecisions` entry (`to: 'action' | 'project'`) is the
+conversion's audit trail. When a project has no first action, the DB layer
+records the source note as `promotion.sourceNote` (the project has no note
+field), and the review detail shows it — the note stays readable without
+restoring the soft-deleted item.
 
 - **Parking an existing action** (2026-11-18): `archiveActionToSomeday` in
   `packages/db/src/queries/actions.ts` runs ONE local transaction that
@@ -182,9 +189,8 @@ those two values as an unimplemented extension, not as current behavior.
   archivable (typed out and guarded): it is generated from its Habit, so a
   parked copy would duplicate a row the habit keeps producing.
 - The `/someday` screen (Inbox → Someday chip) lists live entries with a
-  per-row 删除 (soft delete). Promotion is not implemented anywhere yet — the
-  weekly review offers only keep / trash (see above), and this screen
-  deliberately does not re-implement Clarify.
+  per-row 删除 (soft delete). Promotion is offered only in the weekly review
+  (above); this screen deliberately does not re-implement Clarify.
 
 ### ReferenceItem
 External material (Proposal §4.3: v1 = links only). `title`, `url?`, `note?`.

@@ -4,8 +4,9 @@
  * Entries arrive from two places: the Clarify wizard (~Q1b, non-actionable
  * items) and the Now action menu (「转为 Someday/Maybe」, which retires the
  * action and keeps its title + note here). The weekly review re-asks about
- * every entry (keep / trash); this screen is the always-available list so an
- * archived action does not have to wait for the next review to be seen.
+ * every entry (keep / trash) and can turn it back into an action or project;
+ * this screen is the always-available list so an archived action does not
+ * have to wait for the next review to be seen.
  */
 import { useState } from 'react';
 import { FlatList, Text, View } from 'react-native';
