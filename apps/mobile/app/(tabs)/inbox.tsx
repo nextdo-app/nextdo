@@ -35,11 +35,14 @@ import { useTrashInboxItem } from '@/hooks/use-trash-inbox-item';
 import { useWaitingForItems } from '@/hooks/use-waiting-for';
 import { useSomedayItems } from '@/hooks/use-someday-items';
 import { useAppClock } from '@/hooks/use-app-clock';
+import { useCaptureSchedule } from '@/hooks/use-capture-schedule';
 import { formatRelativeTime } from '@/lib/format';
 import { errorMessage } from '@/lib/error-messages';
+import { clarifyHrefWithSchedule } from '@/lib/capture-link';
 import { QuickCaptureModal } from '@/components/quick-capture-modal';
+import { CaptureSchedulePreview } from '@/components/capture-schedule-preview';
 import { useAppTheme } from '@/lib/theme';
-import type { InboxItem } from '@nextdo/core';
+import type { CaptureSchedule, InboxItem } from '@nextdo/core';
 
 const INPUT_CLASS =
   'rounded-xl border border-border/80 bg-surface px-3.5 py-3 text-base text-ink placeholder:text-muted shadow-2xs focus:border-accent dark:border-border-dark dark:bg-surface-dark dark:text-ink-dark dark:placeholder:text-muted-dark';
@@ -161,14 +164,16 @@ export default function InboxScreen() {
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
   const [showQuickCapture, setShowQuickCapture] = useState(true);
+  const { schedule, setSchedule, clear, reset } = useCaptureSchedule(draft, now);
   const insets = useAppInsets();
   const topPadding = Math.max(insets.top, 16);
   // R1 handoff for the [记录并澄清] paths (modal + inline card) — close the
   // modal (if open) and open the Clarify wizard for the captured item. A
-  // plain [记录] deliberately does NOT call this (issue #58).
-  const handoffToClarify = useCallback((item: InboxItem) => {
+  // plain [记录] deliberately does NOT call this (issue #58). Issue #101:
+  // the parsed date/time hint rides in route params so Clarify can prefill.
+  const handoffToClarify = useCallback((item: InboxItem, parsed: CaptureSchedule | null) => {
     setShowQuickCapture(false);
-    router.push(`/clarify/${item.id}`);
+    router.push(clarifyHrefWithSchedule(item.id, parsed));
   }, []);
 
   // "再记一条" from the wizard's done step arrives with recapture=1 —
@@ -198,8 +203,10 @@ export default function InboxScreen() {
       const item = await add(title);
       if (item !== null) {
         setDraft('');
+        // A completed capture is a new input (issue #101 review).
+        reset();
         // save = just capture (the item stays pending); clarify = R1 handoff.
-        if (mode === 'clarify') handoffToClarify(item);
+        if (mode === 'clarify') handoffToClarify(item, schedule);
       }
     } finally {
       setSaving(false);
@@ -233,6 +240,14 @@ export default function InboxScreen() {
           onSubmitEditing={() => void capture('save')}
           blurOnSubmit={false}
         />
+        {schedule !== null ? (
+          <CaptureSchedulePreview
+            schedule={schedule}
+            now={now}
+            onChange={setSchedule}
+            onClear={clear}
+          />
+        ) : null}
         <View className="flex-row items-center gap-2.5">
           <Text className="flex-1 font-sans text-xs text-muted dark:text-muted-dark">
             支持自然输入，待会儿逐个澄清

@@ -12,6 +12,7 @@
 import {
   buildDoNowSubmission,
   buildFormSubmission,
+  clarifyPrefillFromParams,
   clarifyReducer,
   composeLocalDateTimeIso,
   createWizardState,
@@ -1073,5 +1074,64 @@ describe('step-by-step back navigation (history stack)', () => {
     if (restoredForm.step === 'form') {
       expect(restoredForm.fields.note).toBe('测试备注');
     }
+  });
+});
+
+describe('clarifyPrefillFromParams (issue #101)', () => {
+  /** Device-local ISO, so the assertions do not depend on the test TZ. */
+  function localIso(year: number, month: number, day: number, hour: number, minute: number): string {
+    return new Date(year, month - 1, day, hour, minute).toISOString();
+  }
+
+  it('converts a deadline hint into action-form values', () => {
+    expect(clarifyPrefillFromParams({ deadline: localIso(2026, 11, 21, 15, 0) })).toEqual({
+      deadline: '2026-11-21T15:00',
+      startsAtDate: '2026-11-21',
+      startsAtTime: '15:00',
+      estMinutes: null,
+    });
+  });
+
+  it('folds a 23:59 deadline back to date-only', () => {
+    const prefill = clarifyPrefillFromParams({ deadline: localIso(2026, 11, 21, 23, 59) });
+    expect(prefill).not.toBeNull();
+    expect(prefill?.deadline).toBe('2026-11-21');
+    // No clock time survives the fold — the calendar form gets only the date.
+    expect(prefill?.startsAtDate).toBe('2026-11-21');
+    expect(prefill?.startsAtTime).toBe('');
+  });
+
+  it('converts a calendar hint incl. estMinutes', () => {
+    const prefill = clarifyPrefillFromParams({
+      startsAt: localIso(2026, 11, 22, 9, 30),
+      estMinutes: '45',
+    });
+    expect(prefill).toEqual({
+      deadline: '',
+      startsAtDate: '2026-11-22',
+      startsAtTime: '09:30',
+      estMinutes: 45,
+    });
+  });
+
+  it('ignores malformed values instead of blocking the wizard', () => {
+    expect(clarifyPrefillFromParams({ deadline: 'garbage', startsAt: 'also-bad' })).toBeNull();
+    expect(clarifyPrefillFromParams({})).toBeNull();
+    // A valid anchor survives a bad companion value.
+    const prefill = clarifyPrefillFromParams({
+      deadline: localIso(2026, 11, 21, 15, 0),
+      estMinutes: 'nope',
+    });
+    expect(prefill?.deadline).toBe('2026-11-21T15:00');
+    expect(prefill?.estMinutes).toBeNull();
+  });
+
+  it('rejects out-of-range estMinutes and takes the first of array params', () => {
+    const prefill = clarifyPrefillFromParams({
+      startsAt: [localIso(2026, 11, 22, 9, 0), localIso(2026, 11, 23, 9, 0)],
+      estMinutes: ['0', '30'],
+    });
+    expect(prefill?.startsAtDate).toBe('2026-11-22');
+    expect(prefill?.estMinutes).toBeNull();
   });
 });

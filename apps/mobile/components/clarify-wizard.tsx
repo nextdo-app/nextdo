@@ -35,7 +35,7 @@
  * Presentational otherwise: no engine logic, no stored engine output
  * (component-guidelines).
  */
-import { useMemo, useReducer, useState, type Dispatch, type ReactNode } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState, type Dispatch, type ReactNode } from 'react';
 import { router } from 'expo-router';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -75,6 +75,7 @@ import {
   PROGRESS_MAX,
   QUESTION_TITLES,
   type AnsweredQuestion,
+  type ClarifyPrefill,
   type FormKind,
   type FormFields,
   type QuestionId,
@@ -330,6 +331,10 @@ export interface WizardBodyProps {
   /** Clarify batch mode (#58): the done step offers [澄清下一条] over the
    *  remaining pending items instead of [再记一条]. */
   batch?: boolean;
+  /** Issue #101: the capture preview's date/time hint — prefills the action
+   *  form's deadline and the calendar form's start/length. It never answers
+   *  a question and never overwrites a filled field. */
+  prefill?: ClarifyPrefill | null;
 }
 
 export function WizardBody({
@@ -340,6 +345,7 @@ export function WizardBody({
   currentProjectId,
   capturedAt,
   batch = false,
+  prefill = null,
 }: WizardBodyProps) {
   const powersync = usePowerSync();
   const db = useMemo(() => wrapDb(powersync), [powersync]);
@@ -355,6 +361,40 @@ export function WizardBody({
   );
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Issue #101: apply the capture hint ONCE per field, only to empty
+  // fields. Tracking the fields (not the form instance) means navigating
+  // back and forth cannot resurrect a value the user cleared.
+  const prefillAppliedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (prefill === null || state.step !== 'form') return;
+    const applied = prefillAppliedRef.current;
+    const offer = (
+      field: 'deadline' | 'startsAtDate' | 'startsAtTime' | 'estMinutes',
+      value: string | number,
+      current: string | number | null,
+    ) => {
+      if (applied.has(field)) return;
+      applied.add(field);
+      if (current === '' || current === null) {
+        dispatch({ type: 'field', field, value });
+      }
+    };
+    if (state.form === 'action' && prefill.deadline !== '') {
+      offer('deadline', prefill.deadline, state.fields.deadline);
+    }
+    if (state.form === 'calendar') {
+      if (prefill.startsAtDate !== '') {
+        offer('startsAtDate', prefill.startsAtDate, state.fields.startsAtDate);
+      }
+      if (prefill.startsAtTime !== '') {
+        offer('startsAtTime', prefill.startsAtTime, state.fields.startsAtTime);
+      }
+      if (prefill.estMinutes !== null) {
+        offer('estMinutes', prefill.estMinutes, state.fields.estMinutes);
+      }
+    }
+  }, [prefill, state]);
 
   async function submit(submission: Submission) {
     setSubmitting(true);
@@ -1395,9 +1435,17 @@ export interface ClarifyWizardProps {
   actionKind?: Extract<ActionKind, 'next' | 'calendar'> | null;
   /** Clarify only (#58): batch mode — [开始澄清] passes batch=1. */
   batch?: boolean;
+  /** Clarify only (issue #101): date/time hint from the capture preview. */
+  prefill?: ClarifyPrefill | null;
 }
 
-export function ClarifyWizard({ mode, id, actionKind = null, batch = false }: ClarifyWizardProps) {
+export function ClarifyWizard({
+  mode,
+  id,
+  actionKind = null,
+  batch = false,
+  prefill = null,
+}: ClarifyWizardProps) {
   const isReclarify = mode === 'reclarify';
   const inbox = useInboxItem(isReclarify ? null : id);
   const action = useActionTitle(isReclarify ? actionKind : null, isReclarify ? id : null);
@@ -1480,6 +1528,7 @@ export function ClarifyWizard({ mode, id, actionKind = null, batch = false }: Cl
       currentProjectId={isReclarify ? action.projectId : null}
       capturedAt={isReclarify ? null : (inbox.item?.capturedAt ?? null)}
       batch={batch}
+      prefill={prefill}
     />
   );
 }

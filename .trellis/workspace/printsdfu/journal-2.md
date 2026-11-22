@@ -444,3 +444,71 @@ Topics: [.trellis/spec/project/quality-guidelines.md](../../spec/project/quality
 ### Git Commits
 
 (No associated commits)
+
+
+## Session 78: 自然语言捕获解析（#101 日期/时间增量）
+<!-- trellis-session: v=3 fp=df9f3c89cbe1e7e7 -->
+
+**Date**: 2026-11-22
+**Task**: 自然语言捕获解析（#101 日期/时间增量）
+**Branch**: `feat/natural-language-capture`
+
+### Summary
+
+实现 packages/core 本地解析器（日期/时间/截止或日程判定）、捕获预览（类型切换/修改/撤销，原文不改）、Clarify 路由参数预填（仅填空字段，23:59 折叠为仅日期）。不改 inbox_items schema。门禁 verify:web --no-serve 全绿 1688 项；浏览器实测速记预览、撤销、记录并澄清预填与内联卡片截止解析均符合预期。重复规则、项目/标签识别未做，已记 backlog。
+Topics: [.trellis/research/natural-language-capture.md](../../research/natural-language-capture.md)
+
+### Git Commits
+
+(No associated commits)
+
+
+## Session 79: 修复 #101 复审 R1–R6
+<!-- trellis-session: v=3 fp=593049ba6ae6e206 -->
+
+**Date**: 2026-11-22
+**Task**: 修复 #101 复审 R1–R6
+**Branch**: `feat/natural-language-capture`
+
+### Summary
+
+按复审修正：自然周前缀（下/下下/本周）、显式24小时值与中文分钟、今晚9:30简写合并、ISO/斜线日期与非法锚点返回 null、截止词优先于日历词、向导按字段记录预填状态、捕获成功后重置撤销覆盖值。core 27 项解析测试与 mobile 预填/撤销回归测试通过。门禁 verify:web --no-serve 全绿 1699 项；浏览器复验 03:00/21:30/15:20、本周三11/18、非法日期/时钟无预览、撤销不泄漏与 Clarify 预填。日志与证据在 job tmp。
+Topics: [.trellis/research/natural-language-capture.md](../../research/natural-language-capture.md)
+
+### Git Commits
+
+(No associated commits)
+
+
+## Session 80: 修复 #101 复审 R7–R8
+<!-- trellis-session: v=3 fp=a214edc8276b2c41 -->
+
+**Date**: 2026-11-22
+**Task**: 修复 #101 复审 R7–R8
+**Branch**: `feat/natural-language-capture`
+
+### Summary
+
+R7：单字前不再全段匹配，只有紧跟在时间后的前才作为截止表达，并排除前往/前端/前台/前面/前方；之前/以前/截止/截至仍任意位置生效。R8：MINUTE_WORD 与 chineseNumber 支持零前缀（零五=5），普通点式与今晚简写路径保留分钟。core 解析 28 项通过，reviewer 的 15 项验收/回归测试全过。最终门禁 verify:web --no-serve 1700 项全绿；浏览器复验前端会议/前往医院为日程、3点前提交为截止、三点零五→15:05。research 清理了纠偏过程表述。
+Topics: [.trellis/research/natural-language-capture.md](../../research/natural-language-capture.md)
+
+### Git Commits
+
+(No associated commits)
+
+
+## Session 81: 修复 #101 复审 R9
+<!-- trellis-session: v=3 fp=1f853546ba2dac84 -->
+
+**Date**: 2026-11-22
+**Task**: 修复 #101 复审 R9
+**Branch**: `feat/natural-language-capture`
+
+### Summary
+
+R9：收窄前+面排除规则为 面(?!试)，使「3点前面试结束」判为 deadline，同时保留前往/前端普通词反例。core 解析 29 项通过，reviewer 独立测试 16 项全过。最终门禁 1701 项全绿；浏览器复验面试→截止、前往医院/前端会议→日程。research 同步规则、测试数与证据。
+Topics: [.trellis/research/natural-language-capture.md](../../research/natural-language-capture.md)
+
+### Git Commits
+
+(No associated commits)

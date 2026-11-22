@@ -78,6 +78,74 @@ export interface WizardResult {
   createdIds: string[];
 }
 
+/**
+ * Issue #101: the capture preview's date/time suggestion, converted into
+ * wizard form values. The wizard only PREFILLS empty fields — it never
+ * answers a question or overwrites something the user typed.
+ */
+export interface ClarifyPrefill {
+  /** Action-form deadline (`YYYY-MM-DD` or `YYYY-MM-DDTHH:mm`). */
+  deadline: string;
+  /** Calendar-form start date (`YYYY-MM-DD`); '' = no date hint. */
+  startsAtDate: string;
+  /** Calendar-form start time (`HH:mm`); '' = no clock hint. */
+  startsAtTime: string;
+  /** Calendar-form length; null = keep the wizard's default. */
+  estMinutes: number | null;
+}
+
+function isoToLocalParts(iso: string): { date: string; time: string } | null {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return null;
+  const date = new Date(ms);
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  return {
+    date: `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
+    time: `${pad(date.getHours())}:${pad(date.getMinutes())}`,
+  };
+}
+
+/**
+ * Validate the `deadline` / `startsAt` / `estMinutes` route params produced
+ * by `clarifyHrefWithSchedule`. Anything malformed is ignored (the wizard
+ * simply opens without a hint): URL params are user-editable input, and a
+ * bad value must never block the capture flow.
+ */
+export function clarifyPrefillFromParams(input: {
+  deadline?: string | string[];
+  startsAt?: string | string[];
+  estMinutes?: string | string[];
+}): ClarifyPrefill | null {
+  const first = (value: string | string[] | undefined): string | undefined =>
+    Array.isArray(value) ? value[0] : value;
+  const deadlineIso = first(input.deadline);
+  const startsAtIso = first(input.startsAt);
+  const estRaw = first(input.estMinutes);
+  const deadlineParts = deadlineIso === undefined ? null : isoToLocalParts(deadlineIso);
+  const startsParts = startsAtIso === undefined ? null : isoToLocalParts(startsAtIso);
+  if (deadlineParts === null && startsParts === null) return null;
+
+  const deadline =
+    deadlineParts === null
+      ? ''
+      : deadlineParts.time === DATE_ONLY_DEADLINE_HHMM
+        ? deadlineParts.date
+        : `${deadlineParts.date}T${deadlineParts.time}`;
+  // The calendar form can at least take the date from a date-only deadline.
+  const startsDate = startsParts?.date ?? deadlineParts?.date ?? '';
+  const startsTime =
+    startsParts?.time ??
+    (deadlineParts !== null && deadlineParts.time !== DATE_ONLY_DEADLINE_HHMM
+      ? deadlineParts.time
+      : '');
+  const parsedEst = estRaw === undefined ? null : Number(estRaw);
+  const estMinutes =
+    parsedEst !== null && Number.isInteger(parsedEst) && parsedEst >= 1 && parsedEst <= 1440
+      ? parsedEst
+      : null;
+  return { deadline, startsAtDate: startsDate, startsAtTime: startsTime, estMinutes };
+}
+
 interface WizardBase {
   mode: WizardMode;
   /** The InboxItem title (re-clarify: the existing action's title) — the

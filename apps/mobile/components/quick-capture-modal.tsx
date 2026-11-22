@@ -24,17 +24,20 @@ import { Button, colors } from '@nextdo/ui';
 import { errorMessage } from '@/lib/error-messages';
 import { useAppInsets } from '@/lib/use-app-insets';
 import { useAppTheme } from '@/lib/theme';
-import type { InboxItem } from '@nextdo/core';
+import { useAppClock } from '@/hooks/use-app-clock';
+import { useCaptureSchedule } from '@/hooks/use-capture-schedule';
+import { CaptureSchedulePreview } from '@/components/capture-schedule-preview';
+import type { CaptureSchedule, InboxItem } from '@nextdo/core';
 
 export interface QuickCaptureModalProps {
   visible: boolean;
   onClose: () => void;
-  onAdd: (title: string) => Promise<InboxItem | null>;
+  onAdd: (title: string, schedule: CaptureSchedule | null) => Promise<InboxItem | null>;
   /** After-save callback — the parent decides what a saved capture means
    *  (issue #58: usually close the modal and leave the item pending). */
-  onCaptured?: (item: InboxItem) => void;
+  onCaptured?: (item: InboxItem, schedule: CaptureSchedule | null) => void;
   /** Capture-and-continue (R1 shortcut): save, then open the Clarify wizard. */
-  onCapturedAndClarify?: (item: InboxItem) => void;
+  onCapturedAndClarify?: (item: InboxItem, schedule: CaptureSchedule | null) => void;
   error?: unknown;
 }
 
@@ -50,6 +53,8 @@ export function QuickCaptureModal({
   const [saving, setSaving] = useState(false);
   const { isDark } = useAppTheme();
   const insets = useAppInsets();
+  const now = useAppClock();
+  const { schedule, setSchedule, clear, reset } = useCaptureSchedule(draft, now);
   const bottomPadding = Math.max(insets.bottom, 16);
 
   const handleCapture = async (next: 'save' | 'clarify') => {
@@ -57,12 +62,15 @@ export function QuickCaptureModal({
     if (title === '' || saving) return;
     setSaving(true);
     try {
-      const item = await onAdd(title);
+      const item = await onAdd(title, schedule);
       if (item !== null) {
         // Reset the draft first: the parent may close the modal right here.
         setDraft('');
-        if (next === 'clarify') onCapturedAndClarify?.(item);
-        else onCaptured?.(item);
+        // A finished capture is a new input — a dismissal made for this text
+        // must not suppress the preview when the same text is typed again.
+        reset();
+        if (next === 'clarify') onCapturedAndClarify?.(item, schedule);
+        else onCaptured?.(item, schedule);
       }
     } finally {
       setSaving(false);
@@ -71,6 +79,7 @@ export function QuickCaptureModal({
 
   const handleClose = () => {
     setDraft('');
+    reset();
     onClose();
   };
 
@@ -145,6 +154,15 @@ export function QuickCaptureModal({
             }}
             blurOnSubmit={false}
           />
+
+          {schedule !== null ? (
+            <CaptureSchedulePreview
+              schedule={schedule}
+              now={now}
+              onChange={setSchedule}
+              onClear={clear}
+            />
+          ) : null}
 
           {error ? (
             <Text className="mb-3 text-xs text-danger">

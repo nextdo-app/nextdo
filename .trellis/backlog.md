@@ -34,6 +34,7 @@
 8. 引擎上下文的 settings 表化（进同步面）（原候选 #5）
 9. CalendarAction 支持 projectId（journal-1 session 10 Next Steps）
 10. 商店素材与版本细节：splash 屏（`app.json` 无 splash 配置）、EAS `submit` 配置为空、版本号不齐（mobile 0.1.2 / desktop 0.1.1 / 根 0.1.1）（09-30 新增）
+11. 自然语言捕获解析增强（#101 剩余）：重复规则、项目/标签识别。当前只解析日期/时间并做预览与 Clarify 预填（见 `.trellis/research/natural-language-capture.md`）。
 
 ## 09-30 清理的过时条目
 

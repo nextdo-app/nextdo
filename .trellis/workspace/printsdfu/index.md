@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 77
-- **Last Active**: 2026-11-19
+- **Total Sessions**: 81
+- **Last Active**: 2026-11-22
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~446 | Active |
+| `journal-2.md` | ~514 | Active |
 | `journal-1.md` | ~1990 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,10 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 81 | 2026-11-22 | 修复 #101 复审 R9 | - | `feat/natural-language-capture` |
+| 80 | 2026-11-22 | 修复 #101 复审 R7–R8 | - | `feat/natural-language-capture` |
+| 79 | 2026-11-22 | 修复 #101 复审 R1–R6 | - | `feat/natural-language-capture` |
+| 78 | 2026-11-22 | 自然语言捕获解析（#101 日期/时间增量） | - | `feat/natural-language-capture` |
 | 77 | 2026-11-19 | 取消交付前验证的截图要求 | - | `main` |
 | 76 | 2026-11-19 | 资料库可选启用规则与 Focus bug 优先级 | - | `main` |
 | 75 | 2026-11-18 | Now 页审查修复与 beta.28 发布 | `36d9805`, `742d7bc`, `fd275e4` | `main` |

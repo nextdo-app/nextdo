@@ -9,15 +9,26 @@
 import { View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { ClarifyWizard } from '@/components/clarify-wizard';
+import { clarifyPrefillFromParams } from '@/lib/clarify-flow';
 
 export default function ClarifyScreen() {
-  const { inboxId, batch } = useLocalSearchParams<{ inboxId: string; batch?: string }>();
+  const { inboxId, batch, deadline, startsAt, estMinutes } = useLocalSearchParams<{
+    inboxId: string;
+    batch?: string;
+    deadline?: string;
+    startsAt?: string;
+    estMinutes?: string;
+  }>();
+  // Issue #101: the capture preview hands its date/time suggestion over as
+  // route params; malformed values are ignored (the wizard still opens).
+  const prefill = clarifyPrefillFromParams({ deadline, startsAt, estMinutes });
   return (
     <View className="flex-1 bg-canvas dark:bg-canvas-dark">
       <ClarifyWizard
         mode="clarify"
         id={typeof inboxId === 'string' ? inboxId : null}
         batch={batch === '1'}
+        prefill={prefill}
       />
     </View>
   );

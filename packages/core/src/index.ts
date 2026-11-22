@@ -33,6 +33,13 @@ export {
 } from './lib/time';
 export type { Hhmm, SnoozePreset } from './lib/time';
 export {
+  CAPTURE_CALENDAR_MINUTES,
+  captureScheduleFromParts,
+  describeCaptureSchedule,
+  parseCaptureSchedule,
+} from './capture/parse';
+export type { CaptureSchedule, CaptureScheduleKind } from './capture/parse';
+export {
   markdownInlineSummary,
   markdownToPlainText,
   parseMarkdown,
