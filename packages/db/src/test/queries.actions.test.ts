@@ -250,6 +250,170 @@ describe('updateNextAction', () => {
     }
   });
 
+  it('persists and clears the day/time window and the dependency (issue #98)', async () => {
+    const { db, close } = await open();
+    try {
+      const prerequisite = makeAction({ title: '前置行动' });
+      const action = makeAction({ title: '依赖行动' });
+      await addNextAction(db, prerequisite);
+      await addNextAction(db, action);
+
+      const windowed = await updateNextAction(
+        db,
+        { ...action, updatedAt: toIso(FIXTURE_NOW) },
+        undefined,
+        {
+          dependsOnId: prerequisite.id,
+          windowStart: '09:00',
+          windowEnd: '11:30',
+          windowDays: [1, 3, 5],
+        },
+      );
+      expect(windowed.dependsOnId).toBe(prerequisite.id);
+      expect(windowed.windowStart).toBe('09:00');
+      expect(windowed.windowEnd).toBe('11:30');
+      expect(windowed.windowDays).toEqual([1, 3, 5]);
+
+      const reloaded = (await listNextActions(db)).find((row) => row.id === action.id);
+      expect(reloaded?.dependsOnId).toBe(prerequisite.id);
+      expect(reloaded?.windowStart).toBe('09:00');
+      expect(reloaded?.windowEnd).toBe('11:30');
+      expect(reloaded?.windowDays).toEqual([1, 3, 5]);
+
+      // The editor clears a field by naming it with an explicit `undefined`.
+      await updateNextAction(
+        db,
+        { ...(reloaded as NextAction), updatedAt: toIso(FIXTURE_NOW) },
+        undefined,
+        {
+          dependsOnId: undefined,
+          windowStart: undefined,
+          windowEnd: undefined,
+          windowDays: undefined,
+        },
+      );
+      const cleared = await db
+        .selectFrom('next_actions')
+        .select(['depends_on_id', 'window_start', 'window_end', 'window_days'])
+        .where('id', '=', action.id)
+        .executeTakeFirstOrThrow();
+      expect(cleared.depends_on_id).toBeNull();
+      expect(cleared.window_start).toBeNull();
+      expect(cleared.window_end).toBeNull();
+      expect(cleared.window_days).toBeNull();
+    } finally {
+      await close();
+    }
+  });
+
+  it('a form that does not own the window/dependency keeps a value written meanwhile (issue #98 review)', async () => {
+    const { db, close } = await open();
+    try {
+      const prerequisite = makeAction({ title: '前置行动' });
+      const action = makeAction({ title: '依赖行动' });
+      await addNextAction(db, prerequisite);
+      await addNextAction(db, action);
+
+      // The project-detail form holds this snapshot while another entry point
+      // (Now, another tab or device) writes the four fields.
+      const staleSnapshot = { ...action };
+      await updateNextAction(db, staleSnapshot, undefined, {
+        dependsOnId: prerequisite.id,
+        windowStart: '09:00',
+        windowEnd: '17:00',
+        windowDays: [1, 2, 3, 4, 5],
+      });
+
+      // The project form owns only title/est/value/deadline/note, so it names
+      // no window field; the values above must survive the title-only save.
+      await updateNextAction(db, {
+        ...staleSnapshot,
+        title: '只改标题',
+        updatedAt: toIso(FIXTURE_NOW),
+      });
+      const reloaded = (await listNextActions(db)).find((row) => row.id === action.id);
+      expect(reloaded?.title).toBe('只改标题');
+      expect(reloaded?.dependsOnId).toBe(prerequisite.id);
+      expect(reloaded?.windowStart).toBe('09:00');
+      expect(reloaded?.windowEnd).toBe('17:00');
+      expect(reloaded?.windowDays).toEqual([1, 2, 3, 4, 5]);
+    } finally {
+      await close();
+    }
+  });
+
+  it('rejects a dependency that would close a cycle inside the write transaction (issue #98 review)', async () => {
+    const { db, close } = await open();
+    try {
+      const a = makeAction({ title: '行动 A' });
+      const b = makeAction({ title: '行动 B' });
+      const c = makeAction({ title: '行动 C' });
+      await addNextAction(db, a);
+      await addNextAction(db, b);
+      await addNextAction(db, c);
+
+      // Two editors opened before either save: A→B succeeds, B→A must fail.
+      await updateNextAction(db, { ...a, updatedAt: toIso(FIXTURE_NOW) }, undefined, {
+        dependsOnId: b.id,
+      });
+      await expect(
+        updateNextAction(db, { ...b, updatedAt: toIso(FIXTURE_NOW) }, undefined, {
+          dependsOnId: a.id,
+        }),
+      ).rejects.toMatchObject({ code: 'action.dependency-cycle' });
+
+      // The failed save leaves both rows unchanged.
+      const afterFailure = await listNextActions(db);
+      expect(afterFailure.find((row) => row.id === a.id)?.dependsOnId).toBe(b.id);
+      expect(afterFailure.find((row) => row.id === b.id)?.dependsOnId).toBeUndefined();
+
+      // Self-dependency is rejected too.
+      await expect(
+        updateNextAction(db, { ...a, updatedAt: toIso(FIXTURE_NOW) }, undefined, {
+          dependsOnId: a.id,
+        }),
+      ).rejects.toMatchObject({ code: 'action.dependency-cycle' });
+
+      // A longer chain is walked transitively: C→A→B is legal, B→C is not.
+      await updateNextAction(db, { ...c, updatedAt: toIso(FIXTURE_NOW) }, undefined, {
+        dependsOnId: a.id,
+      });
+      await expect(
+        updateNextAction(db, { ...b, updatedAt: toIso(FIXTURE_NOW) }, undefined, {
+          dependsOnId: c.id,
+        }),
+      ).rejects.toMatchObject({ code: 'action.dependency-cycle' });
+      const afterChain = await listNextActions(db);
+      expect(afterChain.find((row) => row.id === c.id)?.dependsOnId).toBe(a.id);
+      expect(afterChain.find((row) => row.id === b.id)?.dependsOnId).toBeUndefined();
+    } finally {
+      await close();
+    }
+  });
+
+  it('rejects an invalid window value from the patch and leaves the row unchanged (issue #98 review)', async () => {
+    const { db, close } = await open();
+    try {
+      const action = makeAction({ title: '窗口行动' });
+      await addNextAction(db, action);
+
+      // The 4th argument is public input: validate the merged row, not only
+      // the caller's snapshot.
+      await expect(
+        updateNextAction(db, { ...action, updatedAt: toIso(FIXTURE_NOW) }, undefined, {
+          windowStart: '9am',
+        }),
+      ).rejects.toMatchObject({ code: 'time.invalid-hhmm' });
+
+      const reloaded = (await listNextActions(db)).find((row) => row.id === action.id);
+      expect(reloaded?.title).toBe('窗口行动');
+      expect(reloaded?.windowStart).toBeUndefined();
+      expect(reloaded?.windowEnd).toBeUndefined();
+    } finally {
+      await close();
+    }
+  });
+
   it('redefining (title change) resets consecutiveSkips and lastSkippedAt', async () => {
     const { db, close } = await open(true);
     try {

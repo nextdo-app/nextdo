@@ -909,6 +909,9 @@ describe('Project detail', () => {
       // No deadline and no stored reminder → the reminder field stays empty
       // and this save leaves the reminders table alone (task 10-17).
       undefined,
+      // The project form does not edit the window/dependency fields (issue
+      // #98): it must name none of them, so the db keeps the current values.
+      {},
     );
     // The row re-renders from the (mocked) live data — new estimate tag.
     expect(screen.getByText('30 分钟')).toBeTruthy();
