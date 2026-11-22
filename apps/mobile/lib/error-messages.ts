@@ -27,6 +27,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   'validation.nextAction.deadline': '截止时间格式不正确',
   'validation.focusSession.plannedMinutes': '专注时长无效（需为 1–180 之间的整数分钟）',
   'validation.focusSession.pausedSec': '暂停时长无效',
+  'validation.referenceItem.title': '请填写资料标题',
   // Storage / not-found
   'inbox.not-found': '这条收件箱记录不存在了',
   'action.not-found': '这个行动不存在了（可能已被删除）',
@@ -40,6 +41,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   'trash.parent-project-deleted': '所属项目已删除或不存在，请先恢复项目后再试',
   'trash.parent-habit-deleted': '所属习惯已删除或不存在，请先恢复习惯后再试',
   'somedayMaybeItem.not-found': '这条"有空再说"记录不存在了',
+  'referenceItem.not-found': '这条资料不存在了（可能已被删除）',
   'waitingForItem.not-found': '这条等待事项不存在了',
   'context.not-found': '这个场景不存在了',
   'habit.not-found': '这个习惯不存在了',

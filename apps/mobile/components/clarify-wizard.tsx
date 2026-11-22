@@ -58,6 +58,7 @@ import { useInboxItem } from '@/hooks/use-inbox-item';
 import { useInboxItems } from '@/hooks/use-inbox-items';
 import { useActionTitle } from '@/hooks/use-action-title';
 import { useProjects } from '@/hooks/use-projects';
+import { useReferenceLibrarySettings } from '@/hooks/use-reference-library-settings';
 import { errorMessage } from '@/lib/error-messages';
 import { maybeRequestNotificationPermission } from '@/lib/reminders/permission';
 import { formatDueLabel, formatLocalDate, formatLocalDateTime } from '@/lib/format';
@@ -344,6 +345,9 @@ export function WizardBody({
   const powersync = usePowerSync();
   const db = useMemo(() => wrapDb(powersync), [powersync]);
   const now = useAppClock();
+  // Issue #90: the reference library is optional. OFF removes the 「资料」
+  // choice so a disabled library cannot keep collecting unreachable rows.
+  const { enabled: referenceLibraryEnabled } = useReferenceLibrarySettings();
 
   // Q2b: the attachable projects (active only — on-hold/done/dropped are
   // not attachable; the db layer re-checks status at submit time).
@@ -556,7 +560,15 @@ export function WizardBody({
                   step="q1b"
                   disabled={submitting}
                   choices={[
-                    { label: '资料（留个参考）', onPress: () => dispatch({ type: 'answer-q1b', kind: 'reference' }) },
+                    ...(referenceLibraryEnabled
+                      ? [
+                          {
+                            label: '资料（留个参考）',
+                            onPress: () =>
+                              dispatch({ type: 'answer-q1b', kind: 'reference' }),
+                          },
+                        ]
+                      : []),
                     { label: '有空再说', onPress: () => dispatch({ type: 'answer-q1b', kind: 'someday' }) },
                     { label: '删除', onPress: () => dispatch({ type: 'answer-q1b', kind: 'trash' }) },
                   ]}

@@ -12,6 +12,7 @@
    - 形态：EAS iOS 构建（App Store Connect / 至少 TestFlight），接入 release 流水线。
    - 依据：release.yml 注释「iOS is NOT part of this pipeline」；09-30 核查。
 3. **核心对象展示/管理入口：Waiting For 事项跟进**（10-08 用户明确裁决：References 属于外部知识库软件范畴，Nextdo 不做专屏；专注于 Waiting For）
+   - **2026-11-19 改判**：资料库改为可选启用功能，用户可关闭或不启用；10-08 的「不做资料库」不再是当前规则。2026-11-20 已实现二级列表入口（issue #90，见 `.trellis/research/reference-library.md`）。
    - 现状：Clarify 流程能把事项落进 Waiting For，且底层已有表和数据（`waiting_for_items`），但前端缺乏日常查看、修改和跟进的统一管理页面。
    - 形态：独立二级页面（`app/waiting.tsx`）+ 收件箱入口导航，支持列表展示（等待对象、到期时间、状态）、快捷新建、更新与软删除（标记完成/清除）。
    - 依据：用户指令「references 不需要，这是知识库软件的功能，不属于本软件，可以写一个 waiting for」；Proposal MVP 核心对象列表。

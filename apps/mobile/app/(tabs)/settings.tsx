@@ -67,6 +67,7 @@ import type { ReminderPermissionState } from '@/lib/reminders/adapters';
 import { useAppClock } from '@/hooks/use-app-clock';
 import { useHabitReminders } from '@/hooks/use-habit-reminders';
 import { useHabits } from '@/hooks/use-habits';
+import { useReferenceLibrarySettings } from '@/hooks/use-reference-library-settings';
 import { PickerField } from '@/components/picker-field';
 import { FormField } from '@/components/form-field';
 import { DateTimePicker } from '@/components/datetime-picker';
@@ -443,6 +444,13 @@ export default function SettingsScreen() {
   const lastSyncedLabel = formatLastSyncedAt(now, lastSyncedAt);
   const syncHint = syncFailureHint(syncDisplay);
   const { data: habitRows } = useHabits(now);
+  // Issue #90: the reference library is optional. OFF hides the Now entry and
+  // the Clarify 「资料」 choice; stored references are kept.
+  const {
+    enabled: referenceLibraryEnabled,
+    setEnabled: setReferenceLibraryEnabled,
+    error: referenceLibraryError,
+  } = useReferenceLibrarySettings();
   const activeHabits = (habitRows ?? []).map((r) => r.habit).filter(
     (h) => h.deletedAt === null && h.status === 'active',
   );
@@ -706,6 +714,34 @@ export default function SettingsScreen() {
           <Text className="font-sans text-[11px] text-muted dark:text-muted-dark">
             主题、专注时长与 Now 页可用时间随账本同步；通知、日历与更新设置保留在本机。
           </Text>
+
+          {/* Issue #90: optional reference library. OFF hides the entry and
+           *  the Clarify choice; it never deletes stored references. */}
+          <View className="flex-row items-center justify-between gap-2 border-t border-border/40 pt-3 dark:border-border-dark/40">
+            <View className="flex-1 min-w-0 pr-2">
+              <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+                资料库
+              </Text>
+              <Text className="mt-0.5 font-sans text-[11px] leading-tight text-muted dark:text-muted-dark">
+                归档资料与链接。关闭后隐藏「现在」页入口和澄清时的「资料」选项，已有资料保留。
+              </Text>
+              {referenceLibraryError !== null ? (
+                <Text className="mt-1 font-sans text-[11px] leading-tight text-danger dark:text-danger-dark">
+                  设置未保存，开关已恢复为原来的值，请重试。
+                </Text>
+              ) : null}
+            </View>
+            <View className="shrink-0">
+              <Switch
+                accessibilityLabel="启用资料库"
+                value={referenceLibraryEnabled}
+                onValueChange={(value) => void setReferenceLibraryEnabled(value)}
+                trackColor={switchTrackColor}
+                thumbColor={switchThumbColor}
+                {...({ activeThumbColor: switchThumbColor } as object)}
+              />
+            </View>
+          </View>
         </Card>
 
         {/* Section 2: 提醒与通知 */}

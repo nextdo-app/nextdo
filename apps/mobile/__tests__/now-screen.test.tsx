@@ -257,6 +257,10 @@ import type {
 } from '@nextdo/core';
 import { localDateKey, ValidationNextdoError } from '@nextdo/core';
 import { __setEngineContextStoreForTests } from '@/lib/engine-context';
+import {
+  __setReferenceLibrarySettingsStoreForTests,
+  saveReferenceLibrarySettings,
+} from '@/lib/reference-library-settings';
 
 /** A minimal eligible next-action candidate (the pool contract shape). */
 function nextAction(overrides: Partial<NextCandidate> = {}): NextCandidate {
@@ -406,6 +410,9 @@ beforeEach(() => {
   contextReads.count = 0;
   // Fresh in-memory engine-context store per test (module-level backend).
   __setEngineContextStoreForTests(null);
+  // Issue #90: the optional reference library defaults ON; the gating test
+  // opts out explicitly.
+  __setReferenceLibrarySettingsStoreForTests(null);
 });
 
 describe('Now screen', () => {
@@ -637,6 +644,22 @@ describe('Now screen', () => {
     await waitFor(() => expect(screen.getByText('执行池是空的')).toBeTruthy());
     expect(screen.getByText(/去收件箱捕获一条/)).toBeTruthy();
     // An empty execution pool must not make completed work unreachable.
+    expect(screen.getByText('已完成行动')).toBeTruthy();
+  });
+
+  it('shows the optional 资料库 entry by default', async () => {
+    setPool([]);
+    renderRouter('app', { initialUrl: '/(tabs)/now' });
+    await waitFor(() => expect(screen.getByText('资料库')).toBeTruthy());
+  });
+
+  it('hides the 资料库 entry when the optional library is disabled', async () => {
+    await saveReferenceLibrarySettings({ enabled: false });
+    setPool([]);
+    renderRouter('app', { initialUrl: '/(tabs)/now' });
+    await waitFor(() => expect(screen.getByText('执行池是空的')).toBeTruthy());
+    await waitFor(() => expect(screen.queryByText('资料库')).toBeNull());
+    // The completed-actions entry is unaffected by this preference.
     expect(screen.getByText('已完成行动')).toBeTruthy();
   });
 

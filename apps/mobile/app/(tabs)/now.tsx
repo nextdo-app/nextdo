@@ -40,6 +40,7 @@ import { useArchiveAction } from '@/hooks/use-archive-action';
 import { useCompleteAction } from '@/hooks/use-complete-action';
 import { useHabits, type HabitWithProgress } from '@/hooks/use-habits';
 import { useProjectTitles } from '@/hooks/use-project-titles';
+import { useReferenceLibrarySettings } from '@/hooks/use-reference-library-settings';
 import { useEngineContextSettings, type EngineContextSettings } from '@/lib/engine-context';
 import { errorMessage } from '@/lib/error-messages';
 import { cognitiveLoadLabel } from '@/lib/cognitive-load';
@@ -687,9 +688,39 @@ function CompletedActionsEntry() {
   );
 }
 
+/**
+ * The reference library's entry (issue #90) — a secondary list like
+ * 已完成行动, not a new tab. Rendered only when the optional library is
+ * enabled; the Settings switch hides it without deleting stored references.
+ */
+function ReferenceLibraryEntry() {
+  const { isDark } = useAppTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="打开资料库"
+      hitSlop={CHIP_HIT_SLOP}
+      onPress={() => router.push('/references')}
+      className="flex-row items-center justify-between rounded-2xl border border-border/60 bg-surface/70 px-3.5 py-2.5 active:bg-surface-container dark:border-border-dark/60 dark:bg-surface-dark/70 dark:active:bg-surface-container-dark shadow-2xs"
+    >
+      <View className="flex-row items-center gap-2">
+        <Ionicons name="library-outline" size={15} color={isDark ? colors.mutedDark : colors.muted} />
+        <Text className="font-sans text-sm font-medium text-ink dark:text-ink-dark">
+          资料库
+        </Text>
+      </View>
+      <View className="flex-row items-center gap-1">
+        <Text className="font-sans text-xs text-muted dark:text-muted-dark">查看与检索</Text>
+        <Ionicons name="chevron-forward" size={13} color={isDark ? colors.mutedDark : colors.muted} />
+      </View>
+    </Pressable>
+  );
+}
+
 export default function NowScreen() {
   const now = useAppClock();
   const { isDark } = useAppTheme();
+  const { enabled: referenceLibraryEnabled } = useReferenceLibrarySettings();
   const { settings, update, error: settingsError } = useEngineContextSettings();
   const { data, error, calendarImportError } = useNow(settings);
   const { skip, error: skipError } = useSkipAction();
@@ -1044,6 +1075,7 @@ export default function NowScreen() {
             <>
               <EmptyExecutionPool />
               <CompletedActionsEntry />
+              {referenceLibraryEnabled ? <ReferenceLibraryEntry /> : null}
             </>
           ) : (
             <>
@@ -1269,6 +1301,7 @@ export default function NowScreen() {
               ) : null}
 
               <CompletedActionsEntry />
+              {referenceLibraryEnabled ? <ReferenceLibraryEntry /> : null}
 
               {/* The alternative list — everything except the hero card, so
                   the same action never appears twice. Hidden entirely when

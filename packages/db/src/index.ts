@@ -142,6 +142,13 @@ export {
   buildWeeklyReviewSnapshot,
   listCompletionRecords,
 } from './queries/reviews';
+// Reference library (issue #90): the live list + the edit / soft-delete
+// mutations behind the optional `/references` screen.
+export {
+  listReferenceItems,
+  trashReferenceItem,
+  updateReferenceItem,
+} from './queries/references';
 // Watched-query builders for the app's `@powersync/react` data hooks
 // (database-guidelines "@powersync/react boundary").
 export {
@@ -151,6 +158,7 @@ export {
   poolTriggerWatchQuery,
   projectCardsWatchQuery,
   projectsWatchQuery,
+  referenceItemsWatchQuery,
   reviewRecordsWatchQuery,
   settingsWatchQuery,
   somedayItemsWatchQuery,
