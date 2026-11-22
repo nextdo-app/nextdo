@@ -1,5 +1,5 @@
-import { ScrollView, Text, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { Pressable, ScrollView, Text, View } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Button, Card } from '@nextdo/ui';
 import { useReviewDetail } from '@/hooks/use-review-detail';
 import { useAppInsets } from '@/lib/use-app-insets';
@@ -29,13 +29,27 @@ export default function ReviewDetailScreen() {
         ) : (
           <>
             <Text className="text-base text-ink dark:text-ink-dark">{data.record.kind === 'daily' ? '今日回顾' : '本周回顾'} · {formatLocalDateTime(data.record.at)}</Text>
-            <Text className="text-sm text-muted dark:text-muted-dark">此页显示提交时保存的记录。安排到次日的时间按查看设备的当前时区重算。标有「当前标题」的旧记录使用现有名称，原名称无法恢复。</Text>
+            <Text className="text-sm text-muted dark:text-muted-dark">此页显示提交时保存的记录。安排到次日的时间按查看设备的当前时区重算。标有「当前标题」的旧记录使用现有名称，原名称无法恢复。项目、等待事项和 Someday 条目可打开对应页面。</Text>
             {reviewDetailSections(data.record, data.currentTitles).map((section) => (
               <Card key={section.title} className="gap-2">
                 <Text className="text-base font-medium text-ink dark:text-ink-dark">{section.title}</Text>
-                {section.lines.length === 0 ? <Text className="text-sm text-muted dark:text-muted-dark">无</Text> : section.lines.map((line, index) => (
-                  <Text key={`${index}:${line}`} className="text-sm text-ink dark:text-ink-dark">{line}</Text>
-                ))}
+                {section.entries.length === 0 ? <Text className="text-sm text-muted dark:text-muted-dark">无</Text> : section.entries.map((entry, index) => {
+                  const href = entry.href;
+                  if (href === undefined) {
+                    return <Text key={`${index}:${entry.text}`} className="text-sm text-ink dark:text-ink-dark">{entry.text}</Text>;
+                  }
+                  return (
+                    <Pressable
+                      key={`${index}:${entry.text}`}
+                      accessibilityRole="link"
+                      accessibilityLabel={`打开：${entry.text}`}
+                      onPress={() => router.push(href)}
+                      className="min-h-9 justify-center rounded-lg py-1 active:bg-surface-container dark:active:bg-surface-container-dark"
+                    >
+                      <Text className="text-sm text-accent dark:text-accent-dark">{entry.text} →</Text>
+                    </Pressable>
+                  );
+                })}
               </Card>
             ))}
           </>

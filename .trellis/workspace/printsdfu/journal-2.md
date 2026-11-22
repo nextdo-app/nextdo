@@ -508,6 +508,17 @@ Topics: [.trellis/research/notification-inline-actions.md](../../research/notifi
 
 实现 packages/core 本地解析器（日期/时间/截止或日程判定）、捕获预览（类型切换/修改/撤销，原文不改）、Clarify 路由参数预填（仅填空字段，23:59 折叠为仅日期）。不改 inbox_items schema。门禁 verify:web --no-serve 全绿 1688 项；浏览器实测速记预览、撤销、记录并澄清预填与内联卡片截止解析均符合预期。重复规则、项目/标签识别未做，已记 backlog。
 Topics: [.trellis/research/natural-language-capture.md](../../research/natural-language-capture.md)
+## Session 78: 回顾详情支持跳转项目/等待/Someday（#67）
+<!-- trellis-session: v=3 fp=346e5de0ee77850e -->
+
+**Date**: 2026-11-22
+**Task**: 回顾详情支持跳转项目/等待/Someday（#67）
+**Branch**: `feat/review-links-67`
+
+### Summary
+
+review-detail section 改为带 href 的条目；项目→/projects/<id>，等待→/waiting，Someday→/someday；行动与日程无详情路由保持纯文本。新增 lib 与详情页测试。门禁 1648 项通过；浏览器实测按用户 2026-11-22 明确要求跳过，不声称浏览器已验证。
+Topics: [.trellis/research/review-page.md](../../research/review-page.md)
 
 ### Git Commits
 
