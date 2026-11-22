@@ -364,6 +364,49 @@ export async function addNextAction(
 }
 
 /**
+ * The window/dependency fields an edit form owns (issue #98). Absent keys keep
+ * the CURRENT row's value — a form that does not edit them must not undo a
+ * value another tab/device wrote while the form's snapshot was open. A present
+ * key with `undefined` is an explicit clear (written as NULL).
+ */
+export type NextActionWindowFields = Partial<
+  Pick<NextAction, 'dependsOnId' | 'windowStart' | 'windowEnd' | 'windowDays'>
+>;
+
+/**
+ * Issue #98 review: two editors opened at the same time can each pick the
+ * other as a prerequisite — the candidate list was read before either save,
+ * so it cannot see the other edge. Re-walk the chain from the proposed
+ * prerequisite inside the write transaction; a repeated id (or the edited
+ * action itself) would make both actions permanently filtered.
+ */
+async function assertDependencyChainAcyclic(
+  db: Kysely<Database>,
+  actionId: string,
+  dependsOnId: string,
+): Promise<void> {
+  const seen = new Set<string>([actionId]);
+  let current: string | undefined = dependsOnId;
+  while (current !== undefined) {
+    if (seen.has(current)) {
+      throw new ValidationNextdoError(
+        'action.dependency-cycle',
+        'This prerequisite would create a dependency cycle',
+      );
+    }
+    seen.add(current);
+    const row = await db
+      .selectFrom('next_actions')
+      .select('depends_on_id')
+      .where('id', '=', current)
+      .executeTakeFirst();
+    // A calendar/habit id (or a row no longer present) ends the chain; the
+    // engine also accepts a completed calendar/habit prerequisite.
+    current = row?.depends_on_id ?? undefined;
+  }
+}
+
+/**
  * Edit-form update. Only the fields the edit forms own (title, estimate,
  * value, deadline, note) are taken from the incoming row; everything else —
  * status, snooze state, skip streak, ingest ids — is read from the CURRENT
@@ -371,6 +414,11 @@ export async function addNextAction(
  * it while the form was open. Resets `consecutiveSkips` to 0 when the user
  * redefined the action (title or estimate changed) — engine spec
  * "Skip & Re-clarify".
+ *
+ * `windowFields` (issue #98) is the same rule for the window/dependency
+ * columns: only the keys this edit form explicitly owns are applied. The
+ * project-detail form omits them, so a title-only save preserves a window or
+ * prerequisite set meanwhile from Now.
  *
  * `reminder` (task 10-17) runs in the SAME transaction as the row update, so
  * a failed save can never leave an armed reminder behind (and a save that
@@ -383,6 +431,7 @@ export async function updateNextAction(
   db: NextdoDb,
   action: NextAction,
   reminder?: ActionReminderInput,
+  windowFields: NextActionWindowFields = {},
 ): Promise<NextAction> {
   assertValidNextAction(action);
   const specs = reminder === undefined ? [] : resolveReminderSpecs(reminder);
@@ -391,6 +440,9 @@ export async function updateNextAction(
     // would win over a snooze / completion / skip that landed meanwhile.
     const currentRow = await loadActionRow(tx, 'next', action.id);
     const current = nextActionFromRow(currentRow as Database['next_actions']);
+    if (windowFields.dependsOnId !== undefined) {
+      await assertDependencyChainAcyclic(tx, action.id, windowFields.dependsOnId);
+    }
     const redefined =
       current.title !== action.title || current.estMinutes !== action.estMinutes;
     const merged: NextAction = {
@@ -400,10 +452,16 @@ export async function updateNextAction(
       value: action.value,
       deadline: action.deadline,
       note: action.note,
+      // Issue #98: spread only the keys the caller owns. An explicitly
+      // present `undefined` clears the column; an absent key keeps `current`.
+      ...windowFields,
       updatedAt: action.updatedAt,
       consecutiveSkips: redefined ? 0 : current.consecutiveSkips,
       lastSkippedAt: redefined ? undefined : current.lastSkippedAt,
     };
+    // `windowFields` is a public input just like the row: validate the row
+    // that will actually be written, not only the caller's snapshot.
+    assertValidNextAction(merged);
     await tx
       .updateTable('next_actions')
       .set({ ...nextActionToRow(merged), updated_at: merged.updatedAt })

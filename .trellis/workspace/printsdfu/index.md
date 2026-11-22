@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 77
-- **Last Active**: 2026-11-19
+- **Total Sessions**: 81
+- **Last Active**: 2026-11-21
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~446 | Active |
+| `journal-2.md` | ~514 | Active |
 | `journal-1.md` | ~1990 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,10 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 81 | 2026-11-21 | issue #98 第三轮审查修复：错误码映射与合并行校验 | - | `feat/next-action-window-deps` |
+| 80 | 2026-11-21 | issue #98 第二轮审查修复：字段所有权与成环校验 | - | `feat/next-action-window-deps` |
+| 79 | 2026-11-20 | issue #98 审查修复：窗口字段所有权与 Hooks 顺序 | - | `feat/next-action-window-deps` |
+| 78 | 2026-11-20 | NextAction 时间窗口与依赖输入入口（issue #98） | - | `feat/next-action-window-deps` |
 | 77 | 2026-11-19 | 取消交付前验证的截图要求 | - | `main` |
 | 76 | 2026-11-19 | 资料库可选启用规则与 Focus bug 优先级 | - | `main` |
 | 75 | 2026-11-18 | Now 页审查修复与 beta.28 发布 | `36d9805`, `742d7bc`, `fd275e4` | `main` |

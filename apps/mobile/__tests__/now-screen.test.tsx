@@ -14,6 +14,11 @@
 const poolRef: { current: unknown } = { current: null };
 const ctxRef: { current: unknown[] } = { current: [] };
 const projectsRef: { current: unknown[] } = { current: [] };
+// Issue #98: the edit modal's dependency picker reads every live action.
+const nextActionsRef: { current: unknown[] } = { current: [] };
+/** Issue #98 review: fail the dependency-candidate read once, so a save from
+ *  a failed/loading options read can be shown to omit the dependency key. */
+const dependencyRead = { failNext: false };
 // Today's habit days (task 10-02 — the strip's data; mutable so the empty
 // state and the populated strip are both reachable).
 const habitDaysRef: { current: unknown[] } = { current: [] };
@@ -27,9 +32,16 @@ const completeCalls: { count: number; shouldFail: boolean; error: Error | null; 
   error: null,
   args: [],
 };
-const updateCalls: { count: number; actions: unknown[] } = {
+const updateCalls: {
+  count: number;
+  actions: unknown[];
+  windowFields: unknown[];
+  failNext: Error | null;
+} = {
   count: 0,
   actions: [],
+  windowFields: [],
+  failNext: null,
 };
 // Counts `skipAction` calls and lets a test fail the write, so "换一个"
 // can be pinned both ways (persist once per action, stay put on failure).
@@ -116,9 +128,20 @@ jest.mock('@nextdo/db', () => {
       if (completeCalls.error) throw completeCalls.error;
       if (completeCalls.shouldFail) throw new Error('complete rejected');
     },
-    updateNextAction: async (_db: unknown, action: unknown) => {
+    updateNextAction: async (
+      _db: unknown,
+      action: unknown,
+      _reminder: unknown,
+      windowFields: unknown,
+    ) => {
       updateCalls.count += 1;
       updateCalls.actions.push(action);
+      updateCalls.windowFields.push(windowFields);
+      if (updateCalls.failNext !== null) {
+        const error = updateCalls.failNext;
+        updateCalls.failNext = null;
+        throw error;
+      }
       return action;
     },
     snoozeAction: async () => undefined,
@@ -131,6 +154,13 @@ jest.mock('@nextdo/db', () => {
       archiveCalls.args.push(args);
     },
     listProjects: async () => projectsRef.current,
+    listNextActions: async () => {
+      if (dependencyRead.failNext) {
+        dependencyRead.failNext = false;
+        throw new Error('dependency options read failed');
+      }
+      return nextActionsRef.current;
+    },
     listHabits: async () => {
       habitReads.habits += 1;
       return habitListRef.current;
@@ -280,6 +310,8 @@ beforeEach(() => {
   setPool([]);
   ctxRef.current = [];
   projectsRef.current = [];
+  nextActionsRef.current = [];
+  dependencyRead.failNext = false;
   habitDaysRef.current = [];
   habitListRef.current = [];
   completeCalls.count = 0;
@@ -288,6 +320,8 @@ beforeEach(() => {
   completeCalls.args = [];
   updateCalls.count = 0;
   updateCalls.actions = [];
+  updateCalls.windowFields = [];
+  updateCalls.failNext = null;
   skipCalls.count = 0;
   skipCalls.shouldFail = false;
   skipCalls.args = [];
@@ -549,6 +583,25 @@ describe('Now screen', () => {
     expect(screen.queryByText('可执行')).toBeNull();
     expect(screen.queryByText('认知负荷')).toBeNull();
     expect(screen.getByText('已完成行动')).toBeTruthy();
+  });
+
+  it('a dependency-hidden action stays editable while another action is eligible (issue #98)', async () => {
+    setPool([
+      nextAction({ id: 'now-1', title: '现在能做' }),
+      nextAction({ id: 'blocked-1', title: '等待评审', dependencyDone: false }),
+    ]);
+    renderRouter('app', { initialUrl: '/(tabs)/now' });
+
+    await waitFor(() => expect(screen.getByText('现在能做')).toBeTruthy());
+    // The explanation list is no longer limited to the all-filtered empty
+    // state: the hidden action must remain reachable to clear its filter.
+    expect(screen.getByText('被过滤的事项：')).toBeTruthy();
+    expect(screen.getByText(/等待评审 — 依赖的行动未完成/)).toBeTruthy();
+
+    fireEvent.press(screen.getByRole('button', { name: '编辑行动：等待评审' }));
+    await flushRenders();
+    expect(screen.getByText('编辑行动')).toBeTruthy();
+    expect(screen.getByLabelText('行动名称输入框').props.value).toBe('等待评审');
   });
 
   it('the re-clarify banner appears at 3 consecutive skips with the count', async () => {
@@ -1361,6 +1414,327 @@ describe('Now screen', () => {
         id: 'action-edit-test',
         title: '写技术设计文档',
       });
+    });
+
+    it('edits the time window and prerequisite from the action modal (issue #98)', async () => {
+      setPool([
+        nextAction({
+          id: 'action-window',
+          title: '写需求文档',
+          estMinutes: 30,
+          value: 3,
+        }),
+      ]);
+      nextActionsRef.current = [
+        { id: 'action-window', title: '写需求文档', status: 'open' },
+        { id: 'dep-1', title: '准备评审材料', status: 'open' },
+        // Already depends on the edited action: choosing it would close a
+        // cycle, so it must not be offered.
+        { id: 'cycle-1', title: '循环候选', status: 'open', dependsOnId: 'action-window' },
+      ];
+      renderRouter('app', { initialUrl: '/(tabs)/now' });
+      await flushRenders();
+      await waitFor(() => expect(screen.getByText('写需求文档')).toBeTruthy());
+
+      fireEvent.press(screen.getByRole('button', { name: '更多操作：写需求文档' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: '编辑行动' })).toBeTruthy());
+      fireEvent.press(screen.getByRole('button', { name: '编辑行动' }));
+      await flushRenders();
+
+      fireEvent.press(screen.getByRole('button', { name: '开启时间段' }));
+      await flushRenders();
+
+      fireEvent.press(screen.getByRole('button', { name: /时间段开始/ }));
+      await flushRenders();
+      fireEvent.press(screen.getByRole('button', { name: '小时 09' }));
+      fireEvent.press(screen.getByRole('button', { name: '分钟 00' }));
+      fireEvent.press(screen.getByRole('button', { name: '确定' }));
+      await flushRenders();
+
+      fireEvent.press(screen.getByRole('button', { name: /时间段结束/ }));
+      await flushRenders();
+      fireEvent.press(screen.getByRole('button', { name: '小时 10' }));
+      fireEvent.press(screen.getByRole('button', { name: '分钟 00' }));
+      fireEvent.press(screen.getByRole('button', { name: '确定' }));
+      await flushRenders();
+
+      // The dependency list loaded from `listNextActions`; the edited action
+      // itself and a candidate that already depends on it are not offered.
+      expect(screen.queryByRole('button', { name: '依赖：写需求文档' })).toBeNull();
+      expect(screen.queryByRole('button', { name: '依赖：循环候选' })).toBeNull();
+      fireEvent.press(screen.getByRole('button', { name: '依赖：准备评审材料' }));
+      await flushRenders();
+
+      fireEvent.press(screen.getByRole('button', { name: '保存修改' }));
+      await flushRenders();
+
+      await waitFor(() => expect(updateCalls.count).toBe(1));
+      expect(updateCalls.actions[0]).toMatchObject({
+        id: 'action-window',
+        windowStart: '09:00',
+        windowEnd: '10:00',
+        dependsOnId: 'dep-1',
+      });
+      expect(
+        (updateCalls.actions[0] as { windowDays?: number[] }).windowDays,
+      ).toBeUndefined();
+      const fields = updateCalls.windowFields[0] as Record<string, unknown>;
+      expect(fields.dependsOnId).toBe('dep-1');
+      expect(fields.windowStart).toBe('09:00');
+      expect(fields.windowEnd).toBe('10:00');
+      // Untouched days are omitted so they keep whatever the row now holds.
+      expect('windowDays' in fields).toBe(false);
+    });
+
+    it('a failed candidate read keeps the stored dependency when only the title changes (issue #98 review)', async () => {
+      setPool([
+        nextAction({
+          id: 'action-window',
+          title: '写需求文档',
+          estMinutes: 30,
+          value: 3,
+          dependsOnId: 'cal-1',
+          dependencyDone: true,
+        }),
+      ]);
+      nextActionsRef.current = [{ id: 'action-window', title: '写需求文档', status: 'open' }];
+      renderRouter('app', { initialUrl: '/(tabs)/now' });
+      await flushRenders();
+      await waitFor(() => expect(screen.getByText('写需求文档')).toBeTruthy());
+
+      fireEvent.press(screen.getByRole('button', { name: '更多操作：写需求文档' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: '编辑行动' })).toBeTruthy());
+
+      dependencyRead.failNext = true;
+      fireEvent.press(screen.getByRole('button', { name: '编辑行动' }));
+      await flushRenders();
+      await waitFor(() =>
+        expect(screen.getByText('无法读取可依赖的行动，现有依赖保持不变。')).toBeTruthy(),
+      );
+
+      fireEvent.changeText(
+        screen.getByPlaceholderText('下一步行动（具体的、单步的）'),
+        '写需求文档（改标题）',
+      );
+      fireEvent.press(screen.getByRole('button', { name: '保存修改' }));
+      await flushRenders();
+
+      await waitFor(() => expect(updateCalls.count).toBe(1));
+      const fields = updateCalls.windowFields[0] as Record<string, unknown>;
+      expect('dependsOnId' in fields).toBe(false);
+    });
+
+    it('keeps a calendar/habit prerequisite that is not in the candidate list (issue #98 review)', async () => {
+      setPool([
+        nextAction({
+          id: 'action-window',
+          title: '写需求文档',
+          estMinutes: 30,
+          value: 3,
+          dependsOnId: 'cal-1',
+          dependencyDone: true,
+        }),
+      ]);
+      nextActionsRef.current = [{ id: 'action-window', title: '写需求文档', status: 'open' }];
+      renderRouter('app', { initialUrl: '/(tabs)/now' });
+      await flushRenders();
+      await waitFor(() => expect(screen.getByText('写需求文档')).toBeTruthy());
+
+      fireEvent.press(screen.getByRole('button', { name: '更多操作：写需求文档' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: '编辑行动' })).toBeTruthy());
+      fireEvent.press(screen.getByRole('button', { name: '编辑行动' }));
+      await flushRenders();
+
+      await waitFor(() =>
+        expect(
+          screen.getByText('当前依赖不在可选列表中（可能是已完成的日历或习惯），保持不变。'),
+        ).toBeTruthy(),
+      );
+      fireEvent.press(screen.getByRole('button', { name: '保存修改' }));
+      await flushRenders();
+      await waitFor(() => expect(updateCalls.count).toBe(1));
+      expect('dependsOnId' in (updateCalls.windowFields[0] as Record<string, unknown>)).toBe(false);
+
+      // "无依赖" is the explicit clear path for a dependency the list cannot show.
+      fireEvent.press(screen.getByRole('button', { name: '更多操作：写需求文档' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: '编辑行动' })).toBeTruthy());
+      fireEvent.press(screen.getByRole('button', { name: '编辑行动' }));
+      await flushRenders();
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: '依赖：无依赖' })).toBeTruthy(),
+      );
+      fireEvent.press(screen.getByRole('button', { name: '依赖：无依赖' }));
+      await flushRenders();
+      fireEvent.press(screen.getByRole('button', { name: '保存修改' }));
+      await flushRenders();
+
+      await waitFor(() => expect(updateCalls.count).toBe(2));
+      const cleared = updateCalls.windowFields[1] as Record<string, unknown>;
+      expect('dependsOnId' in cleared).toBe(true);
+      expect(cleared.dependsOnId).toBeUndefined();
+    });
+
+    it('a single-sided stored window does not block a title-only save (issue #98 review)', async () => {
+      setPool([
+        nextAction({
+          id: 'action-window',
+          title: '写需求文档',
+          estMinutes: 30,
+          value: 3,
+          windowStart: '00:00',
+        }),
+      ]);
+      nextActionsRef.current = [{ id: 'action-window', title: '写需求文档', status: 'open' }];
+      renderRouter('app', { initialUrl: '/(tabs)/now' });
+      await flushRenders();
+      await waitFor(() => expect(screen.getByText('写需求文档')).toBeTruthy());
+
+      fireEvent.press(screen.getByRole('button', { name: '更多操作：写需求文档' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: '编辑行动' })).toBeTruthy());
+      fireEvent.press(screen.getByRole('button', { name: '编辑行动' }));
+      await flushRenders();
+
+      expect(
+        screen.queryByText('时间窗口需要完整的起止时间，且开始早于结束。'),
+      ).toBeNull();
+      fireEvent.changeText(
+        screen.getByPlaceholderText('下一步行动（具体的、单步的）'),
+        '写需求文档（改标题）',
+      );
+      fireEvent.press(screen.getByRole('button', { name: '保存修改' }));
+      await flushRenders();
+      await waitFor(() => expect(updateCalls.count).toBe(1));
+      const fields = updateCalls.windowFields[0] as Record<string, unknown>;
+      expect('windowStart' in fields).toBe(false);
+      expect('windowEnd' in fields).toBe(false);
+
+      // Editing the time range turns validation back on: the missing end
+      // time now blocks the save.
+      fireEvent.press(screen.getByRole('button', { name: '更多操作：写需求文档' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: '编辑行动' })).toBeTruthy());
+      fireEvent.press(screen.getByRole('button', { name: '编辑行动' }));
+      await flushRenders();
+      fireEvent.press(screen.getByRole('button', { name: /时间段开始/ }));
+      await flushRenders();
+      fireEvent.press(screen.getByRole('button', { name: '小时 10' }));
+      fireEvent.press(screen.getByRole('button', { name: '分钟 00' }));
+      fireEvent.press(screen.getByRole('button', { name: '确定' }));
+      await flushRenders();
+      expect(
+        screen.getByText('时间窗口需要完整的起止时间，且开始早于结束。'),
+      ).toBeTruthy();
+      fireEvent.press(screen.getByRole('button', { name: '保存修改' }));
+      await flushRenders();
+      expect(updateCalls.count).toBe(1);
+    });
+
+    it('shows the mapped cycle error and retries after changing the prerequisite (issue #98 review)', async () => {
+      setPool([
+        nextAction({
+          id: 'action-window',
+          title: '写需求文档',
+          estMinutes: 30,
+          value: 3,
+        }),
+      ]);
+      nextActionsRef.current = [
+        { id: 'action-window', title: '写需求文档', status: 'open' },
+        { id: 'dep-1', title: '准备评审材料', status: 'open' },
+        { id: 'dep-2', title: '整理会议纪要', status: 'open' },
+      ];
+      renderRouter('app', { initialUrl: '/(tabs)/now' });
+      await flushRenders();
+      await waitFor(() => expect(screen.getByText('写需求文档')).toBeTruthy());
+
+      fireEvent.press(screen.getByRole('button', { name: '更多操作：写需求文档' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: '编辑行动' })).toBeTruthy());
+      fireEvent.press(screen.getByRole('button', { name: '编辑行动' }));
+      await flushRenders();
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: '依赖：准备评审材料' })).toBeTruthy(),
+      );
+      fireEvent.press(screen.getByRole('button', { name: '依赖：准备评审材料' }));
+      await flushRenders();
+
+      // The transaction rejects the race-written cycle; the modal must show
+      // the Chinese copy for the typed code and stay open for a retry.
+      updateCalls.failNext = new ValidationNextdoError(
+        'action.dependency-cycle',
+        'This prerequisite would create a dependency cycle',
+      );
+      fireEvent.press(screen.getByRole('button', { name: '保存修改' }));
+      await flushRenders();
+      await waitFor(() =>
+        expect(
+          screen.getByText('这个前置行动会与当前行动形成循环依赖，请换一个'),
+        ).toBeTruthy(),
+      );
+      expect(screen.getByText('编辑行动')).toBeTruthy();
+
+      fireEvent.press(screen.getByRole('button', { name: '依赖：整理会议纪要' }));
+      await flushRenders();
+      fireEvent.press(screen.getByRole('button', { name: '保存修改' }));
+      await flushRenders();
+
+      await waitFor(() => expect(updateCalls.count).toBe(2));
+      const retried = updateCalls.windowFields[1] as Record<string, unknown>;
+      expect(retried.dependsOnId).toBe('dep-2');
+      await waitFor(() => expect(screen.queryByText('编辑行动')).toBeNull());
+    });
+
+    it('clears the window and dependency back to unrestricted (issue #98)', async () => {
+      // Exclude today from the day mask so the action is deterministically
+      // filtered and reachable only through the filtered-list edit entry.
+      const today = new Date().getDay();
+      const mask = [0, 1, 2, 3, 4, 5, 6].filter((day) => day !== today);
+      const todayLabel = ['日', '一', '二', '三', '四', '五', '六'][today];
+      setPool([
+        nextAction({
+          id: 'action-window',
+          title: '写需求文档',
+          estMinutes: 30,
+          value: 3,
+          windowStart: '09:00',
+          windowEnd: '10:00',
+          windowDays: mask,
+          dependsOnId: 'dep-1',
+          // The prerequisite is already done, so only the window hides it.
+          dependencyDone: true,
+        }),
+      ]);
+      nextActionsRef.current = [
+        { id: 'action-window', title: '写需求文档', status: 'open' },
+        { id: 'dep-1', title: '准备评审材料', status: 'open' },
+      ];
+      renderRouter('app', { initialUrl: '/(tabs)/now' });
+      await flushRenders();
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: '编辑行动：写需求文档' })).toBeTruthy(),
+      );
+
+      fireEvent.press(screen.getByRole('button', { name: '编辑行动：写需求文档' }));
+      await flushRenders();
+
+      fireEvent.press(screen.getByRole('button', { name: '关闭时间段' }));
+      fireEvent.press(screen.getByRole('button', { name: '依赖：无依赖' }));
+      // The stored mask excludes today only; add it back for all 7 days.
+      fireEvent.press(screen.getByRole('button', { name: `周${todayLabel}` }));
+      await flushRenders();
+
+      fireEvent.press(screen.getByRole('button', { name: '保存修改' }));
+      await flushRenders();
+
+      await waitFor(() => expect(updateCalls.count).toBe(1));
+      const saved = updateCalls.actions[0] as {
+        windowStart?: string;
+        windowEnd?: string;
+        windowDays?: number[];
+        dependsOnId?: string;
+      };
+      expect(saved.windowStart).toBeUndefined();
+      expect(saved.windowEnd).toBeUndefined();
+      expect(saved.windowDays).toBeUndefined();
+      expect(saved.dependsOnId).toBeUndefined();
     });
   });
 });

@@ -3,14 +3,22 @@
  * a patch-style update — `{ ...action, ...patch, updatedAt }` — delegated to
  * the packages/db `updateNextAction` query, which keeps every field the edit
  * forms do not own (status, snooze state, skip streak) from the live row.
+ * The window/dependency fields (issue #98) follow the same rule: only keys
+ * present in `patch` are forwarded, so a form without those controls cannot
+ * undo a value written meanwhile from another entry point.
  * Redefining the action (title or estimate changed) resets `consecutiveSkips`
  * to 0 in the db layer (engine spec "Skip & Re-clarify"). `now` from the
  * single app clock (hook-guidelines Rule 4).
  */
 import { useCallback, useMemo, useState } from 'react';
 import { usePowerSync } from '@powersync/react';
-import { updateNextAction, wrapDb } from '@nextdo/db';
+import {
+  updateNextAction,
+  wrapDb,
+  type NextActionWindowFields,
+} from '@nextdo/db';
 import { logger, toIso, type NextAction, type Value } from '@nextdo/core';
+import { errorMessage } from '@/lib/error-messages';
 import { useAppClock } from './use-app-clock';
 
 export interface UpdateNextActionPatch {
@@ -31,6 +39,17 @@ export interface UpdateNextActionPatch {
    * emptied field never leaves a blank line in the calendar event.
    */
   note?: string;
+  /**
+   * Issue #98: the prerequisite action. An explicit `undefined` clears the
+   * dependency (the engine recommends the action without waiting for another
+   * row); an id that is not a done, non-deleted action keeps it filtered.
+   */
+  dependsOnId?: string;
+  /** Issue #98: "HH:mm" device-local. `undefined` clears the time range. */
+  windowStart?: string;
+  windowEnd?: string;
+  /** Issue #98: 0=Sunday … 6=Saturday; `undefined` = every day. */
+  windowDays?: number[];
 }
 
 export interface UpdateNextActionArgs {
@@ -57,16 +76,29 @@ export function useUpdateNextAction(): UseUpdateNextActionResult {
         // `reminderAt` is pulled OUT of the row patch: it is not a column on
         // the action, it is the reminder transaction's input.
         const { reminderAt, ...patch } = args.patch;
+        // Issue #98: tell the transaction which window/dependency fields this
+        // form owns. A project-detail save has none, so it must keep a value
+        // another tab/device wrote while the form's snapshot was open; the
+        // modal names only the fields the user actually edited.
+        const windowFields: NextActionWindowFields = {};
+        if ('dependsOnId' in patch) windowFields.dependsOnId = patch.dependsOnId;
+        if ('windowStart' in patch) windowFields.windowStart = patch.windowStart;
+        if ('windowEnd' in patch) windowFields.windowEnd = patch.windowEnd;
+        if ('windowDays' in patch) windowFields.windowDays = patch.windowDays;
         await updateNextAction(
           db,
           { ...args.action, ...patch, updatedAt: toIso(now) },
           reminderAt === undefined ? undefined : { reminderAt, now },
+          windowFields,
         );
         setError(null);
         return true;
       } catch (err: unknown) {
         logger.error('next action update failed', err instanceof Error ? err : new Error(String(err)));
-        setError(err instanceof Error ? err.message : String(err));
+        // Keep the typed code's user-facing copy: the modal renders this
+        // string, and `errorMessage` on the raw Error is what maps codes
+        // such as `action.dependency-cycle` to Chinese.
+        setError(errorMessage(err));
         return false;
       }
     },

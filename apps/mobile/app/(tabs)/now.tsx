@@ -30,7 +30,7 @@ import {
   type NextAction,
   type NextCandidate,
 } from '@nextdo/core';
-import { useNow, shouldOfferReclarify, type NowEligible } from '@/hooks/use-now';
+import { useNow, shouldOfferReclarify, type NowEligible, type NowFiltered } from '@/hooks/use-now';
 import { useAppClock } from '@/hooks/use-app-clock';
 import { useSkipAction } from '@/hooks/use-skip-action';
 import { useSnoozeAction } from '@/hooks/use-snooze-action';
@@ -81,6 +81,55 @@ function candidateToNextAction(candidate: NextCandidate, now: Date): NextAction 
 }
 
 const TIME_CHIPS = [15, 30, 60, 120] as const;
+
+/**
+ * Explainable exclusions, shared by the all-filtered empty state and the
+ * "some eligible, some filtered" list below the alternatives. Issue #98: a
+ * next action hidden by its window or an open prerequisite must stay
+ * editable here — otherwise it drops out of the pool and out of the only
+ * menu that can reopen the editor, so the filter could never be cleared.
+ */
+function FilteredActions({
+  entries,
+  onEdit,
+}: {
+  entries: NowFiltered[];
+  onEdit: (candidate: NextCandidate) => void;
+}) {
+  return (
+    <View className="w-full gap-1">
+      <Text className="text-left font-sans text-xs font-semibold text-muted dark:text-muted-dark">
+        被过滤的事项：
+      </Text>
+      {entries.map((entry) => {
+        const editable =
+          entry.action.kind === 'next' &&
+          (entry.rule === 'window-mismatch' || entry.rule === 'dependency');
+        const label = `${entry.action.title} — ${FILTER_RULE_LABELS[entry.rule]}`;
+        return editable ? (
+          <Pressable
+            key={entry.action.id}
+            accessibilityRole="button"
+            accessibilityLabel={`编辑行动：${entry.action.title}`}
+            onPress={() => onEdit(entry.action as NextCandidate)}
+            className="py-0.5"
+          >
+            <Text className="text-left font-sans text-sm text-muted underline-offset-2 active:underline dark:text-muted-dark">
+              • {label} · 编辑
+            </Text>
+          </Pressable>
+        ) : (
+          <Text
+            key={entry.action.id}
+            className="text-left font-sans text-sm text-muted dark:text-muted-dark"
+          >
+            • {label}
+          </Text>
+        );
+      })}
+    </View>
+  );
+}
 
 /** 32px visual chip (h-8) + 6pt vertical hitSlop = 44pt tap target (spec/accessibility). */
 const CHIP_HIT_SLOP = { top: 6, bottom: 6, left: 4, right: 4 } as const;
@@ -1183,18 +1232,8 @@ export default function NowScreen() {
                     试试调整可用时间。
                   </Text>
                   {data.filtered.length > 0 ? (
-                    <View className="mt-4 w-full gap-1 border-t border-border/40 pt-3 dark:border-border-dark/40">
-                      <Text className="text-left font-sans text-xs font-semibold text-muted dark:text-muted-dark">
-                        被过滤的事项：
-                      </Text>
-                      {data.filtered.map((entry) => (
-                        <Text
-                          key={entry.action.id}
-                          className="text-left font-sans text-sm text-muted dark:text-muted-dark"
-                        >
-                          • {entry.action.title} — {FILTER_RULE_LABELS[entry.rule]}
-                        </Text>
-                      ))}
+                    <View className="mt-4 w-full border-t border-border/40 pt-3 dark:border-border-dark/40">
+                      <FilteredActions entries={data.filtered} onEdit={handleEdit} />
                     </View>
                   ) : null}
                 </Card>
@@ -1261,6 +1300,15 @@ export default function NowScreen() {
                     </Pressable>
                   )}
                 </View>
+              ) : null}
+
+              {/* The explainable exclusions stay visible even when another
+                  action is eligible: a window/prerequisite-hidden next
+                  action is editable from this list (issue #98). */}
+              {eligible.length > 0 && data.filtered.length > 0 ? (
+                <Card className="gap-1 p-4">
+                  <FilteredActions entries={data.filtered} onEdit={handleEdit} />
+                </Card>
               ) : null}
             </>
           )}

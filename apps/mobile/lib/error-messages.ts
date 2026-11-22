@@ -33,6 +33,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   'action.archive-kind': '这个类型的行动不能搁置',
   'action.archive-not-open': '这个行动已完成或被删除，请刷新后再试',
   'action.has-dependents': '有未完成的行动依赖它，先处理那些行动再搁置',
+  'action.dependency-cycle': '这个前置行动会与当前行动形成循环依赖，请换一个',
   'project.not-found': '这个项目不存在了',
   'somedayMaybeItem.not-found': '这条"有空再说"记录不存在了',
   'waitingForItem.not-found': '这条等待事项不存在了',

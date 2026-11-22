@@ -444,3 +444,71 @@ Topics: [.trellis/spec/project/quality-guidelines.md](../../spec/project/quality
 ### Git Commits
 
 (No associated commits)
+
+
+## Session 78: NextAction 时间窗口与依赖输入入口（issue #98）
+<!-- trellis-session: v=3 fp=68943cf90a5e4817 -->
+
+**Date**: 2026-11-20
+**Task**: NextAction 时间窗口与依赖输入入口（issue #98）
+**Branch**: `feat/next-action-window-deps`
+
+### Summary
+
+在行动编辑弹窗加入适用日、可选时间段与前置行动（单选），保存走完整行语义，清空即写 undefined/NULL；updateNextAction 合并行补上 dependsOnId/windowStart/windowEnd/windowDays，此前这些字段保存会被静默丢弃。新增 useActionDependencyOptions：排除自身与直接/间接依赖自身的行动以防成环，候选读取失败时保留原依赖。Now 屏被过滤区块在存在可执行行动时也显示，window-mismatch 与 dependency 行可直接打开编辑。测试：db 读写与清空、now-screen 三条（保存/过滤中可编辑/清空）。门禁 pnpm verify:web --no-serve 全绿 1645；浏览器实测窗口外过滤、依赖未完成过滤、清除恢复、完成依赖恢复、写入失败保留、候选读取失败保留原依赖。
+Topics: [.trellis/research/next-action-window-deps.md](../../research/next-action-window-deps.md)
+
+### Git Commits
+
+(No associated commits)
+
+
+## Session 79: issue #98 审查修复：窗口字段所有权与 Hooks 顺序
+<!-- trellis-session: v=3 fp=aa7f52470784d032 -->
+
+**Date**: 2026-11-20
+**Task**: issue #98 审查修复：窗口字段所有权与 Hooks 顺序
+**Branch**: `feat/next-action-window-deps`
+
+### Summary
+
+处理首轮审查 R1/R2：updateNextAction 新增 windowFields 参数，只覆盖调用方显式拥有的键；未提供的键保留事务内当前值，显式 undefined 仍清空。修复项目页旧快照 title-only 保存会撤销另一处刚设置的窗口/依赖；use-update-next-action 按 patch 中实际存在的键生成 windowFields。把 edit-action-modal 的 useAppInsets 移到条件 return 之前，消除隐藏→显示时的 React Hooks 顺序警告。补 db 回归（旧快照只改标题保留窗口/依赖）、项目页断言（第4参为空对象）。门禁 pnpm verify:web --no-serve 全绿 1646（core275/server133/db372/mobile866），gate 日志无 Hooks 警告。浏览器补测时间段：起止倒置与空适用日被拦截、07:30–08:30 窗口外过滤、重开回填、刷新持久化、关闭后恢复；hooksWarnings=0。
+Topics: [.trellis/research/next-action-window-deps.md](../../research/next-action-window-deps.md)
+
+### Git Commits
+
+(No associated commits)
+
+
+## Session 80: issue #98 第二轮审查修复：字段所有权与成环校验
+<!-- trellis-session: v=3 fp=f8eb79503ab9b301 -->
+
+**Date**: 2026-11-21
+**Task**: issue #98 第二轮审查修复：字段所有权与成环校验
+**Branch**: `feat/next-action-window-deps`
+
+### Summary
+
+处理第二轮 4 项 P2：1) 弹窗改为只有用户实际改过的窗口/依赖字段才进 patch，候选读取失败或仍在加载时省略 dependsOnId，改标题不再覆盖另一处刚保存的依赖；2) 候选列表外的日历/习惯前置在未改动时保留，只有「无依赖」显式清除；3) 单边时间窗口未改动时不校验完整性，可只改标题，修改时间段后恢复完整起止校验；4) updateNextAction 在同一写事务内沿依赖链回溯，自身或重复 id 抛 action.dependency-cycle，覆盖两个已打开编辑器互选对方的场景，并映射中文错误。测试新增：db 成环（两节点/自身/三节点链）与旧快照回归；now 屏读取失败省略键、日历依赖保留与显式清除、单边窗口。门禁 pnpm verify:web --no-serve 全绿 1650（core275/server133/db373/mobile869）。浏览器 r3 全部通过：适用日/时间段过滤、回填、刷新、清除、依赖、两类故障注入、hooksWarnings=0。reviewer 曾被人类重启，已重发完整材料。
+Topics: [.trellis/research/next-action-window-deps.md](../../research/next-action-window-deps.md)
+
+### Git Commits
+
+(No associated commits)
+
+
+## Session 81: issue #98 第三轮审查修复：错误码映射与合并行校验
+<!-- trellis-session: v=3 fp=52dcc914f2eb0dc4 -->
+
+**Date**: 2026-11-21
+**Task**: issue #98 第三轮审查修复：错误码映射与合并行校验
+**Branch**: `feat/next-action-window-deps`
+
+### Summary
+
+处理第三轮 2 项 P2：1) use-update-next-action 在 catch 中调用 errorMessage(err)，保留 action.dependency-cycle 等错误码的中文映射；now 屏新增经真实 hook 的断言：成环失败显示中文、弹窗保留、换前置后重试成功。2) updateNextAction 对最终 merged 行执行 assertValidNextAction，第 4 参 windowFields 的非法 HH:mm（如 9am）被拒绝且原行不变；db 回归覆盖。同步修正 hook 注释与 research 中 07:30–08:30 的过时叙述。门禁 pnpm verify:web --no-serve 全绿 1652（core275/server133/db374/mobile870），无 Hooks 警告；浏览器 run-98-r4.log 全通过，hooksWarnings=0。
+Topics: [.trellis/research/next-action-window-deps.md](../../research/next-action-window-deps.md)
+
+### Git Commits
+
+(No associated commits)
