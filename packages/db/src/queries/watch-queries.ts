@@ -28,6 +28,7 @@ import {
 } from './focus';
 import { poolWatchQuery } from './pool';
 import { appSettingFromRow, appSettingsQuery, type AppSetting } from './settings';
+import { trashedItemFromRow, trashedItemsQuery, type TrashedItem } from './trash';
 import type { NextdoDb } from '../types';
 
 /** Inbox capture list (raw, non-deleted InboxItems, oldest first). */
@@ -251,5 +252,14 @@ export function settingsWatchQuery(db: NextdoDb): CompilableQuery<AppSetting> {
  */
 export function focusHistoryWatchQuery(db: NextdoDb): CompilableQuery<FocusHistoryRow> {
   return toCompilableQuery(focusHistoryQuery(db), focusHistoryFromRow);
+}
+
+/**
+ * The trash screen's watch query — every soft-deleted user-facing row, newest
+ * delete first. Restoring a row clears `deleted_at` in the same table, so the
+ * watch drops it without an explicit reload.
+ */
+export function trashedItemsWatchQuery(db: NextdoDb): CompilableQuery<TrashedItem> {
+  return toCompilableQuery(trashedItemsQuery(db), trashedItemFromRow);
 }
 

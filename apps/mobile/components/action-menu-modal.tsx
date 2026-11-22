@@ -5,7 +5,7 @@
  * - Snooze (稍后推迟)
  * - Trash (删除行动)
  */
-import { memo } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Modal, Pressable, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors } from '@nextdo/ui';
@@ -37,6 +37,13 @@ export const ActionMenuModal = memo(function ActionMenuModal({
 }: ActionMenuModalProps) {
   const insets = useAppInsets();
   const { isDark } = useAppTheme();
+  // 删除 arms first, then confirms (issue #89) — a single tap must not soft-
+  // delete an action. The trash screen is the recovery path, so the armed
+  // state names it. Closing the sheet disarms.
+  const [armedTrash, setArmedTrash] = useState(false);
+  useEffect(() => {
+    if (!visible) setArmedTrash(false);
+  }, [visible]);
   if (!visible) return null;
   return (
     <Modal
@@ -140,17 +147,29 @@ export const ActionMenuModal = memo(function ActionMenuModal({
 
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="删除行动"
+              accessibilityLabel={armedTrash ? '确认删除行动' : '删除行动'}
               onPress={() => {
+                if (!armedTrash) {
+                  setArmedTrash(true);
+                  return;
+                }
+                setArmedTrash(false);
                 onClose();
                 onTrash();
               }}
               className="min-h-[48px] flex-row items-center gap-3 rounded-xl px-3.5 active:bg-surface dark:active:bg-surface-dark"
             >
               <Ionicons name="trash-outline" size={20} color={colors.danger} />
-              <Text className="font-sans text-sm font-medium text-danger">
-                删除行动
-              </Text>
+              <View className="flex-1">
+                <Text className="font-sans text-sm font-medium text-danger">
+                  {armedTrash ? '确认删除？' : '删除行动'}
+                </Text>
+                {armedTrash ? (
+                  <Text className="mt-0.5 font-sans text-xs text-danger/80">
+                    删除后可在「设置 → 回收站」恢复
+                  </Text>
+                ) : null}
+              </View>
             </Pressable>
           </View>
 

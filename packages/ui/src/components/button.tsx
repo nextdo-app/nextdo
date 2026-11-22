@@ -5,6 +5,9 @@ import { cn } from '../lib/cn';
 export interface ButtonProps {
   /** Visible label; also the accessibility label (names the action). */
   label: string;
+  /** Optional richer screen-reader label (e.g. 「恢复 <row title>」 when the
+   *  visible label alone is ambiguous in a list). Defaults to `label`. */
+  accessibilityLabel?: string;
   onPress: () => void;
   variant?: 'primary' | 'secondary' | 'ghost' | 'tinted';
   size?: 'sm' | 'md' | 'lg';
@@ -50,6 +53,7 @@ const SIZE_TEXT_CLASSES: Record<NonNullable<ButtonProps['size']>, string> = {
  */
 export function Button({
   label,
+  accessibilityLabel,
   onPress,
   variant = 'primary',
   size = 'md',
@@ -59,7 +63,7 @@ export function Button({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled }}
       disabled={disabled}
       hitSlop={size === 'sm' ? { top: 4, bottom: 4, left: 4, right: 4 } : undefined}

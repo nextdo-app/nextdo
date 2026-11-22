@@ -19,6 +19,13 @@ jest.mock('@/hooks/use-calendar-sync', () => ({ useCalendarSync: () => mockCalen
 jest.mock('@/components/focus-island-client', () => ({
   FocusIslandClient: () => {
     const { createElement } = jest.requireActual('react');
+
+// The account-settings bridge mounts beside the screen under test; keep this
+// suite on its own mocked DB surface.
+jest.mock('@/hooks/use-synced-settings', () => ({
+  useSyncedSettings: () => undefined,
+}));
+
     const { Text } = jest.requireActual('react-native');
     return createElement(Text, null, 'isolated capsule');
   },

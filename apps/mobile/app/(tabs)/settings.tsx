@@ -44,7 +44,7 @@
  */
 import { useEffect, useRef, useState, type ComponentProps } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAppInsets } from '@/lib/use-app-insets';
@@ -1733,7 +1733,33 @@ export default function SettingsScreen() {
         )}
       </Card>
 
-        {/* Section 4: 关于与更新 */}
+        {/* Section 4: 数据管理 — 回收站（issue #89） */}
+        <SectionHeader title="数据管理" icon="trash-outline" />
+        <Card className="gap-3.5 p-4">
+          <Pressable
+            accessibilityRole="link"
+            accessibilityLabel="打开回收站"
+            onPress={() => router.push('/trash')}
+            className="flex-row items-center justify-between rounded-xl border border-border/80 bg-surface-container/40 p-3.5 active:opacity-85 dark:border-border-dark/80 dark:bg-surface-container-dark/30"
+          >
+            <View className="flex-1 min-w-0 flex-row items-center gap-3 pr-2">
+              <View className="h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/10 dark:bg-accent-dark/15">
+                <Ionicons name="trash-outline" size={16} color={isDark ? colors.accentDark : colors.accent} />
+              </View>
+              <View className="flex-1 min-w-0">
+                <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+                  回收站
+                </Text>
+                <Text className="mt-0.5 font-sans text-xs leading-tight text-muted dark:text-muted-dark">
+                  查看并恢复已删除的行动、项目、习惯与资料。
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={14} color={isDark ? colors.mutedDark : colors.muted} />
+          </Pressable>
+        </Card>
+
+        {/* Section 5: 关于与更新 */}
         <SectionHeader title="关于与更新" icon="information-circle-outline" />
         <Card className="gap-3.5 p-4">
           <View className="flex-row items-center justify-between">
