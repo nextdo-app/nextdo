@@ -139,23 +139,26 @@ export function DateTimePicker({
   const isCompact = screenWidth < 380;
 
   const dateMatch = mode === 'date' ? DATE_ONLY.exec(value) : null;
+  // A date-only value is a legitimate seed in datetime mode too: callers that
+  // store "date-only = that day's end" (deadlines, follow-up) prefill with
+  // 'YYYY-MM-DD'. Without this, the wheels fall back to `now` and confirming
+  // silently moves the date to today (issue #94 review R1).
+  const dateOnlyDatetimeMatch = mode === 'datetime' ? DATE_ONLY.exec(value) : null;
   const timeMatch = mode === 'time' ? HHMM.exec(value) : null;
   const dateTimeMatch = mode === 'datetime' ? DATETIME_LOCAL.exec(value) : null;
+  const seedDateMatch = dateMatch ?? dateOnlyDatetimeMatch ?? dateTimeMatch;
 
   // Selected date components
   const [selectedYear, setSelectedYear] = useState(() => {
-    if (dateMatch !== null) return Number(dateMatch[1]);
-    if (dateTimeMatch !== null) return Number(dateTimeMatch[1]);
+    if (seedDateMatch !== null) return Number(seedDateMatch[1]);
     return now.getFullYear();
   });
   const [selectedMonth, setSelectedMonth] = useState(() => {
-    if (dateMatch !== null) return Number(dateMatch[2]);
-    if (dateTimeMatch !== null) return Number(dateTimeMatch[2]);
+    if (seedDateMatch !== null) return Number(seedDateMatch[2]);
     return now.getMonth() + 1;
   });
   const [selectedDay, setSelectedDay] = useState(() => {
-    if (dateMatch !== null) return Number(dateMatch[3]);
-    if (dateTimeMatch !== null) return Number(dateTimeMatch[3]);
+    if (seedDateMatch !== null) return Number(seedDateMatch[3]);
     return now.getDate();
   });
 

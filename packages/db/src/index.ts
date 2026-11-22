@@ -75,7 +75,7 @@ export {
   updateWaitingForItem,
 } from './queries/waiting';
 export { listSomedayMaybeItems, trashSomedayMaybeItem } from './queries/someday';
-export { listCalendarActions } from './queries/calendar';
+export { listCalendarActions, updateCalendarAction } from './queries/calendar';
 // Context queries + the soft delete (the contexts screen's per-row 删除).
 // `trashContext` sets deleted_at (Trash, domain-model.md) — the scene chips
 // keep reading `listContexts`, which filters the soft-deleted rows out.

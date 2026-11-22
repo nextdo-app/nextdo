@@ -24,7 +24,8 @@
   (e.g. `completeAction(id, now)`), so invariants are enforced in one place.
   Full-row edits of an existing entity follow the same pattern as a **patch-style
   hook** (precedent: task 09-28 project-action-edit-trash — `useUpdateProject` /
-  `useUpdateNextAction`): the hook builds `{ ...row, ...patch, updatedAt:
+  `useUpdateNextAction`; issue #95 adds `useUpdateCalendarAction` for CalendarAction
+  rows): the hook builds `{ ...row, ...patch, updatedAt:
   toIso(useAppClock()) }` and delegates to the db query (`updateProject` /
   `updateNextAction`) — a project status change is asserted against
   `PROJECT_TRANSITIONS` in the db layer (the detail screen only offers

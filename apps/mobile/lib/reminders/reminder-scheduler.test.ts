@@ -125,6 +125,21 @@ describe('computeReconcile — native mode', () => {
     const second = computeReconcile(input({ rows: [r1, r2], pendingIds: new Set(['r1', 'r2']) }));
     expect(second).toEqual({ toSchedule: [], toCancel: [], toFireNow: [] });
   });
+
+  it('re-arms a title edit: old pending id cancelled, fresh row carries the new title', () => {
+    const original = row({ id: 'r1', title: '周会' });
+    const first = computeReconcile(input({ rows: [original] }));
+    expect(first.toSchedule).toEqual([{ row: original, title: '周会' }]);
+    const pendingIds = new Set(first.toSchedule.map((item) => item.row.id));
+
+    // After a title-only edit the db layer keeps the moment and intensity but
+    // issues a new reminder id; the old row is no longer scheduled.
+    const replacement = row({ id: 'r2', title: '预算会' });
+    const second = computeReconcile(input({ rows: [replacement], pendingIds }));
+    expect(second.toCancel).toEqual(['r1']);
+    expect(second.toSchedule).toEqual([{ row: replacement, title: '预算会' }]);
+    expect(second.toFireNow).toEqual([]);
+  });
 });
 
 describe('computeReconcile — tauri mode', () => {
