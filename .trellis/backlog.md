@@ -11,11 +11,9 @@
    - 现状：`.github/workflows/release.yml` 覆盖桌面三平台 + Android 按 ABI 拆 APK（EAS）；iOS 被明确排除在流水线外（需 Apple 签名凭证）。主力机是 iPhone 的话这是发布阻断项。
    - 形态：EAS iOS 构建（App Store Connect / 至少 TestFlight），接入 release 流水线。
    - 依据：release.yml 注释「iOS is NOT part of this pipeline」；09-30 核查。
-3. **核心对象展示/管理入口：Waiting For 事项跟进**（10-08 用户明确裁决：References 属于外部知识库软件范畴，Nextdo 不做专屏；专注于 Waiting For）
-   - **2026-11-19 改判**：资料库改为可选启用功能，用户可关闭或不启用；10-08 的「不做资料库」不再是当前规则。2026-11-20 已实现二级列表入口（issue #90，见 `.trellis/research/reference-library.md`）。
-   - 现状：Clarify 流程能把事项落进 Waiting For，且底层已有表和数据（`waiting_for_items`），但前端缺乏日常查看、修改和跟进的统一管理页面。
-   - 形态：独立二级页面（`app/waiting.tsx`）+ 收件箱入口导航，支持列表展示（等待对象、到期时间、状态）、快捷新建、更新与软删除（标记完成/清除）。
-   - 依据：用户指令「references 不需要，这是知识库软件的功能，不属于本软件，可以写一个 waiting for」；Proposal MVP 核心对象列表。
+3. **Web/PWA 后台提醒：Web Push 订阅与发送（issue #93）**
+   - 现状：Web/PWA 前台普通任务提醒已接通（#92）；`public/sw.js` 有 push 接收器，但没有 `pushManager.subscribe`、无 VAPID、服务端无 Web Push 发送。
+   - 依据：GitHub issue #93。
 
 ## 上线前建议（P1）
 
@@ -37,8 +35,9 @@
 
 9. Clarify 进阶字段（时间窗口、场景绑定）（原候选 #4）
 10. CalendarAction 支持 projectId（journal-1 session 10 Next Steps）
-11. 商店素材与版本细节：splash 屏（`app.json` 无 splash 配置）、EAS `submit` 配置为空、版本号不齐（mobile 0.1.2 / desktop 0.1.1 / 根 0.1.1）（09-30 新增）
-12. 自然语言捕获解析增强（#101 剩余）：重复规则、项目/标签识别。当前只解析日期/时间并做预览与 Clarify 预填（见 `.trellis/research/natural-language-capture.md`）。
+11. 商店素材与版本细节：splash 已配置（`apps/mobile/app.json:8`）、三端版本号已对齐（0.1.9-beta.32）；剩下 EAS `submit.production` 仍为空（`apps/mobile/eas.json`）。
+12. 跨平台全局快捷捕获（#102）：桌面端全局快捷键 + 捕获窗口；方案与默认快捷键待确认。
+13. 自然语言捕获解析增强（#101 剩余）：重复规则、项目/标签识别。当前只解析日期/时间并做预览与 Clarify 预填（见 `.trellis/research/natural-language-capture.md`）。
 
 ## 09-30 清理的过时条目
 
@@ -61,6 +60,12 @@
 ## 11-21 清理的过时条目
 
 - ~~提醒通知投递~~（原 P0 #1）：09-30-reminder-notification-delivery 已交付 expo-notifications 本地调度、三档强度、权限与点击路由；剩余的通知内联「完成 / 推迟 / 跳过」由 issue #99 交付（`.trellis/research/notification-inline-actions.md`）。
+
+## 11-22 清理的过时条目
+
+- ~~Waiting For 编辑与日期字段~~（#94）：已交付编辑标题 / 等待对象、预期日期与跟进时间，回顾读侧同步更新（见 `.trellis/research/waiting-for-fields.md`）。
+- ~~资料库查看 / 编辑入口~~（#90）：已交付 `/references` 列表、编辑、搜索与可选启用开关（见 `.trellis/research/reference-library.md`）。
+- ~~Web/PWA 前台提醒投递断链~~（#92）：已交付前台通知调度与失败可见提示；后台 Web Push 仍由 #93 跟踪（见 `.trellis/research/web-reminder-delivery.md`）。
 
 ## 备注
 
