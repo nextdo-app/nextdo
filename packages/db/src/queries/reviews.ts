@@ -265,24 +265,40 @@ function startOfLocalDay(now: Date): Date {
   return start;
 }
 
-/** WaitingForItems whose `expectedBy` has passed (expectedBy local day is
- *  on or before `now`'s local day). Items without an `expectedBy` are not
- *  overdue. (design.md §3 "过期 waiting".) */
-async function overdueWaitingFollowUps(db: NextdoDb, todayKey: string) {
+/** WaitingForItems due for a follow-up. Two different clocks, because the
+ *  fields mean different things (domain-model.md):
+ *  - `expectedBy` is a DATE — due once its device-local day is today or past;
+ *  - `followUpAt` is a MOMENT — due once that exact instant has passed (a
+ *    date-only follow-up is stored at that day's end, so it becomes due then).
+ *  A future time later today is NOT due yet; labeling it 已过期 would
+ *  contradict the Waiting screen's "到点后进入每日回顾". Items with neither
+ *  field are not due. */
+async function dueWaitingFollowUps(db: NextdoDb, now: Date) {
+  const todayKey = localDateKey(now);
+  const nowMs = now.getTime();
   const rows = await db
     .selectFrom('waiting_for_items')
-    .select(['id', 'expected_by'])
+    .select(['id', 'expected_by', 'follow_up_at'])
     .where('deleted_at', 'is', null)
     .execute();
+  const expectedByDue = (iso: string | null): boolean => {
+    if (iso === null) return false;
+    try {
+      return localDateKey(parseIso(iso)) <= todayKey;
+    } catch {
+      return false; // corrupt stored date — never due, never a crash
+    }
+  };
+  const followUpDue = (iso: string | null): boolean => {
+    if (iso === null) return false;
+    try {
+      return parseIso(iso).getTime() <= nowMs;
+    } catch {
+      return false;
+    }
+  };
   return rows
-    .filter((row) => {
-      if (row.expected_by === null) return false;
-      try {
-        return localDateKey(parseIso(row.expected_by)) <= todayKey;
-      } catch {
-        return false; // corrupt stored date — never overdue, never a crash
-      }
-    })
+    .filter((row) => expectedByDue(row.expected_by) || followUpDue(row.follow_up_at))
     .map((row) => row.id);
 }
 
@@ -295,7 +311,8 @@ async function overdueWaitingFollowUps(db: NextdoDb, todayKey: string) {
  * - `stillOpen` — every open, non-deleted NextAction, created-ascending;
  * - `projectsMissingActions` — the active projects lacking an open action
  *   (same derivation as `projectActionCoverage`);
- * - `waitingFollowUps` — overdue waiting items (see above);
+ * - `waitingFollowUps` — waiting items with `expectedBy` on/before today's
+ *   local day or `followUpAt` at/before `now` (see above);
  * - `calendarToday` / `calendarTomorrow` — non-deleted CalendarActions whose
  *   `startsAt` falls on today's / tomorrow's local day (any status — this is
  *   the day's schedule, not the engine pool);
@@ -332,7 +349,7 @@ export async function buildDailyReviewSnapshot(
         .orderBy('created_at')
         .execute(),
       projectActionCoverage(db),
-      overdueWaitingFollowUps(db, todayKey),
+      dueWaitingFollowUps(db, now),
       db
         .selectFrom('calendar_actions')
         .select(['id', 'starts_at'])
@@ -425,7 +442,8 @@ export function isStalled(
  * - `projects` — EVERY non-deleted project, each with its derived
  *   `hasOpenAction` (≥ 1 open, non-deleted NextAction) and `lastProgressAt`
  *   (the latest completion of any of its actions, `null` when never done);
- * - `waitingFollowUps` — overdue waiting items (same as daily);
+ * - `waitingFollowUps` — same due rule as the daily snapshot (expectedBy's
+ *   local day, or followUpAt's moment);
  * - `somedayCount` — non-deleted SomedayMaybeItems;
  * - `stalledProjects` — active projects with no completion on their actions
  *   for ≥ 14 days (see `isStalled` for the never-completed edge case);
@@ -436,7 +454,6 @@ export async function buildWeeklyReviewSnapshot(
   db: NextdoDb,
   now: Date,
 ): Promise<WeeklyReviewSnapshot> {
-  const todayKey = localDateKey(now);
   // The 7-day window ends at local MIDNIGHT of day+7 — wall-clock date
   // arithmetic (setDate) so DST transitions cannot shift the boundary by an
   // hour (a fixed +7*86400000 ms would).
@@ -466,7 +483,7 @@ export async function buildWeeklyReviewSnapshot(
         .where('deleted_at', 'is', null)
         .execute(),
       db.selectFrom('someday_maybe_items').select('id').where('deleted_at', 'is', null).execute(),
-      overdueWaitingFollowUps(db, todayKey),
+      dueWaitingFollowUps(db, now),
       db
         .selectFrom('calendar_actions')
         .select(['id', 'starts_at'])

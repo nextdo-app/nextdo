@@ -10,6 +10,7 @@ import { usePowerSync, useQuery } from '@powersync/react';
 import {
   addWaitingForItem,
   trashWaitingForItem,
+  updateWaitingForItem,
   waitingForWatchQuery,
   wrapDb,
 } from '@nextdo/db';
@@ -29,10 +30,17 @@ export interface AddWaitingForInput {
   kind?: WaitingForItem['kind'];
 }
 
+/** Issue #94: editable fields. Dates are ISO strings; an explicit
+ *  `undefined` clears the field (the row mapper writes NULL). */
+export type UpdateWaitingForPatch = Partial<
+  Pick<WaitingForItem, 'title' | 'waitingOn' | 'expectedBy' | 'followUpAt' | 'kind'>
+>;
+
 export interface UseWaitingForItemsResult {
   data: WaitingForItem[];
   error: string | null;
   add: (input: AddWaitingForInput) => Promise<boolean>;
+  update: (item: WaitingForItem, patch: UpdateWaitingForPatch) => Promise<boolean>;
   trash: (id: string) => Promise<boolean>;
   submitting: boolean;
   mutationError: string | null;
@@ -76,6 +84,32 @@ export function useWaitingForItems(): UseWaitingForItemsResult {
     [db],
   );
 
+  const update = useCallback(
+    async (item: WaitingForItem, patch: UpdateWaitingForPatch): Promise<boolean> => {
+      setSubmitting(true);
+      setMutationError(null);
+      try {
+        const next: WaitingForItem = {
+          ...item,
+          ...patch,
+          title: (patch.title ?? item.title).trim(),
+          waitingOn: (patch.waitingOn ?? item.waitingOn).trim(),
+          updatedAt: toIso(new Date()),
+        };
+        await updateWaitingForItem(db, next);
+        return true;
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.error('failed to update waiting for item', err instanceof Error ? err : new Error(message));
+        setMutationError(message);
+        return false;
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [db],
+  );
+
   const trash = useCallback(
     async (id: string): Promise<boolean> => {
       setSubmitting(true);
@@ -99,6 +133,7 @@ export function useWaitingForItems(): UseWaitingForItemsResult {
     data: data ?? [],
     error: error ? String(error.message) : null,
     add,
+    update,
     trash,
     submitting,
     mutationError,

@@ -62,6 +62,26 @@ describe('DateTimePicker', () => {
     expect(onConfirm).toHaveBeenCalledWith('2026-09-26');
   });
 
+  it('datetime mode restores a date-only seed and keeps the day on confirm (issue #94 R1)', () => {
+    // Date-only values are stored at that day's end, and the prefill collapses
+    // back to 'YYYY-MM-DD'. Reopening the picker must show THAT day, not today;
+    // confirming without touching the wheels must re-emit the same date.
+    render(
+      <DateTimePicker
+        mode="datetime"
+        title="跟进时间"
+        value="2026-09-30"
+        now={now}
+        onConfirm={onConfirm}
+        onClose={onClose}
+      />,
+    );
+
+    expect(screen.getByText('09月30日')).toBeTruthy();
+    fireEvent.press(screen.getByText('确定'));
+    expect(onConfirm).toHaveBeenCalledWith('2026-09-30');
+  });
+
   it('datetime mode emits the full moment once a time control is used', () => {
     render(
       <DateTimePicker

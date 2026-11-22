@@ -219,7 +219,10 @@ async function insertCompletion(
     .execute();
 }
 
-async function insertWaiting(db: NextdoDb, args: { id: string; expectedBy: string | null }): Promise<void> {
+async function insertWaiting(
+  db: NextdoDb,
+  args: { id: string; expectedBy?: string | null; followUpAt?: string | null },
+): Promise<void> {
   await db
     .insertInto('waiting_for_items')
     .values({
@@ -229,7 +232,8 @@ async function insertWaiting(db: NextdoDb, args: { id: string; expectedBy: strin
       deleted_at: null,
       title: `wait-${args.id}`,
       waiting_on: 'test',
-      expected_by: args.expectedBy,
+      expected_by: args.expectedBy ?? null,
+      follow_up_at: args.followUpAt ?? null,
     })
     .execute();
 }
@@ -376,8 +380,9 @@ describe('buildDailyReviewSnapshot', () => {
       );
       // Only the active, uncovered project (held is on-hold; paper is covered).
       expect(snapshot.projectsMissingActions).toEqual([FIXTURE_IDS.projects.empty]);
-      // No fixture waiting item has a PASSED expectedBy (due=+2d, later=unset).
-      expect(snapshot.waitingFollowUps).toEqual([]);
+      // The "due" fixture has followUpAt one hour ago (expectedBy is +2d);
+      // the "later" fixture's followUpAt is in the future.
+      expect(snapshot.waitingFollowUps).toEqual([FIXTURE_IDS.waiting.due]);
       expect(snapshot.calendarToday).toEqual([FIXTURE_IDS.calendar.soon]);
       expect(snapshot.calendarTomorrow).toEqual([FIXTURE_IDS.calendar.tomorrow]);
       // The 3-skip fixture action (RECLARIFY_THRESHOLD = 3).
@@ -423,6 +428,52 @@ describe('buildDailyReviewSnapshot', () => {
       await insertWaiting(db, { id: 'w-unset', expectedBy: null });
       const snapshot = await buildDailyReviewSnapshot(db, FIXTURE_NOW);
       expect(snapshot.waitingFollowUps.sort()).toEqual(['w-today', 'w-yesterday']);
+    } finally {
+      await close();
+    }
+  });
+
+  it('treats followUpAt as a moment: later today is not due, at-now and earlier are (issue #94 R3)', async () => {
+    const { db, close } = await open();
+    try {
+      // FIXTURE_NOW is 10:00 UTC; +2h is still today but not due yet — it must
+      // not be labeled 已过期. Exactly now and earlier are due.
+      await insertWaiting(db, { id: 'w-followup-later-today', followUpAt: at(0, 2) });
+      await insertWaiting(db, { id: 'w-followup-exactly-now', followUpAt: toIso(FIXTURE_NOW) });
+      await insertWaiting(db, { id: 'w-followup-earlier-today', followUpAt: at(0, -2) });
+
+      const expected = ['w-followup-earlier-today', 'w-followup-exactly-now'];
+      const daily = await buildDailyReviewSnapshot(db, FIXTURE_NOW);
+      expect(daily.waitingFollowUps.sort()).toEqual(expected);
+      const weekly = await buildWeeklyReviewSnapshot(db, FIXTURE_NOW);
+      expect(weekly.waitingFollowUps.sort()).toEqual(expected);
+    } finally {
+      await close();
+    }
+  });
+
+  it('lists waiting items whose followUpAt is due, even without an expectedBy', async () => {
+    const { db, close } = await open();
+    try {
+      await insertWaiting(db, { id: 'w-followup-past', followUpAt: at(-1) });
+      await insertWaiting(db, {
+        id: 'w-followup-today',
+        expectedBy: at(5),
+        followUpAt: toIso(FIXTURE_NOW),
+      });
+      await insertWaiting(db, { id: 'w-followup-future', followUpAt: at(1) });
+      // Both fields due must yield the id once (a filter, not a concat).
+      await insertWaiting(db, {
+        id: 'w-both-due',
+        expectedBy: at(-2),
+        followUpAt: at(-1),
+      });
+      const snapshot = await buildDailyReviewSnapshot(db, FIXTURE_NOW);
+      expect(snapshot.waitingFollowUps.sort()).toEqual([
+        'w-both-due',
+        'w-followup-past',
+        'w-followup-today',
+      ]);
     } finally {
       await close();
     }
@@ -482,7 +533,8 @@ describe('buildWeeklyReviewSnapshot', () => {
       const empty = snapshot.projects.find((project) => project.id === FIXTURE_IDS.projects.empty);
       expect(empty?.hasOpenAction).toBe(false);
       expect(empty?.lastProgressAt).toBeNull();
-      expect(snapshot.waitingFollowUps).toEqual([]);
+      // The "due" fixture's followUpAt already passed (see the daily test).
+      expect(snapshot.waitingFollowUps).toEqual([FIXTURE_IDS.waiting.due]);
       expect(snapshot.somedayCount).toBe(1);
       // paper progressed 2d ago (< 14d); empty was created 10d ago (< 14d);
       // held is on-hold → none stalled.
