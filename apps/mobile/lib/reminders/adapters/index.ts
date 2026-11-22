@@ -56,6 +56,7 @@ export function __resetDeliveryAdapterForTests(): void {
 
 export type {
   DeliveryAdapter,
+  DeliveryInitHandlers,
   DeliveryPlatform,
   ReminderPermissionState,
 } from './types';

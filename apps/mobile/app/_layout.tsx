@@ -41,6 +41,7 @@ import { useAppTheme } from '@/lib/theme';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { PowerSyncContext } from '@powersync/react';
 import { useReminderDelivery } from '@/hooks/use-reminder-delivery';
+import { ReminderActionNotice } from '@/components/reminder-action-notice';
 import { useCalendarSync } from '@/hooks/use-calendar-sync';
 import { IosInstallPrompt } from '@/components/ios-install-prompt';
 import { AutoUpdateNotifier } from '@/components/auto-update-dialog';
@@ -164,9 +165,11 @@ function PowerSyncProvider({ children }: { children: ReactNode }) {
 
   return (
     <PowerSyncContext.Provider value={powersync}>
-      <ReminderDelivery />
       <CalendarSync />
       {children}
+      {/* After the navigator so the issue #99 failure banner paints on top
+          without relying on zIndex alone. */}
+      <ReminderDelivery />
     </PowerSyncContext.Provider>
   );
 }
@@ -175,13 +178,13 @@ function PowerSyncProvider({ children }: { children: ReactNode }) {
  * The reminder delivery engine (task 09-30 design §5): mounted inside the
  * PowerSync provider (the reconcile reads the local DB through the
  * provider's instance) and outside the Stack (no route state is needed —
- * a notification tap routes to the Now tab via the router). Renders
- * nothing — the hook IS the UI (its permission state is read by the
- * Settings screen through its own hook).
+ * a notification tap routes to the Now tab via the router). Also renders
+ * the issue #99 inline-action failure notice, so a failed 完成 / 推迟 /
+ * 跳过 is visible on whatever screen the notification opened.
  */
 function ReminderDelivery() {
-  useReminderDelivery();
-  return null;
+  const { actionNotice, dismissActionNotice } = useReminderDelivery();
+  return <ReminderActionNotice message={actionNotice} onDismiss={dismissActionNotice} />;
 }
 
 /**

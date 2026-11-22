@@ -13,7 +13,8 @@
  *   selected via `trigger.channelId` (design §2.3);
  * - click     → `addNotificationResponseReceivedListener` (hot start) +
  *   `getLastNotificationResponseAsync` (terminated cold start) → the
- *   callback routes to the Now tab (R4);
+ *   callback routes to the Now tab (R4); issue #99 adds the inline
+ *   完成 / 推迟 / 跳过 category whose actions run through the hook;
  * - Android 12+ exact alarm: granted via the `SCHEDULE_EXACT_ALARM` /
  *   `USE_EXACT_ALARM` manifest permissions (expo.android.permissions in
  *   app.json — without them the OS silently degrades to inexact alarms).
@@ -26,7 +27,18 @@ import { Linking, Platform } from 'react-native';
 import { logger } from '@nextdo/core';
 import { resolvePermissionStatus } from '../permission-status';
 import type { ReconcileItem, ReconcileOutput } from '../reminder-scheduler';
-import type { DeliveryAdapter, ReminderPermissionState, ReminderSoundPreferences } from './types';
+import {
+  INLINE_SNOOZE_LABEL,
+  REMINDER_ACTION_IDS,
+  REMINDER_CATEGORY_ID,
+  parseInlineAction,
+} from '../inline-actions';
+import type {
+  DeliveryAdapter,
+  DeliveryInitHandlers,
+  ReminderPermissionState,
+  ReminderSoundPreferences,
+} from './types';
 import { KIND_TITLES } from './types';
 import { NOTIFICATION_CHANNEL_IDS as CHANNEL_IDS } from '../../notification-channels';
 
@@ -52,7 +64,17 @@ const INTENSITY_SOUND: Record<string, string | undefined> = {
 
 let channelsReady = false;
 let responseListener: { remove(): void } | null = null;
-let onOpened: ((route?: string) => void) | null = null;
+let initHandlers: DeliveryInitHandlers | null = null;
+/**
+ * Issue #99: the last response already dispatched. A cold-start response can
+ * arrive twice — once as the emitter's native event (expo replays pending
+ * responses when the module is created) and once through
+ * `getLastNotificationResponseAsync` (the pattern expo's own
+ * `useLastNotificationResponse` dedupes by request identifier). Without this
+ * guard a 完成 press would run the transaction twice and the second run
+ * would show a spurious "状态变更不被允许" notice.
+ */
+let lastResponseKey: string | null = null;
 
 /** Issue #60: the deep-link route carried in `content.data.route` (focus
  *  notifications set it; reminder notifications do not, and land on the Now
@@ -61,6 +83,60 @@ function readRoute(data: unknown): string | undefined {
   if (data === null || typeof data !== 'object') return undefined;
   const route = (data as { route?: unknown }).route;
   return typeof route === 'string' && route.length > 0 ? route : undefined;
+}
+
+/**
+ * Issue #99: register the reminder action category (完成 / 推迟 / 跳过).
+ * The buttons keep `opensAppToForeground: true` (the OS default): a local
+ * notification response cannot run JS in a killed app without a background
+ * task (`expo-task-manager` is not installed), so opening the app is what
+ * guarantees the transaction actually runs — and a failure is visible there.
+ * A registration failure degrades to plain notifications; delivery itself
+ * must not be blocked.
+ */
+async function registerReminderCategory(): Promise<void> {
+  try {
+    await Notifications.setNotificationCategoryAsync(REMINDER_CATEGORY_ID, [
+      {
+        identifier: REMINDER_ACTION_IDS.complete,
+        buttonTitle: '完成',
+        options: { opensAppToForeground: true },
+      },
+      {
+        identifier: REMINDER_ACTION_IDS.snooze,
+        buttonTitle: INLINE_SNOOZE_LABEL,
+        options: { opensAppToForeground: true },
+      },
+      {
+        identifier: REMINDER_ACTION_IDS.skip,
+        buttonTitle: '跳过',
+        options: { opensAppToForeground: true },
+      },
+    ]);
+  } catch (error) {
+    logger.warn('notification action category registration failed', toError(error));
+  }
+}
+
+/**
+ * One response entry point shared by the hot listener and the cold-start
+ * read. An inline action goes to the hook; everything else (a plain tap, an
+ * unknown identifier or a drifted payload) opens the app — the platform
+ * degradation required by issue #99.
+ */
+function dispatchResponse(response: Notifications.NotificationResponse): void {
+  // One response → one dispatch (see `lastResponseKey`).
+  const key = `${response.notification.request.identifier}:${response.actionIdentifier}`;
+  if (key === lastResponseKey) return;
+  lastResponseKey = key;
+
+  const data = response.notification.request.content.data;
+  const inline = parseInlineAction(response.actionIdentifier, data);
+  if (inline !== null && initHandlers?.onNotificationAction !== undefined) {
+    initHandlers.onNotificationAction(inline);
+    return;
+  }
+  initHandlers?.onNotificationOpened(readRoute(data));
 }
 
 /** Issue #54: whether reminder notifications may make a sound. Read at
@@ -132,6 +208,8 @@ async function scheduleOne(item: ReconcileItem): Promise<void> {
     content: {
       title: KIND_TITLES[row.kind],
       body: title,
+      // Issue #99: the 完成 / 推迟 / 跳过 buttons (registered in init).
+      categoryIdentifier: REMINDER_CATEGORY_ID,
       // R4 payload (log + future deep-link; v1 routes to Now regardless):
       data: { reminderId: row.id, actionKind: row.kind, actionId: row.actionId },
       ...soundContent,
@@ -153,8 +231,8 @@ export function createNativeAdapter(): DeliveryAdapter {
   return {
     platform: 'native',
 
-    async init(callback: (route?: string) => void): Promise<void> {
-      onOpened = callback;
+    async init(handlers: DeliveryInitHandlers): Promise<void> {
+      initHandlers = handlers;
       // Foreground presentation: the default banner + sound, badge off
       // (design §4.1 — without this handler, notifications that fire
       // while the app is in the foreground are NOT shown). A focus
@@ -174,21 +252,22 @@ export function createNativeAdapter(): DeliveryAdapter {
           };
         },
       });
+      await registerReminderCategory();
       await ensureChannels();
-      // Hot start: the tap arrives while JS is running.
+      // Hot start: the tap (or action button) arrives while JS is running.
       responseListener?.remove();
       responseListener = Notifications.addNotificationResponseReceivedListener(
         (response) => {
-          onOpened?.(readRoute(response.notification.request.content.data));
+          dispatchResponse(response);
         },
       );
-      // Cold start (terminated): the tap that LAUNCHED the app is still
-      // retrievable exactly once — consume + clear it so a later hot
-      // start never re-routes (the official expo-router pattern).
+      // Cold start (terminated): the response that LAUNCHED the app is still
+      // retrievable exactly once — consume + clear it so a later hot start
+      // never re-routes (the official expo-router pattern).
       try {
         const last = await Notifications.getLastNotificationResponseAsync();
         if (last !== null) {
-          onOpened?.(readRoute(last.notification.request.content.data));
+          dispatchResponse(last);
           await Notifications.clearLastNotificationResponseAsync();
         }
       } catch (error) {
@@ -319,7 +398,7 @@ export function createNativeAdapter(): DeliveryAdapter {
     dispose(): void {
       responseListener?.remove();
       responseListener = null;
-      onOpened = null;
+      initHandlers = null;
     },
   };
 }

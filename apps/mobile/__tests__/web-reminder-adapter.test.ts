@@ -81,7 +81,12 @@ describe('createWebAdapter', () => {
   });
 
   it('fires web notification on apply when granted', async () => {
-    const mockNotificationCtor = jest.fn();
+    const notificationInstances: Array<{ onclick: (() => void) | null }> = [];
+    const mockNotificationCtor = jest.fn().mockImplementation(() => {
+      const instance = { onclick: null as (() => void) | null };
+      notificationInstances.push(instance);
+      return instance;
+    });
     Object.assign(mockNotificationCtor, {
       permission: 'granted',
       requestPermission: jest.fn(),
@@ -133,5 +138,28 @@ describe('createWebAdapter', () => {
       toFireNow: [testItem],
     });
     expect(mockNotificationCtor).toHaveBeenCalledTimes(1);
+
+    // Issue #99 degradation: no inline actions on the plain web surface, but
+    // clicking the notification brings the app forward.
+    const focus = jest.fn();
+    const host = globalThis as unknown as { window: { focus?: () => void } };
+    const originalFocus = host.window.focus;
+    Object.defineProperty(host.window, 'focus', {
+      value: focus,
+      configurable: true,
+      writable: true,
+    });
+    try {
+      const instance = notificationInstances[0];
+      expect(typeof instance?.onclick).toBe('function');
+      instance?.onclick?.();
+      expect(focus).toHaveBeenCalledTimes(1);
+    } finally {
+      Object.defineProperty(host.window, 'focus', {
+        value: originalFocus,
+        configurable: true,
+        writable: true,
+      });
+    }
   });
 });

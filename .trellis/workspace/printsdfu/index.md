@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 77
-- **Last Active**: 2026-11-19
+- **Total Sessions**: 79
+- **Last Active**: 2026-11-21
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~446 | Active |
+| `journal-2.md` | ~480 | Active |
 | `journal-1.md` | ~1990 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 79 | 2026-11-21 | 修复 #99 审查问题：旧通知状态校验与完成范围 | - | `feat/notification-inline-actions` |
+| 78 | 2026-11-21 | 通知内联操作：完成 / 推迟 / 跳过 | - | `feat/notification-inline-actions` |
 | 77 | 2026-11-19 | 取消交付前验证的截图要求 | - | `main` |
 | 76 | 2026-11-19 | 资料库可选启用规则与 Focus bug 优先级 | - | `main` |
 | 75 | 2026-11-18 | Now 页审查修复与 beta.28 发布 | `36d9805`, `742d7bc`, `fd275e4` | `main` |

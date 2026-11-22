@@ -34,10 +34,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { usePowerSync } from '@powersync/react';
-import { listScheduledReminders, wrapDb } from '@nextdo/db';
+import {
+  completeAction,
+  listScheduledReminders,
+  skipAction,
+  snoozeAction,
+  wrapDb,
+} from '@nextdo/db';
 import { logger } from '@nextdo/core';
 import { getDeliveryAdapter, type ReminderPermissionState } from '@/lib/reminders/adapters';
 import { postDebugLog } from '@/lib/reminders/debug-log';
+import { inlineSnoozeTarget, type ReminderInlineAction } from '@/lib/reminders/inline-actions';
+import { errorMessage } from '@/lib/error-messages';
 import { getCalendarPermission } from '@/lib/calendar-sync';
 import { calendarOwnsReminderDelivery } from '@/lib/calendar-sync/reminder-plan';
 import { computeReconcile } from '@/lib/reminders/reminder-scheduler';
@@ -66,6 +74,10 @@ export interface UseReminderDeliveryResult {
    *  — exported for completeness; the Settings screen uses
    *  `useReminderPermission` (its own fresh read) instead. */
   permission: ReminderPermissionState | null;
+  /** Issue #99: the last inline action's failure, ready to display (null
+   *  when the last action succeeded / none ran). */
+  actionNotice: string | null;
+  dismissActionNotice: () => void;
 }
 
 export function useReminderDelivery(): UseReminderDeliveryResult {
@@ -74,6 +86,11 @@ export function useReminderDelivery(): UseReminderDeliveryResult {
   const db = useMemo(() => wrapDb(powersync), [powersync]);
   const adapter = getDeliveryAdapter();
   const [permission, setPermission] = useState<ReminderPermissionState | null>(null);
+  // Issue #99: the last inline action's failure (null = none / last succeeded).
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const dismissActionNotice = useCallback(() => {
+    setActionNotice(null);
+  }, []);
 
   // The router identity is not stable across renders — the init callback
   // must not depend on it (the effect would re-run needlessly).
@@ -151,16 +168,64 @@ export function useReminderDelivery(): UseReminderDeliveryResult {
     return queueRef.current;
   }, [db, adapter]);
 
+  /**
+   * Issue #99: run a notification's inline action through the same
+   * transaction the screen uses. Serialized on the reconcile queue so the
+   * write and the follow-up reconcile (triggered by the table change)
+   * cannot interleave. A failure is surfaced in-app — the notification is
+   * already gone, so silence would be the only alternative.
+   */
+  const runInlineAction = useCallback(
+    (action: ReminderInlineAction): void => {
+      queueRef.current = queueRef.current.then(async () => {
+        try {
+          const now = new Date();
+          if (action.kind === 'complete') {
+            await completeAction(db, {
+              actionKind: action.actionKind,
+              actionId: action.actionId,
+              now,
+            });
+          } else if (action.kind === 'snooze') {
+            await snoozeAction(db, {
+              actionKind: action.actionKind,
+              actionId: action.actionId,
+              snoozedUntil: inlineSnoozeTarget(now),
+              now,
+            });
+          } else {
+            await skipAction(db, {
+              actionKind: action.actionKind,
+              actionId: action.actionId,
+              now,
+            });
+          }
+          setActionNotice(null);
+        } catch (error) {
+          logger.warn(
+            'notification inline action failed',
+            error instanceof Error ? error : new Error(String(error)),
+          );
+          setActionNotice(errorMessage(error));
+        }
+      });
+    },
+    [db],
+  );
+
   // Mount: init the adapter (handler + channels + listeners), run the
   // first reconcile, read the permission.
   useEffect(() => {
     let disposed = false;
     void (async () => {
       try {
-        await adapter.init((route) => {
-          // Issue #60: a focus notification carries its own deep link; a
-          // reminder has none and lands on the Now tab (R4).
-          routerRef.current.replace((route ?? NOW_TAB_ROUTE) as Href);
+        await adapter.init({
+          onNotificationOpened: (route) => {
+            // Issue #60: a focus notification carries its own deep link; a
+            // reminder has none and lands on the Now tab (R4).
+            routerRef.current.replace((route ?? NOW_TAB_ROUTE) as Href);
+          },
+          onNotificationAction: runInlineAction,
         });
       } catch (error) {
         // init failure (e.g. a channel error on a weird ROM) must not
@@ -205,7 +270,7 @@ export function useReminderDelivery(): UseReminderDeliveryResult {
       disposed = true;
       adapter.dispose();
     };
-  }, [adapter, runReconcile]);
+  }, [adapter, runReconcile, runInlineAction]);
 
   // Data changes (local writes + sync inflow) — debounced (design §5.2).
   // Skipped on plain web: the noop adapter has nothing to reconcile.
@@ -285,5 +350,5 @@ export function useReminderDelivery(): UseReminderDeliveryResult {
     };
   }, [adapter, runReconcile]);
 
-  return { permission };
+  return { permission, actionNotice, dismissActionNotice };
 }

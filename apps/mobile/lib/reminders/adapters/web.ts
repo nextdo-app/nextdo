@@ -23,8 +23,14 @@ interface WebNotificationOptions {
   renotify?: boolean;
 }
 
+interface WebNotificationInstance {
+  /** Clicking the direct-constructor notification focuses the tab (issue
+   *  #99 platform degradation: no inline actions, tap still opens the app). */
+  onclick: (() => void) | null;
+}
+
 interface WebNotificationCtor {
-  new (title: string, options?: WebNotificationOptions): unknown;
+  new (title: string, options?: WebNotificationOptions): WebNotificationInstance;
   permission: 'default' | 'granted' | 'denied';
   requestPermission(): Promise<'default' | 'granted' | 'denied'>;
 }
@@ -35,6 +41,8 @@ interface WebServiceWorkerRegistration {
 
 interface WebHostWindow {
   Notification?: WebNotificationCtor;
+  /** Focusing the tab on a notification click (jsdom: an assignable stub). */
+  focus?: () => void;
   navigator?: {
     userAgent?: string;
     maxTouchPoints?: number;
@@ -133,7 +141,12 @@ export function createWebAdapter(): DeliveryAdapter {
             const reg = await win.navigator.serviceWorker.ready;
             await reg.showNotification(title, options);
           } else {
-            new win.Notification(title, options);
+            const notification = new win.Notification(title, options);
+            // Issue #99 degradation: browsers have no inline action buttons
+            // here — a click must at least bring the app forward.
+            notification.onclick = () => {
+              win.focus?.();
+            };
           }
 
           if (firedIds.size >= FIRED_IDS_MAX) {

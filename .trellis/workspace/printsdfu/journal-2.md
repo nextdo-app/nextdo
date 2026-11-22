@@ -444,3 +444,37 @@ Topics: [.trellis/spec/project/quality-guidelines.md](../../spec/project/quality
 ### Git Commits
 
 (No associated commits)
+
+
+## Session 78: 通知内联操作：完成 / 推迟 / 跳过
+<!-- trellis-session: v=3 fp=9392147e9ad55fdf -->
+
+**Date**: 2026-11-21
+**Task**: 通知内联操作：完成 / 推迟 / 跳过
+**Branch**: `feat/notification-inline-actions`
+
+### Summary
+
+实现 issue #99：原生提醒注册「完成 / 推迟 10 分钟 / 跳过」动作目录，响应经适配器分发到 delivery hook，分别执行 completeAction / snoozeAction / skipAction；失败以根布局中文横幅提示；web 直接通知点击聚焦窗口，桌面/未知动作降级为打开应用。新增纯解析、适配器、hook 与横幅测试；门禁 1664 项与 Web 冒烟通过。详见 research 主题。
+Topics: [.trellis/research/notification-inline-actions.md](../../research/notification-inline-actions.md)
+
+### Git Commits
+
+(No associated commits)
+
+
+## Session 79: 修复 #99 审查问题：旧通知状态校验与完成范围
+<!-- trellis-session: v=3 fp=30ca0409957b86bc -->
+
+**Date**: 2026-11-21
+**Task**: 修复 #99 审查问题：旧通知状态校验与完成范围
+**Branch**: `feat/notification-inline-actions`
+
+### Summary
+
+按 reviewer 要求，推迟/跳过在规范事务内检查行动仍为 open；旧通知不能给已完成行动写 snooze/skip 或新建 scheduled reminder，失败以 action.not-open 走中文横幅。新增 db 与 hook 回归，恢复事务测试改为直接写入状态。确认 #99 为部分完成：当前交付前台路径（opensAppToForeground），后台事务保留在 backlog。门禁 1669 项与 Web 冒烟通过。
+Topics: [.trellis/research/notification-inline-actions.md](../../research/notification-inline-actions.md)
+
+### Git Commits
+
+(No associated commits)

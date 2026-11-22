@@ -14,6 +14,7 @@
  * `reminder-scheduler.ts` and is unit-tested there.
  */
 import type { ReconcileOutput } from '../reminder-scheduler';
+import type { ReminderInlineAction } from '../inline-actions';
 import type { NotificationSoundTone } from '../../notification-settings';
 
 /** The adapter's delivery platform (drives the Settings copy, R5). */
@@ -42,18 +43,35 @@ export interface ReminderSoundPreferences {
   tone: NotificationSoundTone;
 }
 
+/**
+ * Callbacks an adapter reports to the delivery hook. Both may arrive on a
+ * cold start (the launch was caused by the notification) — the adapter
+ * consumes the launch response exactly once.
+ */
+export interface DeliveryInitHandlers {
+  /**
+   * The user tapped a notification (hot or cold start). `route` is the
+   * deep link carried in the notification data (issue #60 — the focus
+   * screen); absent → the hook routes to the Now tab (R4).
+   */
+  onNotificationOpened: (route?: string) => void;
+  /**
+   * Issue #99: the user pressed an inline action button (完成 / 推迟 / 跳过).
+   * The hook runs the matching DB transaction. Platforms without inline
+   * actions never call it (a tap degrades to `onNotificationOpened`).
+   */
+  onNotificationAction?: (action: ReminderInlineAction) => void;
+}
+
 export interface DeliveryAdapter {
   readonly platform: DeliveryPlatform;
   /**
    * One-time setup (foreground presentation handler + channels + the
-   * notification-click listener). Idempotent across init/dispose cycles
-   * (React StrictMode double-mount in dev must not double-register).
-   * @param onNotificationOpened the user tapped a notification (hot or
-   *   cold start). `route` is the deep link carried in the notification
-   *   data (issue #60 — the focus screen); absent → the hook routes to the
-   *   Now tab (R4).
+   * action category + the notification-response listener). Idempotent
+   * across init/dispose cycles (React StrictMode double-mount in dev must
+   * not double-register).
    */
-  init(onNotificationOpened: (route?: string) => void): Promise<void>;
+  init(handlers: DeliveryInitHandlers): Promise<void>;
   /**
    * Reminder row ids currently armed in the OS (the reconcile join key —
    * the schedule identifier). tauri/web: always empty (no OS-side pending
