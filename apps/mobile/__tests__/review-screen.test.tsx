@@ -135,6 +135,7 @@ describe('Review tab', () => {
 
     await waitFor(() => expect(screen.getByText('今日回顾')).toBeTruthy());
     expect(screen.getByText('本周回顾')).toBeTruthy();
+    expect(screen.getByText('专注历史')).toBeTruthy();
     expect(screen.getByText('历史记录')).toBeTruthy();
 
     // Both records: kind tags + digests.

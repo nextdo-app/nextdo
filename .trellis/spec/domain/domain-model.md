@@ -503,6 +503,12 @@ enable carry-over or rewrite existing completed habits while editing history.
 - The live, in-progress session is the only focus-related value in UI state (see
   app/state-management.md); it is persisted as an `active` row from the moment it
   starts, so app kill/restart recovers it.
+- **History read side (issue #96)**: `listFocusHistory` / `focusHistoryWatchQuery`
+  return every terminal session — `completed` AND `abandoned` — newest first, joined
+  to the action's current title (`null` once that action is trashed). `active` rows
+  stay out. Duration is derived, never stored (`endedAt − startedAt − pausedSec`);
+  the app aggregates by the **device-local start day** and Monday-start week, and
+  abandoned time counts because it was actually spent.
 
 ### ReviewRecord (Proposal §5.4)
 Append-only, a **discriminated union** on `kind`:

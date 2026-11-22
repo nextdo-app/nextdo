@@ -96,6 +96,31 @@ export default function ReviewScreen() {
         </Pressable>
       </View>
 
+      {/* Focus history & stats (issue #96). */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="专注历史与统计"
+        onPress={() => router.push('/focus-history')}
+        className="mt-3 rounded-2xl border border-border/80 bg-surface p-3.5 shadow-2xs active:bg-surface-container dark:border-border-dark dark:bg-surface-dark dark:active:bg-surface-container-dark"
+      >
+        <View className="flex-row items-center justify-between">
+          <View className="flex-row items-center gap-2">
+            <View className="h-7 w-7 items-center justify-center rounded-lg bg-accent/15 dark:bg-accent-dark/20">
+              <Ionicons name="bar-chart-outline" size={15} color={isDark ? colors.accentDark : colors.accent} />
+            </View>
+            <Text className="font-sans text-base font-semibold text-ink dark:text-ink-dark">
+              专注历史
+            </Text>
+          </View>
+          <View className="h-6 w-6 items-center justify-center rounded-full bg-accent/10 dark:bg-accent-dark/20">
+            <Ionicons name="chevron-forward" size={13} color={isDark ? colors.accentDark : colors.accent} />
+          </View>
+        </View>
+        <Text className="mt-2 font-sans text-xs text-muted dark:text-muted-dark">
+          专注时长 · 每日/每周趋势 · 热力图
+        </Text>
+      </Pressable>
+
       <View className="mt-6 flex-1">
         <Text className="mb-2.5 text-sm font-semibold text-muted dark:text-muted-dark">
           历史记录

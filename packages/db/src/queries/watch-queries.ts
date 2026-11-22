@@ -21,6 +21,11 @@ import {
 } from '../schema';
 import { toCompilableQuery } from '../watch-query';
 import { completedActionFromRow, completedActionsQuery, type CompletedAction } from './actions';
+import {
+  focusHistoryFromRow,
+  focusHistoryQuery,
+  type FocusHistoryRow,
+} from './focus';
 import { poolWatchQuery } from './pool';
 import { appSettingFromRow, appSettingsQuery, type AppSetting } from './settings';
 import type { NextdoDb } from '../types';
@@ -236,5 +241,15 @@ export function completedActionsWatchQuery(db: NextdoDb): CompilableQuery<Comple
  */
 export function settingsWatchQuery(db: NextdoDb): CompilableQuery<AppSetting> {
   return toCompilableQuery(appSettingsQuery(db), appSettingFromRow);
+}
+
+/**
+ * The focus-history screen's watch query (issue #96). Same single statement
+ * as `listFocusHistory`: a session appears/disappears the instant its
+ * terminal transition (or a soft delete) commits, and a renamed action's
+ * current title follows the join.
+ */
+export function focusHistoryWatchQuery(db: NextdoDb): CompilableQuery<FocusHistoryRow> {
+  return toCompilableQuery(focusHistoryQuery(db), focusHistoryFromRow);
 }
 
