@@ -444,3 +444,20 @@ Topics: [.trellis/spec/project/quality-guidelines.md](../../spec/project/quality
 ### Git Commits
 
 (No associated commits)
+
+
+## Session 78: 回顾详情支持跳转项目/等待/Someday（#67）
+<!-- trellis-session: v=3 fp=346e5de0ee77850e -->
+
+**Date**: 2026-11-22
+**Task**: 回顾详情支持跳转项目/等待/Someday（#67）
+**Branch**: `feat/review-links-67`
+
+### Summary
+
+review-detail section 改为带 href 的条目；项目→/projects/<id>，等待→/waiting，Someday→/someday；行动与日程无详情路由保持纯文本。新增 lib 与详情页测试。门禁 1648 项通过；浏览器实测按用户 2026-11-22 明确要求跳过，不声称浏览器已验证。
+Topics: [.trellis/research/review-page.md](../../research/review-page.md)
+
+### Git Commits
+
+(No associated commits)
