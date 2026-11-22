@@ -2,9 +2,11 @@
  * Focus-duration preference (issue #59): the last duration the user actually
  * chose before starting a session.
  *
- * The schema has NO settings table — adding one would touch the sync surface —
- * so this stays device-local, using the same platform matrix as `lib/theme.ts`,
- * `lib/notification-settings.ts` and `lib/habit-reminders.ts`:
+ * Stored device-locally as the first-paint cache AND in the synced `settings`
+ * table (issue #97): the synced-settings bridge applies downloaded rows back
+ * here and mirrors user saves. The local store uses the same platform matrix
+ * as `lib/theme.ts`, `lib/notification-settings.ts` and
+ * `lib/habit-reminders.ts`:
  *   native (iOS/Android) → `expo-secure-store`
  *   browser web / Tauri → `localStorage`
  *   Node / fallback     → in-memory
@@ -14,6 +16,7 @@
  */
 import { isReactNativeRuntime } from '@nextdo/db';
 import { MAX_FOCUS_MINUTES, MIN_FOCUS_MINUTES } from '@nextdo/core';
+import { writeSyncedSetting } from './synced-settings-bus';
 
 export const FOCUS_SETTINGS_KEY = 'nextdo.settings.focus';
 
@@ -188,9 +191,11 @@ export async function loadFocusSettings(): Promise<FocusSettings> {
     .getItem(FOCUS_SETTINGS_KEY)
     .then((raw) => {
       const parsed = parseFocusSettings(raw);
-      cachedSettings = parsed;
+      // A synced row applied while this read was in flight owns the value.
+      const resolved = cachedSettings ?? parsed;
+      cachedSettings = resolved;
       pendingLoad = null;
-      return parsed;
+      return resolved;
     })
     .catch((err: unknown) => {
       pendingLoad = null;
@@ -209,6 +214,7 @@ export async function saveFocusSettings(patch: Partial<FocusSettings>): Promise<
   // a default the device never stored.
   await getBackend().setItem(FOCUS_SETTINGS_KEY, JSON.stringify(next));
   cachedSettings = next;
+  writeSyncedSetting('focus', JSON.stringify(next));
   for (const listener of listeners) {
     try {
       listener(next);
@@ -217,6 +223,50 @@ export async function saveFocusSettings(patch: Partial<FocusSettings>): Promise<
     }
   }
   return next;
+}
+
+/**
+ * Apply a value downloaded from the synced `settings` table (issue #97). The
+ * downloaded value wins over the device cache; the cache is refreshed for the
+ * next cold start. A failed local cache write does not undo the applied value
+ * (the DB row remains the source of truth).
+ */
+export function applyFocusSettingsFromSync(next: FocusSettings): void {
+  const normalized: FocusSettings = { lastMinutes: normalizeFocusMinutes(next.lastMinutes) };
+  if (cachedSettings !== null && cachedSettings.lastMinutes === normalized.lastMinutes) return;
+  cachedSettings = normalized;
+  try {
+    void getBackend()
+      .setItem(FOCUS_SETTINGS_KEY, JSON.stringify(normalized))
+      .catch(() => undefined);
+  } catch {
+    // A storage refusal must not break the sync apply.
+  }
+  for (const listener of listeners) {
+    try {
+      listener(normalized);
+    } catch {
+      // A misbehaving subscriber must not break the apply path.
+    }
+  }
+}
+
+/**
+ * The device's explicitly stored preference, or null when nothing was stored
+ * (or the store itself failed). Used by the synced-settings bridge to seed
+ * the table on first login — a default is never seeded.
+ *
+ * The module cache is not conclusive (a normal load caches
+ * `{lastMinutes:null}` from an empty store), so only the store is read.
+ */
+export async function readStoredFocusSettings(): Promise<FocusSettings | null> {
+  try {
+    const raw = await getBackend().getItem(FOCUS_SETTINGS_KEY);
+    if (raw === null) return null;
+    return parseFocusSettings(raw);
+  } catch {
+    return null;
+  }
 }
 
 /** Test hook: point the module at a specific backend (null = reset). */

@@ -35,8 +35,17 @@
    eligible list the engine already returned — it does not re-rank with a different seed.
    It writes the skip only when another eligible action exists, and advances only after
    that write succeeds.
-6. Settings that the engine or sync cares about live in a `settings` table, not in
-   `AsyncStorage`/`MMKV`. Key-value storage is only for UI cosmetics (e.g. last tab).
+6. Account-level preferences live in the synced `settings` table (key → JSON
+   value, `packages/db/src/queries/settings.ts`): theme, focus duration and the
+   Now engine's available minutes. Each device keeps a local first-paint cache;
+   the `SyncedSettings` bridge applies downloaded rows and mirrors user writes.
+   A write that has not committed yet (in flight or failed) stays pending and
+   wins over stale downloaded rows; a visible retry banner lets the user
+   re-attempt it. Device-specific settings stay in their platform stores:
+   notification permission/channel and calendar target (device
+   capabilities/ids), habit reminders (they arm this device's OS
+   notifications), and the update channel/skip state (it describes this
+   installation).
 7. Cross-device behavior: everything in the DB syncs; everything in a Zustand store is
    device-local by definition. If a value should follow the user across devices, it
    belongs in the DB.

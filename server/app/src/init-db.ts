@@ -22,7 +22,7 @@ async function main(): Promise<void> {
     console.log('Initializing Nextdo database tables, indexes and replication publication...');
     await initDatabaseSchema(pool);
     await initSystemSettingsTable(pool);
-    console.log('✅ Nextdo database initialization completed successfully! (14 tables & publication ready)');
+    console.log('✅ Nextdo database initialization completed successfully! (15 tables & publication ready)');
   } catch (error) {
     console.error('❌ Failed to initialize database:', error);
     process.exit(1);

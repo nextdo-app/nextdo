@@ -214,6 +214,18 @@ CREATE TABLE IF NOT EXISTS completion_records (
   completed_at TEXT,
   est_minutes INTEGER
 );
+
+-- Account-level preferences that sync across devices (issue #97). One row
+-- per key; the client mints the deterministic id "setting:<key>".
+CREATE TABLE IF NOT EXISTS settings (
+  id TEXT PRIMARY KEY,
+  created_at TEXT,
+  updated_at TEXT,
+  deleted_at TEXT,
+  key TEXT,
+  value TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS settings_key_idx ON settings (key);
 `;
 
 /** Ensure all tables, indexes, and PowerSync replication publication exist. */

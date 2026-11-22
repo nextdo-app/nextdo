@@ -42,7 +42,12 @@ import {
 
 import { act, render, screen } from '@testing-library/react-native';
 import { Text } from 'react-native';
-import { resolveColorScheme, useAppTheme } from '@/lib/theme';
+import {
+  applyThemePreferenceFromSync,
+  readStoredThemePreference,
+  resolveColorScheme,
+  useAppTheme,
+} from '@/lib/theme';
 
 /* ---------------- mocks ---------------- */
 
@@ -346,5 +351,18 @@ describe('useAppTheme', () => {
     expect(tabTheme.isDark).toBe(true);
     expect(screenTheme.isDark).toBe(true);
     expect(htmlClass()).toContain('dark');
+  });
+});
+
+/* ---------------- stored-preference seeding (issue #97 R1) ---------------- */
+
+describe('readStoredThemePreference', () => {
+  it('does not report a cached first-paint default as a stored preference', async () => {
+    // A normal first read of an empty store caches 'system' for the UI; the
+    // device never chose it. The synced-settings bridge must not seed it over
+    // another device's explicit row.
+    applyThemePreferenceFromSync('system');
+    mockThemeStore.clear();
+    expect(await readStoredThemePreference()).toBeNull();
   });
 });

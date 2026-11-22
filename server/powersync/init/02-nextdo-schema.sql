@@ -212,10 +212,23 @@ CREATE TABLE completion_records (
   est_minutes INTEGER
 );
 
+-- Account-level preferences that sync across devices (issue #97). One row
+-- per key; the client mints the deterministic id "setting:<key>", so two
+-- devices writing the same key target the same row.
+CREATE TABLE settings (
+  id TEXT PRIMARY KEY,
+  created_at TEXT,
+  updated_at TEXT,
+  deleted_at TEXT,
+  key TEXT,
+  value TEXT
+);
+CREATE UNIQUE INDEX settings_key_idx ON settings (key);
+
 -- PowerSync logical replication: the service's replicator streams the WAL
 -- through a publication named `powersync` in the SOURCE database. Without
 -- it every replication attempt fails PSYNC_S1141 ("Publication 'powersync'
--- does not exist"). FOR ALL TABLES covers the 14 tables above and any
+-- does not exist"). FOR ALL TABLES covers the 15 tables above and any
 -- additive v1 schema change (the official self-host-demo creates it in its
 -- init script the same way).
 CREATE PUBLICATION powersync FOR ALL TABLES;

@@ -6,7 +6,7 @@
 
 > **✨ 极简设计核心优势**：
 > 1. **无需下载源代码**：全程在 Neon、PowerSync 和 Cloudflare 的网页控制台中点选操作，不碰本地终端。
-> 2. **数据库全自动建表**：无需打开 SQL Editor 复制执行任何 SQL，后端服务首次被访问时会自动创建所有 14 张核心业务表、2 张服务端内部表与全部索引。
+> 2. **数据库全自动建表**：无需打开 SQL Editor 复制执行任何 SQL，后端服务首次被访问时会自动创建所有 15 张核心业务表、2 张服务端内部表与全部索引。
 > 3. **客户端只需填写 Workers 网址**：首台设备**只需填写 Workers 网址**，无需手动配置 PowerSync 地址，无需寻找 Token，自动免密认领绑定！
 > 4. **多端秒级配对**：第二台设备直接扫码或粘贴连接串即可一键加入同步。
 
@@ -53,7 +53,7 @@
 3. 复制连接字符串，形如：
    `postgresql://user:password@ep-xyz.aws.neon.tech/neondb?sslmode=require`。
 
-> 💡 **无需手动建表**：Nextdo 后端会在后续步骤被访问时**全自动创建全部 14 张核心业务表及所有索引**（另加 `system_settings` 与 `reminder_deliveries` 两张服务端内部表），你完全不需要打开 SQL Editor。
+> 💡 **无需手动建表**：Nextdo 后端会在后续步骤被访问时**全自动创建全部 15 张核心业务表及所有索引**（另加 `system_settings` 与 `reminder_deliveries` 两张服务端内部表），你完全不需要打开 SQL Editor。
 
 ---
 
@@ -86,7 +86,10 @@
          - SELECT id, created_at, updated_at, deleted_at, action_id, action_kind, mode, planned_minutes, started_at, paused_sec, ended_at, status FROM focus_sessions WHERE deleted_at IS NULL
          - SELECT id, created_at, updated_at, deleted_at, kind, at, snapshot, answers FROM review_records WHERE deleted_at IS NULL
          - SELECT id, created_at, updated_at, deleted_at, action_kind, action_id, completed_at, est_minutes FROM completion_records WHERE deleted_at IS NULL
+         - SELECT id, created_at, updated_at, deleted_at, key, value FROM settings WHERE deleted_at IS NULL
    ```
+
+   > **已有部署升级**：本版本新增 `settings` 表（主题、专注时长、可用时间）。请先重新部署后端的 [`worker.js`](./worker.js)（或重启自托管服务），让数据库建出 `settings` 表并接受该表上报；再按上面的规则重新 **Deploy** Sync Rules。任一步未做时，设置只保存在本机，不会跨设备同步。
 
 4. **配置 JWT 密钥**：
    在 PowerSync 控制台的 **Authentication** 设置中：

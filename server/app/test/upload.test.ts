@@ -6,6 +6,8 @@
  * (rejected ops → 2xx + not applied; transient failures → 5xx; malformed
  * protocol → 400).
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createApp } from '../src/app.js';
 import { APPEND_ONLY_TABLES, MUTABLE_TABLES } from '../src/db.js';
 import type { Hono } from 'hono';
@@ -475,10 +477,11 @@ const EXPECTED_CLIENT_SCHEMA: Record<string, readonly string[]> = {
     'completed_at',
     'est_minutes',
   ],
+  settings: ['created_at', 'updated_at', 'deleted_at', 'key', 'value'],
 };
 
 describe('table catalog — parity with packages/db/src/schema.ts', () => {
-  it('declares exactly the 14 client tables', () => {
+  it('declares exactly the 15 client tables', () => {
     const serverTables = Object.keys({ ...MUTABLE_TABLES, ...APPEND_ONLY_TABLES }).sort();
     expect(serverTables).toEqual(Object.keys(EXPECTED_CLIENT_SCHEMA).sort());
   });
@@ -500,5 +503,17 @@ describe('table catalog — parity with packages/db/src/schema.ts', () => {
     ]);
     expect(MUTABLE_TABLES['focus_sessions']).toBeDefined();
     expect(APPEND_ONLY_TABLES['focus_sessions']).toBeUndefined();
+  });
+});
+
+describe('copy-paste worker artifact (server/deploy/worker.js)', () => {
+  const bundle = readFileSync(join(__dirname, '../../deploy/worker.js'), 'utf8');
+
+  it('initializes the settings table and accepts its upload columns', () => {
+    expect(bundle).toContain('CREATE TABLE IF NOT EXISTS settings');
+    expect(bundle).toContain('settings_key_idx');
+    expect(bundle).toContain(
+      'settings: ["created_at", "updated_at", "deleted_at", "key", "value"]',
+    );
   });
 });

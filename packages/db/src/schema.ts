@@ -3,7 +3,7 @@
  * tables) + row mappers (spec: app/database-guidelines.md "PowerSync Rules";
  * columns per domain/domain-model.md — one table per MVP entity).
  *
- * Schema shape — 14 synced tables (all upsert). `review_records` and
+ * Schema shape — 15 synced tables (all upsert). `review_records` and
  * `completion_records` are append-only AUDIT TRAILS, but they are declared as
  * regular upsert tables — NOT `Table.createInsertOnly`. PowerSync's
  * createInsertOnly never applies a local write to the local DB (its generated
@@ -16,11 +16,13 @@
  *   upsert:        inbox_items, projects, next_actions, waiting_for_items,
  *                  calendar_actions, someday_maybe_items, reference_items,
  *                  contexts, habits, habit_days, reminders, focus_sessions,
- *                  review_records, completion_records
+ *                  review_records, completion_records, settings
  *
  * Every synced table gets the PowerSync `id` column automatically
- * (ULID, minted by core's `ulid()`). Row mappers keep the domain
- * camelCase types (core) separate from the snake_case DB rows:
+ * (ULID, minted by core's `ulid()`), except `settings` — its deterministic
+ * `setting:<key>` id makes two devices converge on one row per preference.
+ * Row mappers keep the domain camelCase types (core) separate from the
+ * snake_case DB rows:
  *   - `xToRow(entity)`  — entity → row columns (id excluded; `undefined`
  *     optionals become SQL `null`)
  *   - `xFromRow(row)`   — row → entity (`null` optionals become
@@ -294,6 +296,23 @@ export const AppSchema = new Schema({
     completed_at: column.text,
     est_minutes: column.integer,
   }),
+
+  /**
+   * Account-level preferences that follow the user across devices (issue
+   * #97). One row per key; `value` is JSON text. NOT a domain entity: the
+   * row id is the deterministic `setting:<key>` (see queries/settings.ts),
+   * not a ULID, so two devices writing the same key converge on one row
+   * through PowerSync's row-level upsert / last-write-wins instead of
+   * creating duplicates. Device-local preferences (notifications, habit
+   * reminders, update channel, calendar target) stay out of this table.
+   */
+  settings: new Table({
+    created_at: column.text,
+    updated_at: column.text,
+    deleted_at: column.text,
+    key: column.text,
+    value: column.text,
+  }),
 });
 
 /** Kysely database type — derived from the schema (id: string, all other
@@ -315,6 +334,7 @@ export type ReminderRow = Database['reminders'];
 export type FocusSessionRow = Database['focus_sessions'];
 export type ReviewRecordRow = Database['review_records'];
 export type CompletionRecordRow = Database['completion_records'];
+export type SettingRow = Database['settings'];
 
 // ---------------------------------------------------------------------------
 // JSON helpers

@@ -57,6 +57,11 @@ jest.mock('@nextdo/db', () => {
     }),
     subscribeAppStream: async () => undefined,
     wrapDb: () => ({}),
+    settingsWatchQuery: () => ({
+      compile: () => ({ sql: 'SELECT 1', parameters: [] }),
+      execute: async () => [],
+    }),
+    setAppSetting: async () => undefined,
     // The delivery hook's source query (the root layout mounts
     // useReminderDelivery in every renderRouter test).
     listScheduledReminders: async () => [],

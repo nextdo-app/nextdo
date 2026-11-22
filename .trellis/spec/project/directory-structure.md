@@ -46,10 +46,10 @@ nextdo/
 │   ├── db/                       # local database + sync layer
 │   │   ├── jest-import-meta-url.cjs  # path-based babel plugin (jest drops inline functions — see app/database-guidelines "Testing")
 │   │   └── src/
-│   │       ├── schema.ts         # PowerSync client schema — 14 synced tables (no client migrations — see app/database-guidelines)
+│   │       ├── schema.ts         # PowerSync client schema — 15 synced tables (no client migrations — see app/database-guidelines)
 │   │       ├── queries/          # Kysely query functions + mutation transactions, one file per aggregate
 │   │       │                      # (actions, calendar, contexts, focus, habits, inbox, pool, projects,
-│   │       │                      #  references, reviews, someday, waiting, watch-queries)
+│   │       │                      #  references, reviews, settings, someday, waiting, watch-queries)
 │   │       ├── kysely.ts         # wrapDb() — the only Kysely handle (the app never imports Kysely)
 │   │       ├── watch-query.ts    # toCompilableQuery() — Kysely builder → useQuery() bridge
 │   │       ├── powersync.ts      # platform client selection, connector, stream subscription

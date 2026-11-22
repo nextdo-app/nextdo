@@ -261,7 +261,7 @@ export function createApp(config: ServerConfig): Hono {
       <span id="badgeText">${isClaimed ? '服务正常运行 · 已完成首次配置' : '服务正常运行 · 数据库已自动就绪'}</span>
     </div>
     <h1>Nextdo 云同步服务</h1>
-    <p>你的 Cloudflare Workers 后端已就绪。所有 14 张核心数据表已自动初始化完成，无需手动建表。</p>
+    <p>你的 Cloudflare Workers 后端已就绪。所有 15 张核心数据表已自动初始化完成，无需手动建表。</p>
     
     <div class="box">
       <div class="box-title" id="boxTitle">你的同步服务器网址</div>

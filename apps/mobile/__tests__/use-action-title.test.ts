@@ -6,6 +6,11 @@ import { useActionTitle } from '@/hooks/use-action-title';
 jest.mock('@nextdo/db', () => ({
   getActionDetails: jest.fn(),
   wrapDb: () => ({}),
+  settingsWatchQuery: () => ({
+    compile: () => ({ sql: 'SELECT 1', parameters: [] }),
+    execute: async () => [],
+  }),
+  setAppSetting: async () => undefined,
 }));
 jest.mock('@powersync/react', () => {
   const db = {};

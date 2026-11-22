@@ -687,7 +687,9 @@ export default function SettingsScreen() {
               </Pressable>
             ))}
           </View>
-
+          <Text className="font-sans text-[11px] text-muted dark:text-muted-dark">
+            主题、专注时长与 Now 页可用时间随账本同步；通知、日历与更新设置保留在本机。
+          </Text>
         </Card>
 
         {/* Section 2: 提醒与通知 */}

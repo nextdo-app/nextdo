@@ -31,9 +31,8 @@
 ## 候选（长期）
 
 7. Clarify 进阶字段（时间窗口、场景绑定）（原候选 #4）
-8. 引擎上下文的 settings 表化（进同步面）（原候选 #5）
-9. CalendarAction 支持 projectId（journal-1 session 10 Next Steps）
-10. 商店素材与版本细节：splash 屏（`app.json` 无 splash 配置）、EAS `submit` 配置为空、版本号不齐（mobile 0.1.2 / desktop 0.1.1 / 根 0.1.1）（09-30 新增）
+8. CalendarAction 支持 projectId（journal-1 session 10 Next Steps）
+9. 商店素材与版本细节：splash 屏（`app.json` 无 splash 配置）、EAS `submit` 配置为空、版本号不齐（mobile 0.1.2 / desktop 0.1.1 / 根 0.1.1）（09-30 新增）
 
 ## 09-30 清理的过时条目
 
@@ -48,6 +47,10 @@
 ## 10-08 清理的过时条目
 
 - ~~PR 级 CI 质量门~~（原候选 #9）：已由 10-08-ci-quality-gate 交付 —— 增加 `.github/workflows/ci.yml`，在 push 与 pull_request 到 main 时自动并行执行 lint、typecheck、test，并通过 Quality Gate 聚合兜底。
+
+## 11-20 清理的过时条目
+
+- ~~引擎上下文的 settings 表化（进同步面）~~（原候选 #8）：已由 issue #97 交付 —— 新增同步 `settings` 表；主题、专注时长与 Now 可用时间跨设备同步，通知 / 日历 / 更新设置保留本机（见 `.trellis/research/settings-sync.md`）。
 
 ## 备注
 

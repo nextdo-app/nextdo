@@ -42,8 +42,10 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { PowerSyncContext } from '@powersync/react';
 import { useReminderDelivery } from '@/hooks/use-reminder-delivery';
 import { useCalendarSync } from '@/hooks/use-calendar-sync';
+import { useSyncedSettings } from '@/hooks/use-synced-settings';
 import { IosInstallPrompt } from '@/components/ios-install-prompt';
 import { AutoUpdateNotifier } from '@/components/auto-update-dialog';
+import { SyncedSettingsBanner } from '@/components/synced-settings-banner';
 import { maybeRequestNotificationPermission } from '@/lib/reminders/permission';
 import { colors } from '@nextdo/ui';
 import {
@@ -164,11 +166,23 @@ function PowerSyncProvider({ children }: { children: ReactNode }) {
 
   return (
     <PowerSyncContext.Provider value={powersync}>
+      <SyncedSettings />
       <ReminderDelivery />
       <CalendarSync />
       {children}
     </PowerSyncContext.Provider>
   );
+}
+
+/**
+ * Account-level settings sync (issue #97): applies downloaded theme / focus /
+ * engine preferences to their modules and mirrors user saves into the
+ * `settings` table. Mounted inside the provider because it watches the local
+ * DB; it renders nothing.
+ */
+function SyncedSettings() {
+  useSyncedSettings();
+  return null;
 }
 
 /**
@@ -310,6 +324,7 @@ function MainRootLayout() {
           <AutoUpdateNotifier />
         </FocusProvider>
       </PowerSyncProvider>
+      <SyncedSettingsBanner />
     </SafeAreaProvider>
   );
 }

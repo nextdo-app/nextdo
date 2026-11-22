@@ -49,6 +49,11 @@ jest.mock('@powersync/react', () => ({
 const mockRowsRef: { current: Array<Record<string, unknown>> } = { current: [] };
 jest.mock('@nextdo/db', () => ({
   wrapDb: () => ({}),
+  settingsWatchQuery: () => ({
+    compile: () => ({ sql: 'SELECT 1', parameters: [] }),
+    execute: async () => [],
+  }),
+  setAppSetting: async () => undefined,
   listScheduledReminders: jest.fn(async () => mockRowsRef.current),
 }));
 

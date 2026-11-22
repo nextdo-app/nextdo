@@ -39,6 +39,11 @@ jest.mock('@nextdo/db', () => {
     }),
     subscribeAppStream: async () => undefined,
     wrapDb: () => ({}),
+    settingsWatchQuery: () => ({
+      compile: () => ({ sql: 'SELECT 1', parameters: [] }),
+      execute: async () => [],
+    }),
+    setAppSetting: async () => undefined,
     listScheduledReminders: async () => [],
     seedDefaultContexts: async () => 0,
     isReactNativeRuntime: () => false,

@@ -22,6 +22,7 @@ import {
 import { toCompilableQuery } from '../watch-query';
 import { completedActionFromRow, completedActionsQuery, type CompletedAction } from './actions';
 import { poolWatchQuery } from './pool';
+import { appSettingFromRow, appSettingsQuery, type AppSetting } from './settings';
 import type { NextdoDb } from '../types';
 
 /** Inbox capture list (raw, non-deleted InboxItems, oldest first). */
@@ -225,5 +226,15 @@ export function somedayItemsWatchQuery(db: NextdoDb): CompilableQuery<SomedayMay
  */
 export function completedActionsWatchQuery(db: NextdoDb): CompilableQuery<CompletedAction> {
   return toCompilableQuery(completedActionsQuery(db), completedActionFromRow);
+}
+
+/**
+ * Synced account settings (issue #97) — one watched read for the whole
+ * settings table. The app's `SyncedSettings` bridge applies these rows to
+ * the theme / focus / engine modules and seeds missing rows from the
+ * device's local cache.
+ */
+export function settingsWatchQuery(db: NextdoDb): CompilableQuery<AppSetting> {
+  return toCompilableQuery(appSettingsQuery(db), appSettingFromRow);
 }
 
