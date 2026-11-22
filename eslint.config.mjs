@@ -13,6 +13,7 @@ export default tseslint.config(
       '**/src-tauri/**',
       '.omp/**',
       '.trellis/**',
+      '.worktrees/**',
       '.agents/**',
       '.codex/**',
       // e2e/ is a manual, Docker-dependent verification runner —

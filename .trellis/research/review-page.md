@@ -37,9 +37,9 @@
 
 ## 验证记录
 
-- 门禁（2026-11-22）：`pnpm verify:web --no-serve` 通过；server 133、
-  core 275、db 370、mobile 870，共 1648 项；web 构建通过。日志：
-  `/Users/printsdf/.claude/jobs/df844aba/tmp/verify-67-gate.log`。
+- 门禁（2026-11-22，合并后）：`pnpm verify:web --no-serve` 通过；server 134、
+  core 313、db 415、mobile 1079，共 1941 项；web 构建通过。日志：
+  `/Users/printsdf/.claude/jobs/df844aba/tmp/verify-merge-final.log`。
 - 浏览器实测：跳过（2026-11-22 用户明确要求「不用这个 browser check 了」）。
   本切片不声称浏览器已验证；链接的点击行为由
   `__tests__/review-detail-screen.test.tsx` 的 `router.push` 断言覆盖。
