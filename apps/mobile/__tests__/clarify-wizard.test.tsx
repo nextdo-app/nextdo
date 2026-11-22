@@ -25,6 +25,7 @@ jest.mock('@nextdo/db', () => {
     }),
     getActionDetails: jest.fn(),
     getStoredBackendConfig: async () => null,
+    isReactNativeRuntime: () => false,
     wrapDb: () => ({}),
   };
 });
@@ -78,6 +79,10 @@ jest.mock('expo-router', () => ({
 }));
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import {
+  __setReferenceLibrarySettingsStoreForTests,
+  saveReferenceLibrarySettings,
+} from '@/lib/reference-library-settings';
 import { Platform } from 'react-native';
 import { ValidationNextdoError } from '@nextdo/core';
 import { applyClarify, getActionDetails, listInboxItems, reclarifyAction } from '@nextdo/db';
@@ -147,6 +152,9 @@ const ON_HOLD_PROJECT = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // Issue #90: the optional reference library defaults ON for every test;
+  // the gating test opts out explicitly.
+  __setReferenceLibrarySettingsStoreForTests(null);
   mockInboxList.length = 0;
   mockedUseProjects.mockReturnValue({ data: [ACTIVE_PROJECT, ON_HOLD_PROJECT], error: null });
   mockedListInboxItems.mockResolvedValue([INBOX_ITEM]);
@@ -516,6 +524,17 @@ describe('WizardBody — preview step (design §3.4)', () => {
     expect(screen.queryByText('确认保存')).toBeNull();
     await waitFor(() => expect(mockedApplyClarify).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.getByText('已整理为「资料」')).toBeTruthy());
+  });
+
+  it('hides the optional 资料 choice when the reference library is disabled', async () => {
+    await saveReferenceLibrarySettings({ enabled: false });
+    renderWizard();
+    fireEvent.press(screen.getByText('不行'));
+
+    // The other q1b branches stay available; only the library branch is gone.
+    await waitFor(() => expect(screen.getByText('有空再说')).toBeTruthy());
+    expect(screen.queryByText('资料（留个参考）')).toBeNull();
+    expect(screen.getByText('删除')).toBeTruthy();
   });
 
   it('trash form: 确认删除 submits directly (no preview)', async () => {

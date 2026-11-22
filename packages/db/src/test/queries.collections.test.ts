@@ -40,7 +40,7 @@ import {
   trashWaitingForItem,
   updateWaitingForItem,
 } from '../queries/waiting';
-import { waitingForWatchQuery } from '../queries/watch-queries';
+import { referenceItemsWatchQuery, waitingForWatchQuery } from '../queries/watch-queries';
 import { openTestDb, type TestDb } from './query-helpers';
 import { FIXTURE_IDS, FIXTURE_NOW } from './fixtures';
 
@@ -251,6 +251,15 @@ describe('ReferenceItem', () => {
       expect(list).toHaveLength(1);
       expect(list[0]?.id).toBe(FIXTURE_IDS.reference.link);
       expect(list[0]?.url).not.toBeUndefined();
+    } finally {
+      await close();
+    }
+  });
+
+  it('the watch query matches the one-shot list', async () => {
+    const { db, close } = await open(true);
+    try {
+      expect(await referenceItemsWatchQuery(db).execute()).toEqual(await listReferenceItems(db));
     } finally {
       await close();
     }
