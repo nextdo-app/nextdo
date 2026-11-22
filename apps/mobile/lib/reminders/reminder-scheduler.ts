@@ -20,14 +20,15 @@
  *      is left to fire naturally (it is OS-persisted and will sound at its
  *      own time).
  *
- * Tauri mode (desktop — no native scheduling; in-session delivery through
- * the hook's 30 s tick):
+ * Tauri / web mode (in-session delivery — no OS scheduling):
+ *   - Tauri: the hook's 30 s tick + this reconcile.
+ *   - Web: the same tick while a Nextdo tab is open.
  *   1. Row whose fires_at has passed within the trailing GRACE window, has
  *      a title, and was not already delivered this session → fire now;
- *   2. Rows past by more than GRACE → never delivered (missed while the
- *      app was closed — the Now screen shows the overdue action instead);
+ *   2. Rows past by more than GRACE → never delivered (missed while the app
+ *      was closed — the Now screen shows the overdue action instead);
  *      future rows wait for the tick that crosses fires_at;
- *   3. No cancel operations (desktop has no OS-side pending state).
+ *   3. No cancel operations (these modes have no OS-side pending state).
  *
  * Idempotency (AC7): re-running with the same inputs AFTER the operations
  * were applied (pendingIds now include the scheduled rows) yields empty
@@ -40,7 +41,7 @@
 import type { ScheduledReminderRow } from '@nextdo/db';
 
 /** Which delivery semantics the reconcile applies. */
-export type ReconcileMode = 'native' | 'tauri';
+export type ReconcileMode = 'native' | 'tauri' | 'web';
 
 export interface ReconcileInput {
   mode: ReconcileMode;
@@ -55,15 +56,16 @@ export interface ReconcileInput {
   now: Date;
   /** Live scheduled reminder rows, including orphans (title null). */
   rows: ScheduledReminderRow[];
-  /** Reminder ids currently pending in the OS (tauri: always empty). */
+  /** Reminder ids currently pending in the OS (tauri/web: always empty). */
   pendingIds: ReadonlySet<string>;
-  /** Tauri-only: ids already delivered in this session (dedupe). */
+  /** In-session modes (tauri/web): ids already delivered in this session
+   *  (dedupe). */
   firedIds?: ReadonlySet<string>;
   /**
-   * Tauri-only: the app session start. Kept on the contract for
-   * diagnostics of fire-now decisions — the grace bound against `now`
-   * already excludes rows that crossed fires_at long before the session
-   * started (for those, `now - firesAt` exceeds GRACE).
+   * In-session modes (tauri/web): the app session start. Kept on the
+   * contract for diagnostics of fire-now decisions — the grace bound
+   * against `now` already excludes rows that crossed fires_at long before
+   * the session started (for those, `now - firesAt` exceeds GRACE).
    */
   sessionStart?: Date;
 }
@@ -80,12 +82,13 @@ export interface ReconcileOutput {
   toSchedule: ReconcileItem[];
   /** Pending ids without a matching live scheduled row. */
   toCancel: string[];
-  /** Tauri-only: rows to deliver immediately in this tick. */
+  /** In-session modes (tauri/web): rows to deliver immediately in this
+   *  tick. */
   toFireNow: ReconcileItem[];
 }
 
 /**
- * Desktop delivery grace window (design §3): a row whose fires_at has
+ * In-session delivery grace window (design §3): a row whose fires_at has
  * passed by at most this is still delivered by the next tick (tick 30 s →
  * accuracy ±35 s, PRD R3); beyond it, delivery is skipped forever.
  */
@@ -124,9 +127,10 @@ export function computeReconcile(input: ReconcileInput): ReconcileOutput {
       // Rule 4: past rows fall through both branches — a pending
       // past-row notification is left to fire naturally, nothing else.
     } else {
-      // Tauri rule 1: passed within the trailing grace window + titled +
-      // not yet delivered this session → fire now. Past-beyond-grace and
-      // future rows fall through (rule 2 / wait for the crossing tick).
+      // In-session rule 1 (tauri/web): passed within the trailing grace
+      // window + titled + not yet delivered this session → fire now.
+      // Past-beyond-grace and future rows fall through (rule 2 / wait for
+      // the crossing tick).
       if (
         firesAtMs <= nowMs &&
         nowMs - firesAtMs <= TAURI_FIRE_GRACE_MS &&

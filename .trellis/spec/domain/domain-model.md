@@ -433,6 +433,7 @@ enable carry-over or rewrite existing completed habits while editing history.
   |----------|----------|-------------------------|
   | Mobile (iOS/Android) | expo-notifications (local, OS-persisted — survives force-kill; the reminder row ID is the OS notification `identifier`, reconciled on launch/foreground/row change) | none in v1: tap deep-links to the Now tab (完成 / 推迟 / 跳过 from the notification is post-MVP) |
   | Desktop (Tauri) | app channel: tauri-plugin-notification 2.4.0 — the **plugin** has no native future scheduling on any desktop OS (verified in the plugin source), so a 30s in-app tick fires due rows while the app runs. Calendar channel (macOS only, task 10-23): EventKit writes one event per scheduled row, so it fires with the app closed — see below | none: click only focuses the app (the plugin has no desktop click callback) |
+  | Web (browser / PWA) | app channel: the Notification API (service worker `showNotification`, falling back to the page constructor) fired by the same 30s in-session tick — **foreground only**; closing the page stops delivery (no Web Push subscription/sender in v1). Permission is granted from Settings「开启浏览器通知」(browsers require that user gesture); a rejected send is surfaced in the Settings block and retried by the next tick while inside the grace window (issue #92) | none: a notification click focuses the Nextdo window |
   Two distinct facts, easy to conflate: the notification PLUGIN cannot
   schedule on desktop (that is a plugin limitation, unchanged), while the
   DESKTOP BUILD can still deliver on time — on macOS through the calendar
@@ -444,6 +445,23 @@ enable carry-over or rewrite existing completed habits while editing history.
   surfaces as "due" on the Now screen. The delivery layer never writes
   `state = "fired"` (the OS fires while the app is terminated); rows stay
   `scheduled` until a business transaction cancels them.
+- **Web delivery (issue #92)** is in-session and page-scoped: `computeReconcile`
+  runs in `web` mode with the same trailing 5-minute grace window as tauri, and
+  the web adapter's session fired-id set is the dedupe source — one reminder
+  fires at most once per open page session (a reload recreates the set, the same
+  restart behavior tauri has). The in-app master switch is a hard gate; with it
+  off nothing fires and, when it comes back on, the poke's reconcile delivers a
+  still-due row. The adapter re-reads that gate immediately before the browser
+  API call (after the service-worker wait and its timeout fallback), so turning
+  the switch off during the wait suppresses the send. An id is claimed before
+  that wait and released on failure: a hook remount cannot double-send an
+  unfinished reminder, while a failed send stays retryable by the next tick.
+  There is no Web Push subscription/sender in v1, so closing the
+  page stops delivery — the Settings copy says so. A rejected
+  `showNotification` / `Notification` constructor is kept in
+  `lib/reminders/delivery-feedback.ts` and rendered in the Settings notification
+  block; the next successful send clears it, and the next tick retries while
+  the row is still inside the grace window.
 - **Reminder delivery channel (task 10-21-reminder-calendar-channel-and-action-notes).**
   `reminderChannel: "app" | "calendar" | "both"` in
   `apps/mobile/lib/notification-settings.ts` (default `"app"`; an unknown stored

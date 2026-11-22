@@ -62,6 +62,7 @@ import {
 } from '@/lib/notification-settings';
 import { playNotificationTone } from '@/lib/notification-sound';
 import { useReminderPermission } from '@/hooks/use-reminder-permission';
+import { useReminderDeliveryFailure } from '@/hooks/use-reminder-delivery-failure';
 import type { ReminderPermissionState } from '@/lib/reminders/adapters';
 import { useAppClock } from '@/hooks/use-app-clock';
 import { useHabitReminders } from '@/hooks/use-habit-reminders';
@@ -332,13 +333,17 @@ export function describeNotificationState(
       title: '已在应用内关闭',
       detail:
         permission.status === 'granted'
-          ? '已排入系统的提醒已撤销；重新打开后按提醒数据重新排程。'
-          : '应用内与系统权限均未开启，提醒不会送达。',
+          ? permission.platform === 'web'
+            ? '重新打开后恢复提醒；Web 仅在 Nextdo 页面打开时送达。'
+            : '已排入系统的提醒已撤销；重新打开后按提醒数据重新排程。'
+          : permission.platform === 'web'
+            ? '应用内与浏览器通知权限均未开启，提醒不会送达。'
+            : '应用内与系统权限均未开启，提醒不会送达。',
     };
   }
   const platformNote =
     permission.platform === 'web'
-      ? '将通过 Web 浏览器通知送达。'
+      ? '通过 Web 浏览器通知送达；需要保持 Nextdo 页面打开，页面关闭后不会提醒。'
       : permission.platform === 'tauri'
         ? '应用关闭期间不会提醒。'
         : '';
@@ -355,6 +360,12 @@ export function describeNotificationState(
           detail: '点下方按钮开启通知，准时接收稍后与习惯提醒。',
         };
       }
+      if (permission.platform === 'web') {
+        return {
+          title: '浏览器通知未开启',
+          detail: '提醒会照常记录，但不会送达 —— 需要在浏览器中允许此网站发送通知。',
+        };
+      }
       return {
         title: '系统权限未开启',
         detail: '提醒会照常记录，但不会按时送达 —— 需要到系统设置里允许。',
@@ -363,9 +374,11 @@ export function describeNotificationState(
       return {
         title: '等待系统授权',
         detail:
-          permission.platform === 'native'
-            ? '点下方按钮开启通知，准时接收稍后与习惯提醒。'
-            : '首次真正需要提醒时，Nextdo 会请求通知权限。',
+          permission.platform === 'web'
+            ? '点下方按钮允许此网站发送通知；Web 仅在 Nextdo 页面打开时送达。'
+            : permission.platform === 'native'
+              ? '点下方按钮开启通知，准时接收稍后与习惯提醒。'
+              : '首次真正需要提醒时，Nextdo 会请求通知权限。',
       };
   }
 }
@@ -422,6 +435,9 @@ export default function SettingsScreen() {
   const calendarTarget = useCalendarTarget();
   // 有效状态（issue #45 R5）：开关 ∧ 系统授权 —— 两个纯函数决定文案与平台动作。
   const notificationState = describeNotificationState(masterEnabled, notificationPermission);
+  // Issue #92: the web adapter's rejected send has no OS surface — show it
+  // here; the next successful send clears it.
+  const deliveryFailure = useReminderDeliveryFailure();
   const notificationAction = notificationActionFor(notificationPermission);
   const now = useAppClock();
   const lastSyncedLabel = formatLastSyncedAt(now, lastSyncedAt);
@@ -707,6 +723,11 @@ export default function SettingsScreen() {
               <Text className="mt-0.5 font-sans text-[11px] leading-tight text-muted dark:text-muted-dark">
                 {notificationState.detail}
               </Text>
+              {deliveryFailure === null ? null : (
+                <Text className="mt-1 font-sans text-[11px] leading-tight text-danger dark:text-danger-dark">
+                  最近一次提醒发送失败，浏览器未接受通知。请确认已允许本站发送通知。
+                </Text>
+              )}
             </View>
           </View>
 

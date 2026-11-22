@@ -183,6 +183,50 @@ describe('computeReconcile — tauri mode', () => {
   });
 });
 
+describe('computeReconcile — web mode (issue #92)', () => {
+  it('fires a row that crossed fires_at within the grace window', () => {
+    const r = row({ id: 'r1', firesAt: new Date(NOW.getTime() - 2 * MIN).toISOString() });
+    const out = computeReconcile(input({ mode: 'web', rows: [r] }));
+    expect(out.toFireNow).toEqual([{ row: r, title: '默认标题' }]);
+    expect(out.toSchedule).toEqual([]);
+    expect(out.toCancel).toEqual([]);
+  });
+
+  it('does not fire a future row — the tick that crosses fires_at delivers it', () => {
+    const future = row({ id: 'r1', firesAt: new Date(NOW.getTime() + MIN).toISOString() });
+    const out = computeReconcile(input({ mode: 'web', rows: [future] }));
+    expect(out.toFireNow).toEqual([]);
+  });
+
+  it('never fires a row past by more than the grace window', () => {
+    const late = row({
+      id: 'r1',
+      firesAt: new Date(NOW.getTime() - TAURI_FIRE_GRACE_MS - MIN).toISOString(),
+    });
+    const out = computeReconcile(input({ mode: 'web', rows: [late] }));
+    expect(out.toFireNow).toEqual([]);
+  });
+
+  it('dedupes against firedIds: a row delivered this session is not fired again', () => {
+    const r = row({ id: 'r1', firesAt: new Date(NOW.getTime() - MIN).toISOString() });
+    const out = computeReconcile(input({ mode: 'web', rows: [r], firedIds: new Set(['r1']) }));
+    expect(out.toFireNow).toEqual([]);
+  });
+
+  it('never produces cancels (web has no OS-side pending state)', () => {
+    const r = row({ id: 'r1', firesAt: new Date(NOW.getTime() - MIN).toISOString() });
+    const out = computeReconcile(input({ mode: 'web', rows: [r], pendingIds: new Set(['stale']) }));
+    expect(out.toCancel).toEqual([]);
+    expect(out.toFireNow).toHaveLength(1);
+  });
+
+  it('delivers nothing while the master switch is off', () => {
+    const due = row({ id: 'r1', firesAt: new Date(NOW.getTime() - MIN).toISOString() });
+    const out = computeReconcile(input({ mode: 'web', rows: [due], enabled: false }));
+    expect(out).toEqual({ toSchedule: [], toCancel: [], toFireNow: [] });
+  });
+});
+
 describe('computeReconcile — the in-app master switch (issue #24 R2)', () => {
   it('withdraws every armed notification and schedules nothing when off (native)', () => {
     const r1 = row({ id: 'r1' });

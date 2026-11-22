@@ -9,7 +9,9 @@
  *   prompt again anyway — a denied user is guided from the Settings
  *   block instead, not re-nagged);
  * - tauri: no-op (desktop always reports granted, no prompt model);
- * - web: no-op (R6).
+ * - web: no-op here — browsers require a user gesture, and the Settings
+ *   block's 「开启浏览器通知」 button is that gesture (issue #92 keeps the
+ *   reminder write from counting as one).
  *
  * NEVER blocks the business flow: callers fire-and-forget, and any
  * failure is logged, not thrown — a denied / failed permission just means

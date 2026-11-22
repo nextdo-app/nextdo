@@ -294,6 +294,10 @@ import { useCloudSync } from '@/hooks/use-cloud-sync';
 import { Linking, Platform } from 'react-native';
 import { UPDATE_PROXY_PREFIX, UPDATE_REPO } from '@/lib/app-update';
 import { stopDesktopUpdatePolling } from '@/hooks/use-app-update';
+import {
+  __resetReminderDeliveryFeedbackForTests,
+  reportReminderDeliveryFailure,
+} from '@/lib/reminders/delivery-feedback';
 
 /** A tiny harness that drives the REAL `useCloudSync` hook directly. The
  *  button's canSubmit (two addresses non-empty) blocks empty-address
@@ -377,6 +381,7 @@ beforeEach(() => {
   mockClipboardString = '';
   hook = null;
   mockCalendarImportSupported.value = false;
+  __resetReminderDeliveryFeedbackForTests();
   // Idle OS permission state (the notifications block tests override it
   // per case — task 09-30 R5).
   mockUpdateFetch = jest.fn();
@@ -1801,6 +1806,20 @@ describe('settings notifications block (issue #45)', () => {
     expect(screen.getByText('已开启')).toBeTruthy();
     expect(screen.getByText(/稍后、日历与习惯提醒会按时送达/)).toBeTruthy();
     expect(screen.queryByText('等待系统授权')).toBeNull();
+  });
+
+  it('shows the latest failed web send (issue #92)', async () => {
+    mockExpoNotifications.getPermissionsAsync.mockResolvedValue({
+      status: 'granted',
+      granted: true,
+      canAskAgain: true,
+      expires: 'never',
+    });
+    reportReminderDeliveryFailure('rem-web', new Error('browser refused'));
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+
+    expect(screen.getByText(/最近一次提醒发送失败/)).toBeTruthy();
   });
 
   it('denied (iOS) → 系统权限未开启 + the 去系统设置 button', async () => {
