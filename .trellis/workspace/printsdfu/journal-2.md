@@ -530,6 +530,17 @@ Topics: [.trellis/research/review-page.md](../../research/review-page.md)
 
 docs/sync.md 改为当前行为：设置页有「立即同步」（重连+冲刷队列，8 秒超时）与上次同步时间，更新状态不可见范围。backlog：提醒投递改为剩余的通知内联操作（#99），Waiting For 改为剩余编辑/日期字段（#94），商店素材只剩 EAS submit.production；补 #102/#92/#93/#90 候选。仅文档改动，门禁 verify:web --no-serve 1641 项全绿。
 Topics: [docs/sync.md](../../../docs/sync.md)
+## Session 78: 修正 README 中 Web/PWA 提醒承诺（#93）
+<!-- trellis-session: v=3 fp=8a6369ed7dfcb8a6 -->
+
+**Date**: 2026-11-22
+**Task**: 修正 README 中 Web/PWA 提醒承诺（#93）
+**Branch**: `docs/web-push-93`
+
+### Summary
+
+README 平台表与 PWA 章节改为明确标注 Web/PWA 提醒尚未接通（#92 前台断链、#93 后台 Web Push 未实现）；原生 App/桌面端提醒不受影响。仅文档改动，未实现订阅与服务端发送。
+Topics: [README.md](../../../README.md)
 
 ### Git Commits
 

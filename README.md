@@ -108,7 +108,7 @@ Nextdo 严格映射大卫·艾伦（David Allen）提出的 GTD 五步法：
 | **Linux** | 64 位 (x86_64) | `Nextdo_x.x.x_amd64.AppImage`<br>`Nextdo_x.x.x_amd64.deb` | AppImage 即开即用，deb 适配 Debian/Ubuntu<br>兼容主流桌面发行版 |
 | **Android** | arm64-v8a (主流机型)<br>armeabi-v7a / x86_64 | `Nextdo_x.x.x_android_arm64-v8a.apk`<br>`Nextdo_x.x.x_android_armeabi-v7a.apk` | 推荐绝大多数现代 64 位手机下载 `arm64-v8a`<br>适配 Android 8.0 及以上 |
 | **Web / PWA** | 现代主流浏览器 | [🌐 在线网页版 (PWA)](https://nextdo-cew.pages.dev) | 支持 Chrome / Safari / Edge 等现代浏览器<br>可直接「添加至主屏幕」享受独立窗口与离线秒开 |
-| **iOS** | iPhone / iPad | [📲 Safari 添加至主屏幕](https://nextdo-cew.pages.dev) | 无需 App Store，使用 Safari 打开网页版并点击「分享」→「添加到主屏幕」即可像原生 App 一样全屏使用、离线存取与支持提醒 |
+| **iOS** | iPhone / iPad | [📲 Safari 添加至主屏幕](https://nextdo-cew.pages.dev) | 无需 App Store，使用 Safari 打开网页版并点击「分享」→「添加到主屏幕」即可像原生 App 一样全屏使用与离线存取；**Web/PWA 需保持页面打开才能提醒，页面关闭后的后台推送尚未接通** |
 
 <details>
 <summary><b>💡 首次安装与安全提示（macOS / Windows）</b></summary>
@@ -139,7 +139,7 @@ Nextdo 已全面支持渐进式 Web 应用（Progressive Web App, PWA）。**iPh
 3. **原生级完整体验**：
    - 📲 **独立全屏沉浸窗口**：自动隐藏浏览器地址栏与底栏，交互手感与原生应用无异，已完美适配 iPhone 灵动岛、刘海屏与底部手势安全区；
    - ⚡ **离线秒开与本地 SQLite 数据库**：数据首要存储于浏览器本地 OPFS / IndexedDB 数据库中，断网也可极速读写，重连后自动双向增量同步；
-   - 🔔 **准时任务提醒**：在主屏幕独立窗口模式下完整适配 iOS 16.4+ Web Push，支持稍后与日历行动定时通知。
+   - 🔔 **任务提醒**：原生 App 与桌面端支持定时提醒；**Web/PWA 需保持页面打开才能提醒，页面关闭后的后台 Web Push（#93）尚未实现**。
 
 ---
 
