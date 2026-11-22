@@ -63,30 +63,15 @@ export async function listFocusSessions(
 }
 
 /**
- * A finished session joined to its action's display title — the source for
- * the calendar record of "what did I do today".
+ * The session rows joined to their action's display title.
  *
  * Same LEFT JOIN shape as `listScheduledReminders`: an orphan session (its
  * action was trashed) still comes back with `title: null`, because the time
- * actually spent is a real record of the day either way.
+ * actually spent is a real record of the day either way. Shared by the
+ * calendar record read and the focus-history read (issue #96).
  */
-export interface CompletedFocusSessionRow {
-  id: string;
-  actionKind: ReminderActionKind;
-  actionId: string;
-  /** ISO-8601 — the session's wall-clock start. */
-  startedAt: string;
-  /** ISO-8601 — written once when the session left `active`. */
-  endedAt: string;
-  /** The action's title; null when the action row is gone. */
-  title: string | null;
-}
-
-/** Every completed (not abandoned) session, oldest first. */
-export async function listCompletedFocusSessions(
-  db: NextdoDb,
-): Promise<CompletedFocusSessionRow[]> {
-  const rows = await db
+function focusSessionsWithTitle(db: NextdoDb) {
+  return db
     .selectFrom('focus_sessions')
     .leftJoin('next_actions', (join) =>
       join
@@ -113,8 +98,12 @@ export async function listCompletedFocusSessions(
       'focus_sessions.id',
       'focus_sessions.action_kind',
       'focus_sessions.action_id',
+      'focus_sessions.mode',
+      'focus_sessions.planned_minutes',
       'focus_sessions.started_at',
+      'focus_sessions.paused_sec',
       'focus_sessions.ended_at',
+      'focus_sessions.status',
       eb
         .case()
         .when(eb('focus_sessions.action_kind', '=', 'next'))
@@ -127,8 +116,31 @@ export async function listCompletedFocusSessions(
         .end()
         .as('title'),
     ])
+    .where('focus_sessions.deleted_at', 'is', null);
+}
+
+/**
+ * A finished session joined to its action's display title — the source for
+ * the calendar record of "what did I do today".
+ */
+export interface CompletedFocusSessionRow {
+  id: string;
+  actionKind: ReminderActionKind;
+  actionId: string;
+  /** ISO-8601 — the session's wall-clock start. */
+  startedAt: string;
+  /** ISO-8601 — written once when the session left `active`. */
+  endedAt: string;
+  /** The action's title; null when the action row is gone. */
+  title: string | null;
+}
+
+/** Every completed (not abandoned) session, oldest first. */
+export async function listCompletedFocusSessions(
+  db: NextdoDb,
+): Promise<CompletedFocusSessionRow[]> {
+  const rows = await focusSessionsWithTitle(db)
     .where('focus_sessions.status', '=', 'completed')
-    .where('focus_sessions.deleted_at', 'is', null)
     .orderBy('focus_sessions.started_at')
     .execute();
 
@@ -140,6 +152,75 @@ export async function listCompletedFocusSessions(
     endedAt: row.ended_at ?? '',
     title: row.title,
   }));
+}
+
+/**
+ * The focus-history read model (issue #96): every terminal session —
+ * completed OR abandoned — newest first, with the action's current title.
+ * Active rows are excluded: the history shows time already spent, and the
+ * live session belongs to the focus screen. Duration is derived
+ * (`endedAt − startedAt − pausedSec`), never stored.
+ */
+export interface FocusHistoryRow {
+  id: string;
+  actionKind: ReminderActionKind;
+  actionId: string;
+  /** The action's current title; null when the action row is gone. */
+  title: string | null;
+  /** ISO-8601 — the session's wall-clock start. */
+  startedAt: string;
+  /** ISO-8601 — set when the session left `active`. */
+  endedAt: string;
+  status: 'completed' | 'abandoned';
+  mode: 'preset' | 'free';
+  plannedMinutes: number | null;
+  pausedSec: number;
+}
+
+/**
+ * The Kysely builder behind `listFocusHistory`; `focusHistoryWatchQuery`
+ * wraps it so the history screen re-fires on local writes. Ordering is part
+ * of the read contract: newest session first.
+ */
+export function focusHistoryQuery(db: NextdoDb) {
+  return focusSessionsWithTitle(db)
+    .where('focus_sessions.status', 'in', ['completed', 'abandoned'])
+    .orderBy('focus_sessions.started_at', 'desc');
+}
+
+/** Row → `FocusHistoryRow` (exported for the watched-query adapter). */
+export function focusHistoryFromRow(row: {
+  id: string;
+  action_kind: string | null;
+  action_id: string | null;
+  mode: string | null;
+  planned_minutes: number | null;
+  started_at: string | null;
+  paused_sec: number | null;
+  ended_at: string | null;
+  status: string | null;
+  title: string | null;
+}): FocusHistoryRow {
+  return {
+    id: row.id,
+    actionKind: row.action_kind as ReminderActionKind,
+    actionId: row.action_id ?? '',
+    title: row.title,
+    startedAt: row.started_at ?? '',
+    endedAt: row.ended_at ?? '',
+    // The query filters to the two terminal states; this keeps the type
+    // honest if a future caller reuses the mapper.
+    status: row.status === 'abandoned' ? 'abandoned' : 'completed',
+    mode: row.mode === 'free' ? 'free' : 'preset',
+    plannedMinutes: row.planned_minutes,
+    pausedSec: row.paused_sec ?? 0,
+  };
+}
+
+/** Terminal sessions, newest first (the non-reactive twin of the watch). */
+export async function listFocusHistory(db: NextdoDb): Promise<FocusHistoryRow[]> {
+  const rows = await focusHistoryQuery(db).execute();
+  return rows.map(focusHistoryFromRow);
 }
 
 /** Plain insert (full row) — validated by core's `assertValidFocusSession`

@@ -107,11 +107,12 @@ export {
   abandonFocusSession,
   completeFocusSession,
   listCompletedFocusSessions,
+  listFocusHistory,
   listFocusSessions,
   recordPause,
   startFocusSession,
 } from './queries/focus';
-export type { CompletedFocusSessionRow } from './queries/focus';
+export type { CompletedFocusSessionRow, FocusHistoryRow } from './queries/focus';
 // Review records: the append + the completion trail + the snapshot builders.
 export {
   addReviewRecord,
@@ -127,6 +128,7 @@ export {
 // (database-guidelines "@powersync/react boundary").
 export {
   completedActionsWatchQuery,
+  focusHistoryWatchQuery,
   inboxItemsWatchQuery,
   poolTriggerWatchQuery,
   projectCardsWatchQuery,

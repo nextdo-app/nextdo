@@ -13,11 +13,13 @@ import {
   abandonFocusSession,
   addFocusSession,
   completeFocusSession,
+  listFocusHistory,
   listFocusSessions,
   recordPause,
   startFocusSession,
 } from '../queries/focus';
 import { listNextActions } from '../queries/actions';
+import { focusHistoryWatchQuery } from '../queries/watch-queries';
 import { openTestDb, type TestDb } from './query-helpers';
 import { FIXTURE_IDS, FIXTURE_NOW } from './fixtures';
 
@@ -200,6 +202,88 @@ describe('completeFocusSession / abandonFocusSession', () => {
       await expect(
         completeFocusSession(db, { sessionId: '01TST0000000000000000000099', now: FIXTURE_NOW }),
       ).rejects.toMatchObject({ code: 'focusSession.not-found' });
+    } finally {
+      await close();
+    }
+  });
+});
+
+describe('listFocusHistory (issue #96)', () => {
+  it('lists terminal sessions newest first with the current action titles; excludes active', async () => {
+    const { db, close } = await open(true);
+    try {
+      const rows = await listFocusHistory(db);
+      expect(rows.map((row) => row.id)).toEqual([F.completed, F.abandoned]);
+      expect(rows.map((row) => row.status)).toEqual(['completed', 'abandoned']);
+      expect(rows.map((row) => row.title)).toEqual([
+        '运行论文 baseline A',
+        '工作日联系客服报修打印机',
+      ]);
+    } finally {
+      await close();
+    }
+  });
+
+  it('keeps the session facts the screen needs (mode, planned, paused)', async () => {
+    const { db, close } = await open(true);
+    try {
+      const [completed, abandoned] = await listFocusHistory(db);
+      expect(completed).toMatchObject({
+        actionKind: 'next',
+        actionId: A.b,
+        mode: 'preset',
+        plannedMinutes: 25,
+        pausedSec: 120,
+        status: 'completed',
+      });
+      expect(abandoned).toMatchObject({
+        actionKind: 'next',
+        actionId: A.window,
+        mode: 'free',
+        plannedMinutes: null,
+        pausedSec: 60,
+        status: 'abandoned',
+      });
+    } finally {
+      await close();
+    }
+  });
+
+  it('excludes a soft-deleted session but keeps an orphan whose action was trashed', async () => {
+    const { db, close } = await open(true);
+    try {
+      await db
+        .updateTable('focus_sessions')
+        .set({ deleted_at: toIso(FIXTURE_NOW) })
+        .where('id', '=', F.completed)
+        .execute();
+      let rows = await listFocusHistory(db);
+      expect(rows.map((row) => row.id)).toEqual([F.abandoned]);
+
+      // The time actually spent stays on the record; only the title is gone.
+      await db
+        .updateTable('next_actions')
+        .set({ deleted_at: toIso(FIXTURE_NOW) })
+        .where('id', '=', A.window)
+        .execute();
+      rows = await listFocusHistory(db);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.title).toBeNull();
+    } finally {
+      await close();
+    }
+  });
+
+  it('focusHistoryWatchQuery compiles and returns the same rows (watch adapter)', async () => {
+    const { db, close } = await open(true);
+    try {
+      const query = focusHistoryWatchQuery(db);
+      const compiled = query.compile();
+      expect(compiled.sql).toMatch(/focus_sessions/);
+      expect(compiled.sql).toMatch(/status" in \(/);
+      const rows = await query.execute();
+      expect(rows.map((row) => row.id)).toEqual([F.completed, F.abandoned]);
+      expect(rows[0]!.title).toBe('运行论文 baseline A');
     } finally {
       await close();
     }
