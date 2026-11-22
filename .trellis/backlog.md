@@ -7,18 +7,18 @@
 
 ## 当前推荐（P0 — 公开发布前必须关闭）
 
-1. **提醒通知投递**（09-30 升为 P0；原候选「推送通知」）
-   - 现状：snooze 事务已写 `reminders` 行（`packages/db/src/queries/actions.ts`，`fires_at` / `intensity` 齐备），但 app 侧**没有任何投递逻辑** —— `expo-notifications` 未安装、无本地通知调度、无权限申请、无客户端代码读 reminders 表。用户点「稍后」后手机永远不会提醒。
-   - 形态（实现前细化）：expo-notifications + 本地通知调度（消费 reminders 行，app 重启后补排程）；提醒三档强度映射；通知内直接「完成 / 推迟 / 跳过」操作（Proposal §8）。
-   - 依据：Proposal MVP 表 Reminder 与 Snooze 均为「必须」；09-30 核查。
+1. **提醒通知内联操作**（#99；原生/桌面投递已交付，Web/PWA 链路仍未接通）
+   - 现状：`expo-notifications` 已接入，原生/桌面提醒调度与权限申请已实现；通知里还不能直接「完成 / 推迟 / 跳过」。Web/PWA 前台投递断链（#92）与后台 Web Push（#93）尚未实现。
+   - 形态：通知 action 映射到现有 snooze/complete/skip 事务（Proposal §8），并补通知回调在前后台的测试；Web/PWA 侧按 #92、#93 另行处理。
+   - 依据：GitHub issue #99；Proposal MVP 表 Reminder 与 Snooze 均为「必须」。
 2. **iOS 分发**（09-30 新增）
    - 现状：`.github/workflows/release.yml` 覆盖桌面三平台 + Android 按 ABI 拆 APK（EAS）；iOS 被明确排除在流水线外（需 Apple 签名凭证）。主力机是 iPhone 的话这是发布阻断项。
    - 形态：EAS iOS 构建（App Store Connect / 至少 TestFlight），接入 release 流水线。
    - 依据：release.yml 注释「iOS is NOT part of this pipeline」；09-30 核查。
-3. **核心对象展示/管理入口：Waiting For 事项跟进**（10-08 用户明确裁决：References 属于外部知识库软件范畴，Nextdo 不做专屏；专注于 Waiting For）
-   - 现状：Clarify 流程能把事项落进 Waiting For，且底层已有表和数据（`waiting_for_items`），但前端缺乏日常查看、修改和跟进的统一管理页面。
-   - 形态：独立二级页面（`app/waiting.tsx`）+ 收件箱入口导航，支持列表展示（等待对象、到期时间、状态）、快捷新建、更新与软删除（标记完成/清除）。
-   - 依据：用户指令「references 不需要，这是知识库软件的功能，不属于本软件，可以写一个 waiting for」；Proposal MVP 核心对象列表。
+3. **Waiting For：编辑与日期字段**（#94；列表与快捷新建已存在）
+   - 现状：`apps/mobile/app/waiting.tsx` 已有列表、快捷新建、完成与删除；缺少编辑标题/等待对象、更新预期日期与跟进时间。
+   - 形态：行内编辑或详情页，复用 `updateWaitingForItem`（若 db 尚未暴露则补），保留软删除与回顾读侧。
+   - 依据：GitHub issue #94。
 
 ## 上线前建议（P1）
 
@@ -33,7 +33,10 @@
 7. Clarify 进阶字段（时间窗口、场景绑定）（原候选 #4）
 8. 引擎上下文的 settings 表化（进同步面）（原候选 #5）
 9. CalendarAction 支持 projectId（journal-1 session 10 Next Steps）
-10. 商店素材与版本细节：splash 屏（`app.json` 无 splash 配置）、EAS `submit` 配置为空、版本号不齐（mobile 0.1.2 / desktop 0.1.1 / 根 0.1.1）（09-30 新增）
+10. 商店素材与版本细节：splash 已配置（`apps/mobile/app.json:8`）、三端版本号已对齐（0.1.9-beta.32）；剩下 EAS `submit.production` 仍为空（`apps/mobile/eas.json`）。
+11. 跨平台全局快捷捕获（#102）：桌面端全局快捷键 + 捕获窗口；方案与默认快捷键待确认。
+12. Web Push 后台提醒链路（#93）与 Web/PWA 前台提醒投递断链（#92）：README 已承诺后台提醒。
+13. 资料库入口（#90）：只有写入，没有查看/编辑/搜索入口；是否启用由用户决定（见 `.trellis/research/reference-library.md`）。
 
 ## 09-30 清理的过时条目
 
