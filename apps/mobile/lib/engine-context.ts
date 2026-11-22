@@ -5,9 +5,10 @@
  * (The 场景 / contextIds half was removed with issue #46 — the engine input
  * is now a constant empty list, see `hooks/use-now.ts`.)
  *
- * Storage follows the owner-token platform matrix (the schema has NO
- * settings table — adding one would touch the sync surface, which this
- * task must not do):
+ * Stored device-locally as the first-paint cache AND in the synced `settings`
+ * table (issue #97): the synced-settings bridge applies downloaded rows back
+ * here and mirrors user saves. The local store follows the owner-token
+ * platform matrix:
  *   native (iOS/Android) → `expo-secure-store`
  *   browser web / Tauri → `localStorage` (persisted across sessions)
  *   Node / fallback → in-memory (re-selected after a restart)
@@ -16,6 +17,7 @@
  */
 import { isReactNativeRuntime } from '@nextdo/db';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { writeSyncedSetting } from './synced-settings-bus';
 
 export const ENGINE_CONTEXT_KEY = 'nextdo.settings.engine-context';
 
@@ -35,7 +37,7 @@ export interface EngineContextSettings {
 /** Scaffold defaults — the same values the vertical slice hardcoded. */
 export const DEFAULT_ENGINE_CONTEXT: EngineContextSettings = { availableMinutes: 60 };
 
-const MAX_AVAILABLE_MINUTES = 1440;
+export const MAX_AVAILABLE_MINUTES = 1440;
 
 interface KeyValue {
   getItem(key: string): Promise<string | null>;
@@ -147,19 +149,33 @@ export function __setEngineContextStoreForTests(store: KeyValue | null): void {
  * (e.g. the retired `contextIds`) are ignored on purpose.
  */
 export function parseEngineContext(raw: string | null): EngineContextSettings {
-  const fallback = { availableMinutes: DEFAULT_ENGINE_CONTEXT.availableMinutes };
-  if (raw === null) return fallback;
+  return (
+    parseExplicitEngineContext(raw) ?? {
+      availableMinutes: DEFAULT_ENGINE_CONTEXT.availableMinutes,
+    }
+  );
+}
+
+/** Parse a stored blob, or null when there is no stored value / it is junk.
+ *  The default is NOT substituted: `readStoredEngineContext` must tell an
+ *  explicit choice apart from a first-paint default. */
+function parseExplicitEngineContext(raw: string | null): EngineContextSettings | null {
+  if (raw === null) return null;
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== 'object' || parsed === null) return fallback;
+    if (typeof parsed !== 'object' || parsed === null) return null;
     const obj = parsed as { availableMinutes?: unknown };
-    const availableMinutes =
-      typeof obj.availableMinutes === 'number' && Number.isFinite(obj.availableMinutes) && obj.availableMinutes >= 1
-        ? Math.min(Math.round(obj.availableMinutes), MAX_AVAILABLE_MINUTES)
-        : DEFAULT_ENGINE_CONTEXT.availableMinutes;
-    return { availableMinutes };
+    const availableMinutes = obj.availableMinutes;
+    if (
+      typeof availableMinutes !== 'number' ||
+      !Number.isFinite(availableMinutes) ||
+      availableMinutes < 1
+    ) {
+      return null;
+    }
+    return { availableMinutes: Math.min(Math.round(availableMinutes), MAX_AVAILABLE_MINUTES) };
   } catch {
-    return fallback;
+    return null;
   }
 }
 
@@ -198,6 +214,71 @@ export async function saveEngineContext(settings: EngineContextSettings): Promis
   const write = writeQueue.then(() => getBackend().setItem(ENGINE_CONTEXT_KEY, raw));
   writeQueue = write.catch(() => undefined);
   await write;
+  writeSyncedSetting('engine-context', raw);
+}
+
+type Listener = (settings: EngineContextSettings) => void;
+
+const listeners = new Set<Listener>();
+
+/** Follow preference changes (the Now screen's open session keeps its chip in
+ *  step with a value synced from another device). */
+export function subscribeToEngineContext(listener: Listener): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function notifyEngineContext(next: EngineContextSettings): void {
+  for (const listener of listeners) {
+    try {
+      listener(next);
+    } catch {
+      // A misbehaving subscriber must not break the apply path.
+    }
+  }
+}
+
+/**
+ * Apply a value downloaded from the synced `settings` table (issue #97). The
+ * downloaded value wins over the device cache; the cache is refreshed for the
+ * next cold start. A failed local cache write does not undo the applied value.
+ */
+export function applyEngineContextFromSync(next: EngineContextSettings): void {
+  const raw = next.availableMinutes;
+  const minutes =
+    typeof raw === 'number' && Number.isFinite(raw)
+      ? Math.min(Math.max(Math.round(raw), 1), MAX_AVAILABLE_MINUTES)
+      : DEFAULT_ENGINE_CONTEXT.availableMinutes;
+  if (cachedSettings !== null && cachedSettings.availableMinutes === minutes) return;
+  const normalized: EngineContextSettings = { availableMinutes: minutes };
+  cachedSettings = normalized;
+  try {
+    void getBackend()
+      .setItem(ENGINE_CONTEXT_KEY, JSON.stringify(normalized))
+      .catch(() => undefined);
+  } catch {
+    // A storage refusal must not break the sync apply.
+  }
+  notifyEngineContext(normalized);
+}
+
+/**
+ * The device's explicitly stored value, or null when nothing was stored (or
+ * the store failed). Used by the synced-settings bridge to seed the table on
+ * first login — a default is never seeded.
+ *
+ * The module cache is NOT used here: `loadEngineContext()` fills it with the
+ * 60-minute default when the store is empty, and treating that as a choice
+ * would overwrite another device's preference on a fresh device.
+ */
+export async function readStoredEngineContext(): Promise<EngineContextSettings | null> {
+  try {
+    return parseExplicitEngineContext(await getBackend().getItem(ENGINE_CONTEXT_KEY));
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -246,6 +327,17 @@ export function useEngineContextSettings(): UseEngineContextSettingsResult {
       cancelled = true;
     };
   }, []);
+
+  // A value synced from another device while this screen stays open (issue
+  // #97): the bridge applies it to the module cache and notifies here.
+  useEffect(
+    () =>
+      subscribeToEngineContext((next) => {
+        settingsRef.current = next;
+        setSettings(next);
+      }),
+    [],
+  );
 
   const update = useCallback(async (patch: Partial<EngineContextSettings>) => {
     updatedSinceMountRef.current = true;

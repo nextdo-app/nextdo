@@ -150,6 +150,7 @@ export const MUTABLE_TABLES: Readonly<Record<string, readonly string[]>> = {
     'ended_at',
     'status',
   ],
+  settings: ['created_at', 'updated_at', 'deleted_at', 'key', 'value'],
 };
 
 /** Append-only audit trails → declared columns (same source). */

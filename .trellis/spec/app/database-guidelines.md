@@ -407,7 +407,7 @@ E2E cycle when missing):
    postmaster parameter, so the `-c` flag also takes effect on existing volumes
    (no volume wipe).
 2. **The source DB must contain `CREATE PUBLICATION powersync FOR ALL TABLES;`**
-   (lives in `init/02-nextdo-schema.sql`; FOR ALL TABLES covers the 14 tables and
+   (lives in `init/02-nextdo-schema.sql`; FOR ALL TABLES covers the 15 tables and
    additive v1 schema changes). Gotcha: compose init scripts only run at container
    **creation** — a pre-existing postgres container needs a recreate (or the
    statement run by hand) after the DDL changes.

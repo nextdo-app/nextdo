@@ -106,7 +106,10 @@ streams:
       - SELECT id, created_at, updated_at, deleted_at, action_id, action_kind, mode, planned_minutes, started_at, paused_sec, ended_at, status FROM focus_sessions WHERE deleted_at IS NULL
       - SELECT id, created_at, updated_at, deleted_at, kind, at, snapshot, answers FROM review_records WHERE deleted_at IS NULL
       - SELECT id, created_at, updated_at, deleted_at, action_kind, action_id, completed_at, est_minutes FROM completion_records WHERE deleted_at IS NULL
+      - SELECT id, created_at, updated_at, deleted_at, key, value FROM settings WHERE deleted_at IS NULL
 ```
+
+   > **已有部署升级**：本版本新增 `settings` 表（主题、专注时长、可用时间）。请先更新后端 `worker.js`（或重启自托管服务），让数据库建出 `settings` 表并接受该表上报；再按上面的规则重新 **Deploy** Sync Rules。任一步未做时，设置只保存在本机，不会跨设备同步。
 
    - 点击右上角 **Deploy** 部署生效。
 6. **确认实例已完成部署**：如果控制台右上角还挂着 **Finish Setting Up PowerSync**，说明上述改动尚未落到运行中的实例上 —— 点它把流程走完（等同于点 Save and Deploy）。此时界面里 KID/Secret 看着都对，运行中的实例用的仍是旧 keystore，客户端会一直报 `PSYNC_S2101`（原文里的「The key is missing」就是这么来的）。
@@ -117,7 +120,7 @@ streams:
 
 ### 第三步：部署 Cloudflare Workers 后端（2 分钟）
 
-Cloudflare Workers 负责接收客户端写入的数据，并在首次启动时**全自动在数据库中建齐 14 张核心业务表**（另有 `system_settings`、`reminder_deliveries` 两张服务端内部表）。
+Cloudflare Workers 负责接收客户端写入的数据，并在首次启动时**全自动在数据库中建齐 15 张核心业务表**（另有 `system_settings`、`reminder_deliveries` 两张服务端内部表）。
 
 1. 登录 [Cloudflare 控制台 (dash.cloudflare.com)](https://dash.cloudflare.com/)。
 2. 左侧菜单进入 **Compute (Workers) -> Workers & Pages**，点击 **Create application -> Create Worker**。
@@ -141,7 +144,7 @@ Cloudflare Workers 负责接收客户端写入的数据，并在首次启动时*
 
 6. **查看专属服务看板**：
    - 部署完成后，在浏览器中直接打开你的 Workers 网址（形如 `https://nextdo-server.yourname.workers.dev`）；
-   - 网页将自动初始化数据库（14 张核心业务表自动就绪），并显示 **Nextdo 云同步服务就绪看板**！
+   - 网页将自动初始化数据库（15 张核心业务表自动就绪），并显示 **Nextdo 云同步服务就绪看板**！
 
 ### 可选：开通外部提醒通道（飞书 / 个人微信）
 

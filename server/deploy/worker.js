@@ -8660,7 +8660,8 @@ var MUTABLE_TABLES = {
     "paused_sec",
     "ended_at",
     "status"
-  ]
+  ],
+  settings: ["created_at", "updated_at", "deleted_at", "key", "value"]
 };
 var APPEND_ONLY_TABLES = {
   review_records: ["created_at", "updated_at", "deleted_at", "kind", "at", "snapshot", "answers"],
@@ -9011,7 +9012,7 @@ function createApp(config) {
       <span id="badgeText">${isClaimed ? "\u670D\u52A1\u6B63\u5E38\u8FD0\u884C \xB7 \u5DF2\u5B8C\u6210\u9996\u6B21\u914D\u7F6E" : "\u670D\u52A1\u6B63\u5E38\u8FD0\u884C \xB7 \u6570\u636E\u5E93\u5DF2\u81EA\u52A8\u5C31\u7EEA"}</span>
     </div>
     <h1>Nextdo \u4E91\u540C\u6B65\u670D\u52A1</h1>
-    <p>\u4F60\u7684 Cloudflare Workers \u540E\u7AEF\u5DF2\u5C31\u7EEA\u3002\u6240\u6709 14 \u5F20\u6838\u5FC3\u6570\u636E\u8868\u5DF2\u81EA\u52A8\u521D\u59CB\u5316\u5B8C\u6210\uFF0C\u65E0\u9700\u624B\u52A8\u5EFA\u8868\u3002</p>
+    <p>\u4F60\u7684 Cloudflare Workers \u540E\u7AEF\u5DF2\u5C31\u7EEA\u3002\u6240\u6709 15 \u5F20\u6838\u5FC3\u6570\u636E\u8868\u5DF2\u81EA\u52A8\u521D\u59CB\u5316\u5B8C\u6210\uFF0C\u65E0\u9700\u624B\u52A8\u5EFA\u8868\u3002</p>
     
     <div class="box">
       <div class="box-title" id="boxTitle">\u4F60\u7684\u540C\u6B65\u670D\u52A1\u5668\u7F51\u5740</div>
@@ -9779,6 +9780,18 @@ CREATE TABLE IF NOT EXISTS completion_records (
   completed_at TEXT,
   est_minutes INTEGER
 );
+
+-- Account-level preferences that sync across devices (issue #97). One row
+-- per key; the client mints the deterministic id "setting:<key>".
+CREATE TABLE IF NOT EXISTS settings (
+  id TEXT PRIMARY KEY,
+  created_at TEXT,
+  updated_at TEXT,
+  deleted_at TEXT,
+  key TEXT,
+  value TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS settings_key_idx ON settings (key);
 `;
 async function initDatabaseSchema(pool) {
   await pool.query(SCHEMA_SQL);

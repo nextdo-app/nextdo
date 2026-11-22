@@ -22,6 +22,11 @@ jest.mock('@nextdo/db', () => ({
   listHabits: jest.fn(async () => []),
   syncHabitCheckInReminders: jest.fn(async () => undefined),
   wrapDb: jest.fn(() => ({})),
+  settingsWatchQuery: () => ({
+    compile: () => ({ sql: 'SELECT 1', parameters: [] }),
+    execute: async () => [],
+  }),
+  setAppSetting: async () => undefined,
 }));
 
 jest.mock('@/lib/reminders/permission', () => ({

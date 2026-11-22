@@ -19,7 +19,7 @@ import { createNodeTestDatabase } from './powersync-node';
 const NOW = '2026-09-21T00:00:00.000Z';
 
 describe('AppSchema shape', () => {
-  it('declares the 14 MVP tables', () => {
+  it('declares the 15 MVP tables', () => {
     const names = AppSchema.tables.map((table) => table.name).sort();
     expect(names).toEqual(
       [
@@ -35,6 +35,7 @@ describe('AppSchema shape', () => {
         'reference_items',
         'reminders',
         'review_records',
+        'settings',
         'someday_maybe_items',
         'waiting_for_items',
       ].sort(),

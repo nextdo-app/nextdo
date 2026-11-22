@@ -444,3 +444,103 @@ Topics: [.trellis/spec/project/quality-guidelines.md](../../spec/project/quality
 ### Git Commits
 
 (No associated commits)
+
+
+## Session 78: Issue #97 设置项跨设备同步
+<!-- trellis-session: v=3 fp=5b8108dd626dd3d4 -->
+
+**Date**: 2026-11-20
+**Task**: Issue #97 设置项跨设备同步
+**Branch**: `feat/settings-sync`
+
+### Summary
+
+交付 issue #97：新增同步 settings 表（确定性 id setting:<key>），主题、专注时长与 Now 可用时间跨设备同步，通知、日历、更新与习惯提醒保留本机；客户端桥以 DB 行为同步事实来源、本地缓存只负责首帧。门禁 pnpm verify:web 通过（1652 测试），浏览器实测覆盖播种、删本地缓存后由 DB 恢复、专注时长写入与双标签页实时同步。
+Topics: [.trellis/research/settings-sync.md](../../research/settings-sync.md)
+
+### Git Commits
+
+(No associated commits)
+
+### Testing
+
+- pnpm verify:web；浏览器脚本 verify-97/capture.mjs，结果 ok=true（含 crossTab=true）
+
+### Next Steps
+
+- reviewer 复核；通过后按授权处理下一个 issue。工作区 .worktrees/settings-sync 未提交。
+
+
+## Session 79: Issue #97 首轮审查修复
+<!-- trellis-session: v=3 fp=bb10a12600805a27 -->
+
+**Date**: 2026-11-20
+**Task**: Issue #97 首轮审查修复
+**Branch**: `feat/settings-sync`
+
+### Summary
+
+处理 #97 首轮审查的 R1/R2/R3：R1 播种只读设备存储，避免首读默认值（theme system / engine 60）覆盖账本偏好；R2 两份云部署文档补 settings Sync Rule，并按当前源码重建仓库直贴版 server/deploy/worker.js，新增产物一致性测试；R3 settings 写失败保留 pending 意图、bridge 跳过旧行、全局重试横幅，补单测与浏览器注入写失败/恢复场景。门禁 pnpm verify:web --no-serve 通过（1662 测试），浏览器全部场景 ok。
+Topics: [.trellis/research/settings-sync.md](../../research/settings-sync.md)
+
+### Git Commits
+
+(No associated commits)
+
+### Testing
+
+- pnpm verify:web --no-serve；verify-97/capture.mjs，结果含 writeFailure 全部 true
+
+### Next Steps
+
+- 交回 reviewer 复审；通过后按授权处理下一个 issue。工作区未提交。
+
+
+## Session 80: Issue #97 写失败意图持久化
+<!-- trellis-session: v=3 fp=31a09df008b99933 -->
+
+**Date**: 2026-11-20
+**Task**: Issue #97 写失败意图持久化
+**Branch**: `feat/settings-sync`
+
+### Summary
+
+R3 补持久化：settings 写失败的最新意图写入设备存储 nextdo.settings.pending，bridge 启动时先恢复再应用下载行，pending 期间跳过旧行；刷新/重启后横幅与值仍保留，重试提交后才清除。补 bus 重启恢复与 bridge 刷新前后回归；门禁 1664 测试通过，浏览器覆盖写失败→刷新→重试→再刷新。移除代码/测试中的审查过程措辞。
+Topics: [.trellis/research/settings-sync.md](../../research/settings-sync.md)
+
+### Git Commits
+
+(No associated commits)
+
+### Testing
+
+- pnpm verify:web --no-serve；verify-97/capture.mjs，writeFailure 全部 true（含 survivedReload / persistedAfterReload）
+
+### Next Steps
+
+- 交回 reviewer 复审；通过后按授权处理下一个 issue。工作区未提交。
+
+
+## Session 81: Issue #97 多标签页 pending 持久化
+<!-- trellis-session: v=3 fp=1996cd022f7f7f35 -->
+
+**Date**: 2026-11-20
+**Task**: Issue #97 多标签页 pending 持久化
+**Branch**: `feat/settings-sync`
+
+### Summary
+
+R3 再加固：pending 持久化从单个 JSON 快照改为每 key 一个设备存储项（nextdo.settings.pending.<key>），持久化队列内读取本 key 当前值，成功时只删本 key；另一标签页提交不同设置不再清除本标签页的未提交意图。补两个独立 bus 共享存储的回归；浏览器覆盖 A 写失败→B 成功改主题→刷新 A→横幅与 30 仍在→重试成功→再刷新。门禁 1665 测试通过。
+Topics: [.trellis/research/settings-sync.md](../../research/settings-sync.md)
+
+### Git Commits
+
+(No associated commits)
+
+### Testing
+
+- pnpm verify:web --no-serve（core 275 / server 134 / db 376 / mobile 880，共 1665）；verify-97/capture.mjs 结果 ok=true，writeFailure 含 otherTabWrite / survivedReload / recovered / persistedAfterReload
+
+### Next Steps
+
+- 交回 reviewer 复审；通过后按授权处理下一个 issue。工作区未提交。

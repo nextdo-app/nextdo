@@ -44,6 +44,7 @@ import {
 import { useColorScheme as useNativeWindColorScheme } from 'nativewind';
 import { isReactNativeRuntime } from '@nextdo/db';
 import { isFocusIslandWindow } from './focus-island-desktop';
+import { writeSyncedSetting } from './synced-settings-bus';
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 /** What the UI actually renders — 'system' is always resolved away. */
@@ -127,6 +128,12 @@ const storage = createStorage();
 
 let cachedPreference: ThemePreference | null = null;
 let loadStarted = false;
+/**
+ * True once a value newer than the initial local read owns the state — a
+ * synced row applied by the settings bridge, or a user change made before
+ * the read settled. The in-flight local read must not clobber it (issue #97).
+ */
+let initialLocalReadSuperseded = false;
 const listeners = new Set<() => void>();
 
 interface WebMediaQueryList {
@@ -380,7 +387,9 @@ function subscribeTheme(listener: () => void): () => void {
       // junk: both resolve to 'system' (the default the UI shows first).
       const next: ThemePreference =
         stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
-      updateThemeState(next, authenticSystemScheme);
+      // A synced row (or a user change) may have landed while this read was
+      // in flight; the older local value must not overwrite it.
+      if (!initialLocalReadSuperseded) updateThemeState(next, authenticSystemScheme);
     });
   }
   return () => {
@@ -432,8 +441,10 @@ export function useAppTheme() {
   }, [snapshot.colorScheme, snapshot.isDark, setColorScheme]);
 
   const updatePreference = useCallback(async (next: ThemePreference) => {
+    initialLocalReadSuperseded = true;
     updateThemeState(next, authenticSystemScheme);
     await storage.setItem(THEME_PREFERENCE_KEY, next);
+    writeSyncedSetting('theme-preference', JSON.stringify(next));
   }, []);
 
   return {
@@ -445,4 +456,43 @@ export function useAppTheme() {
     updatePreference,
     loaded: snapshot.loaded,
   };
+}
+
+/**
+ * Apply a preference downloaded from the synced `settings` table (issue
+ * #97). It wins over the device cache (which is only the first-paint
+ * bootstrap) and is written back so the next cold start starts correct.
+ */
+export function applyThemePreferenceFromSync(preference: ThemePreference): void {
+  // Block the in-flight initial local read even when the value matches: the
+  // read may hold an older preference that would otherwise land later.
+  initialLocalReadSuperseded = true;
+  if (cachedPreference === preference) return;
+  updateThemeState(preference, authenticSystemScheme);
+  void storage.setItem(THEME_PREFERENCE_KEY, preference).catch(() => undefined);
+}
+
+/**
+ * The device's explicitly stored preference, or null when nothing was ever
+ * stored (or the stored value is junk). Used by the synced-settings bridge
+ * to seed the table on first login — a default is never seeded.
+ *
+ * The module cache is NOT used here: a normal first read of an empty store
+ * caches 'system' (the first-paint default), and treating that as a stored
+ * choice would overwrite another device's preference on a fresh device.
+ */
+export async function readStoredThemePreference(): Promise<ThemePreference | null> {
+  try {
+    const stored = await storage.getItem(THEME_PREFERENCE_KEY);
+    return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Test hook: clear the in-memory cache and the superseded flag (the storage
+ *  backend is left as-is; used by the synced-settings tests). */
+export function __resetThemeForTests(): void {
+  cachedPreference = null;
+  initialLocalReadSuperseded = false;
 }

@@ -26,6 +26,11 @@ jest.mock('@nextdo/db', () => {
     getActionDetails: jest.fn(),
     getStoredBackendConfig: async () => null,
     wrapDb: () => ({}),
+    settingsWatchQuery: () => ({
+      compile: () => ({ sql: 'SELECT 1', parameters: [] }),
+      execute: async () => [],
+    }),
+    setAppSetting: async () => undefined,
   };
 });
 

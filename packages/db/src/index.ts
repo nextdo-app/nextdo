@@ -80,6 +80,16 @@ export { listCalendarActions } from './queries/calendar';
 // `trashContext` sets deleted_at (Trash, domain-model.md) — the scene chips
 // keep reading `listContexts`, which filters the soft-deleted rows out.
 export { addContext, listContexts, seedDefaultContexts, trashContext } from './queries/contexts';
+// Synced account-level settings (issue #97): theme, focus duration and the
+// engine's available minutes. Device-local preferences stay in apps/mobile.
+export {
+  appSettingsQuery,
+  getAppSetting,
+  listAppSettings,
+  setAppSetting,
+  settingsRowId,
+} from './queries/settings';
+export type { AppSetting, SetAppSettingOptions } from './queries/settings';
 // Habit reads (Now screen habit strip) + the start-challenge / trash / update
 // transactions (the habits screen, task 10-02, issue #19).
 export {
@@ -132,6 +142,7 @@ export {
   projectCardsWatchQuery,
   projectsWatchQuery,
   reviewRecordsWatchQuery,
+  settingsWatchQuery,
   somedayItemsWatchQuery,
   waitingForWatchQuery,
 } from './queries/watch-queries';
