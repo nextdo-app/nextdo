@@ -21,6 +21,7 @@ import {
   trashCalendarAction,
   updateCalendarAction,
 } from '../queries/calendar';
+import { completeAction, snoozeAction } from '../queries/actions';
 import { addContext, listContexts, seedDefaultContexts, trashContext, updateContext } from '../queries/contexts';
 import {
   addReferenceItem,
@@ -41,6 +42,7 @@ import {
   updateWaitingForItem,
 } from '../queries/waiting';
 import { waitingForWatchQuery } from '../queries/watch-queries';
+import { listScheduledReminders } from '../queries/reminders';
 import { openTestDb, type TestDb } from './query-helpers';
 import { FIXTURE_IDS, FIXTURE_NOW } from './fixtures';
 
@@ -63,6 +65,18 @@ function base(overrides: Partial<{ id: string }> = {}) {
     updatedAt: toIso(FIXTURE_NOW),
     deletedAt: null,
   };
+}
+
+/** The live scheduled reminders the calendar-action rule owns. */
+function scheduledCalendarReminders(db: TestDb['db'], actionId: string) {
+  return db
+    .selectFrom('reminders')
+    .select(['id', 'fires_at', 'intensity', 'state'])
+    .where('action_kind', '=', 'calendar')
+    .where('action_id', '=', actionId)
+    .where('state', '=', 'scheduled')
+    .where('deleted_at', 'is', null)
+    .execute();
 }
 
 describe('WaitingFor', () => {
@@ -172,20 +186,322 @@ describe('CalendarAction', () => {
     }
   });
 
+  it('update: a changed startsAt moves the auto reminder with the 60-min rule', async () => {
+    const { db, close } = await open();
+    try {
+      const startsAt = new Date(FIXTURE_NOW.getTime() + 30 * 60_000);
+      const action: CalendarAction = {
+        ...base(),
+        title: '周会',
+        startsAt: toIso(startsAt),
+        contextIds: [],
+        estMinutes: 30,
+        value: 3 as Value,
+        consecutiveSkips: 0,
+        status: 'open',
+      };
+      await addCalendarAction(db, action, FIXTURE_NOW);
+      const first = await scheduledCalendarReminders(db, action.id);
+      expect(first).toHaveLength(1);
+      expect(first[0]!.fires_at).toBe(toIso(new Date(startsAt.getTime() - 15 * 60_000)));
+      expect(first[0]!.intensity).toBe('important');
+
+      // 10:00 + 45 min is still inside the window → fires at 10:30.
+      const nextStart = new Date(FIXTURE_NOW.getTime() + 45 * 60_000);
+      await updateCalendarAction(db, { ...action, startsAt: toIso(nextStart) }, FIXTURE_NOW);
+
+      const after = await scheduledCalendarReminders(db, action.id);
+      expect(after).toHaveLength(1);
+      expect(after[0]!.fires_at).toBe(toIso(new Date(nextStart.getTime() - 15 * 60_000)));
+      const old = await db
+        .selectFrom('reminders')
+        .select(['state'])
+        .where('id', '=', first[0]!.id)
+        .executeTakeFirst();
+      expect(old?.state).toBe('cancelled');
+    } finally {
+      await close();
+    }
+  });
+
+  it('update: moving startsAt beyond 60 minutes cancels the auto reminder', async () => {
+    const { db, close } = await open();
+    try {
+      const action: CalendarAction = {
+        ...base(),
+        title: '周会',
+        startsAt: toIso(new Date(FIXTURE_NOW.getTime() + 30 * 60_000)),
+        contextIds: [],
+        estMinutes: 30,
+        value: 3 as Value,
+        consecutiveSkips: 0,
+        status: 'open',
+      };
+      await addCalendarAction(db, action, FIXTURE_NOW);
+      expect(await scheduledCalendarReminders(db, action.id)).toHaveLength(1);
+
+      await updateCalendarAction(
+        db,
+        { ...action, startsAt: toIso(new Date(FIXTURE_NOW.getTime() + 2 * 3_600_000)) },
+        FIXTURE_NOW,
+      );
+      expect(await scheduledCalendarReminders(db, action.id)).toEqual([]);
+    } finally {
+      await close();
+    }
+  });
+
+  it('update: a title-only edit re-arms the future reminder with the new title', async () => {
+    const { db, close } = await open();
+    try {
+      const action: CalendarAction = {
+        ...base(),
+        title: '周会',
+        startsAt: toIso(new Date(FIXTURE_NOW.getTime() + 30 * 60_000)),
+        contextIds: [],
+        estMinutes: 30,
+        value: 3 as Value,
+        consecutiveSkips: 0,
+        status: 'open',
+      };
+      await addCalendarAction(db, action, FIXTURE_NOW);
+      const first = await scheduledCalendarReminders(db, action.id);
+      expect(first).toHaveLength(1);
+
+      await updateCalendarAction(db, { ...action, title: '周会（改）' }, FIXTURE_NOW);
+
+      const after = await scheduledCalendarReminders(db, action.id);
+      expect(after).toHaveLength(1);
+      // Same moment + intensity, fresh id: the native reconcile keys on the
+      // id, so a kept id would keep the old notification body forever.
+      expect(after[0]!.id).not.toBe(first[0]!.id);
+      expect(after[0]!.fires_at).toBe(first[0]!.fires_at);
+      expect(after[0]!.intensity).toBe('important');
+      const old = await db
+        .selectFrom('reminders')
+        .select(['state'])
+        .where('id', '=', first[0]!.id)
+        .executeTakeFirst();
+      expect(old?.state).toBe('cancelled');
+      // What the delivery layer reads now: the new title at the same moment.
+      const scheduled = await listScheduledReminders(db);
+      const armed = scheduled.find((row) => row.id === after[0]!.id);
+      expect(armed?.title).toBe('周会（改）');
+      expect(armed?.firesAt).toBe(first[0]!.fires_at);
+    } finally {
+      await close();
+    }
+  });
+
+  it('update: a title-only edit re-arms the snooze reminder at the user moment', async () => {
+    const { db, close } = await open();
+    try {
+      const action: CalendarAction = {
+        ...base(),
+        title: '周会',
+        startsAt: toIso(new Date(FIXTURE_NOW.getTime() + 30 * 60_000)),
+        contextIds: [],
+        estMinutes: 30,
+        value: 3 as Value,
+        consecutiveSkips: 0,
+        status: 'open',
+      };
+      await addCalendarAction(db, action, FIXTURE_NOW);
+      const snoozedUntil = new Date(FIXTURE_NOW.getTime() + 10 * 60_000);
+      await snoozeAction(db, {
+        actionKind: 'calendar',
+        actionId: action.id,
+        snoozedUntil,
+        now: FIXTURE_NOW,
+      });
+      const before = await scheduledCalendarReminders(db, action.id);
+      expect(before).toHaveLength(1);
+      expect(before[0]!.intensity).toBe('normal');
+
+      await updateCalendarAction(db, { ...action, title: '周会（改）' }, FIXTURE_NOW);
+
+      const after = await scheduledCalendarReminders(db, action.id);
+      expect(after).toHaveLength(1);
+      expect(after[0]!.id).not.toBe(before[0]!.id);
+      // The user's chosen snooze moment and intensity are preserved.
+      expect(after[0]!.fires_at).toBe(toIso(snoozedUntil));
+      expect(after[0]!.intensity).toBe('normal');
+      const scheduled = await listScheduledReminders(db);
+      expect(scheduled.find((row) => row.id === after[0]!.id)?.title).toBe('周会（改）');
+    } finally {
+      await close();
+    }
+  });
+
+  it('update: a title-only edit leaves a past reminder alone (no late re-trigger)', async () => {
+    const { db, close } = await open();
+    try {
+      // startsAt is 10 min away → the auto reminder fires 5 min in the past.
+      const action: CalendarAction = {
+        ...base(),
+        title: '周会',
+        startsAt: toIso(new Date(FIXTURE_NOW.getTime() + 10 * 60_000)),
+        contextIds: [],
+        estMinutes: 30,
+        value: 3 as Value,
+        consecutiveSkips: 0,
+        status: 'open',
+      };
+      await addCalendarAction(db, action, FIXTURE_NOW);
+      const first = await scheduledCalendarReminders(db, action.id);
+      expect(first).toHaveLength(1);
+      expect(new Date(first[0]!.fires_at as string).getTime()).toBeLessThan(
+        FIXTURE_NOW.getTime(),
+      );
+
+      await updateCalendarAction(db, { ...action, title: '周会（改）' }, FIXTURE_NOW);
+
+      const after = await scheduledCalendarReminders(db, action.id);
+      expect(after).toHaveLength(1);
+      expect(after[0]!.id).toBe(first[0]!.id);
+    } finally {
+      await close();
+    }
+  });
+
+  it('update: a completion that landed while the form was open survives the write', async () => {
+    const { db, close } = await open();
+    try {
+      const action: CalendarAction = {
+        ...base(),
+        title: '周会',
+        startsAt: toIso(new Date(FIXTURE_NOW.getTime() + 30 * 60_000)),
+        contextIds: [],
+        estMinutes: 30,
+        value: 3 as Value,
+        consecutiveSkips: 0,
+        status: 'open',
+      };
+      await addCalendarAction(db, action, FIXTURE_NOW);
+      // The form was filled from this row; another device completes it before
+      // the save reaches the local DB (the stale object still says 'open').
+      await completeAction(db, { actionKind: 'calendar', actionId: action.id, now: FIXTURE_NOW });
+
+      const merged = await updateCalendarAction(
+        db,
+        {
+          ...action,
+          title: '周会（改）',
+          startsAt: toIso(new Date(FIXTURE_NOW.getTime() + 45 * 60_000)),
+        },
+        FIXTURE_NOW,
+      );
+
+      // The stale status is ignored; the edit lands on the live row.
+      expect(merged.status).toBe('done');
+      const row = await db
+        .selectFrom('calendar_actions')
+        .select(['title', 'status', 'starts_at'])
+        .where('id', '=', action.id)
+        .executeTakeFirst();
+      expect(row?.title).toBe('周会（改）');
+      expect(row?.status).toBe('done');
+      // Completion cancelled the reminder; the edit must not arm a new one.
+      expect(await scheduledCalendarReminders(db, action.id)).toEqual([]);
+    } finally {
+      await close();
+    }
+  });
+
+  it('update: a trash that landed while the form was open is not overwritten', async () => {
+    const { db, close } = await open();
+    try {
+      const action: CalendarAction = {
+        ...base(),
+        title: '周会',
+        startsAt: toIso(new Date(FIXTURE_NOW.getTime() + 30 * 60_000)),
+        contextIds: [],
+        estMinutes: 30,
+        value: 3 as Value,
+        consecutiveSkips: 0,
+        status: 'open',
+      };
+      await addCalendarAction(db, action, FIXTURE_NOW);
+      await trashCalendarAction(db, { id: action.id, now: FIXTURE_NOW });
+
+      await expect(
+        updateCalendarAction(db, { ...action, title: '周会（改）' }, FIXTURE_NOW),
+      ).rejects.toMatchObject({ code: 'calendarAction.not-found' });
+
+      const row = await db
+        .selectFrom('calendar_actions')
+        .select(['title', 'deleted_at'])
+        .where('id', '=', action.id)
+        .executeTakeFirst();
+      expect(row?.title).toBe('周会');
+      expect(row?.deleted_at).not.toBeNull();
+    } finally {
+      await close();
+    }
+  });
+
+  it('update: a future snooze owns the reminder — editing startsAt arms nothing', async () => {
+    const { db, close } = await open();
+    try {
+      const action: CalendarAction = {
+        ...base(),
+        title: '周会',
+        startsAt: toIso(new Date(FIXTURE_NOW.getTime() + 30 * 60_000)),
+        contextIds: [],
+        estMinutes: 30,
+        value: 3 as Value,
+        consecutiveSkips: 0,
+        status: 'open',
+      };
+      await addCalendarAction(db, action, FIXTURE_NOW);
+      const snoozedUntil = new Date(FIXTURE_NOW.getTime() + 10 * 60_000);
+      await snoozeAction(db, {
+        actionKind: 'calendar',
+        actionId: action.id,
+        snoozedUntil,
+        now: FIXTURE_NOW,
+      });
+      const before = await scheduledCalendarReminders(db, action.id);
+
+      await updateCalendarAction(
+        db,
+        {
+          ...action,
+          startsAt: toIso(new Date(FIXTURE_NOW.getTime() + 45 * 60_000)),
+          snoozedUntil: toIso(snoozedUntil),
+        },
+        FIXTURE_NOW,
+      );
+
+      const after = await scheduledCalendarReminders(db, action.id);
+      expect(after).toHaveLength(1);
+      // A start-time edit with an unchanged title keeps the snooze row as is.
+      expect(after[0]!.id).toBe(before[0]!.id);
+      expect(after[0]!.intensity).toBe('normal');
+      expect(after[0]!.fires_at).toBe(toIso(snoozedUntil));
+    } finally {
+      await close();
+    }
+  });
+
   it('update/trash propagate not-found', async () => {
     const { db, close } = await open(true);
     try {
       await expect(
-        updateCalendarAction(db, {
-          ...base(),
-          title: 'x',
-          startsAt: toIso(FIXTURE_NOW),
-          contextIds: [],
-          estMinutes: 30,
-          value: 3 as Value,
-          consecutiveSkips: 0,
-          status: 'open',
-        }),
+        updateCalendarAction(
+          db,
+          {
+            ...base(),
+            title: 'x',
+            startsAt: toIso(FIXTURE_NOW),
+            contextIds: [],
+            estMinutes: 30,
+            value: 3 as Value,
+            consecutiveSkips: 0,
+            status: 'open',
+          },
+          FIXTURE_NOW,
+        ),
       ).rejects.toMatchObject({ code: 'calendarAction.not-found' });
       await trashCalendarAction(db, { id: FIXTURE_IDS.calendar.soon, now: FIXTURE_NOW });
       expect(await listCalendarActions(db)).toHaveLength(2);

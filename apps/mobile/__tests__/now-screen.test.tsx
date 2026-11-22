@@ -31,6 +31,14 @@ const updateCalls: { count: number; actions: unknown[] } = {
   count: 0,
   actions: [],
 };
+// Issue #95: the calendar edit modal reads the LIVE row (merge, not rebuild)
+// and writes through updateCalendarAction.
+const calendarRowsRef: { current: unknown[] } = { current: [] };
+const calendarUpdateCalls: { count: number; actions: unknown[]; shouldFail: boolean } = {
+  count: 0,
+  actions: [],
+  shouldFail: false,
+};
 // Counts `skipAction` calls and lets a test fail the write, so "换一个"
 // can be pinned both ways (persist once per action, stay put on failure).
 const skipCalls: { count: number; shouldFail: boolean; args: unknown[] } = {
@@ -126,6 +134,13 @@ jest.mock('@nextdo/db', () => {
       updateCalls.actions.push(action);
       return action;
     },
+    listCalendarActions: async () => calendarRowsRef.current,
+    updateCalendarAction: async (_db: unknown, action: unknown) => {
+      calendarUpdateCalls.count += 1;
+      calendarUpdateCalls.actions.push(action);
+      if (calendarUpdateCalls.shouldFail) throw new Error('calendar write failed');
+      return action;
+    },
     snoozeAction: async () => undefined,
     trashAction: async (_db: unknown, args: unknown) => {
       trashCalls.count += 1;
@@ -204,7 +219,12 @@ jest.mock('expo-notifications', () => mockExpoNotifications);
 
 import { act, fireEvent, renderRouter, screen, testRouter, waitFor } from 'expo-router/testing-library';
 import { mockExpoNotifications } from './mocks/expo-notifications';
-import type { NextCandidate } from '@nextdo/core';
+import type {
+  CalendarBlock,
+  CalendarCandidate,
+  CandidateAction,
+  NextCandidate,
+} from '@nextdo/core';
 import { localDateKey, ValidationNextdoError } from '@nextdo/core';
 import { __setEngineContextStoreForTests } from '@/lib/engine-context';
 
@@ -224,8 +244,51 @@ function nextAction(overrides: Partial<NextCandidate> = {}): NextCandidate {
   };
 }
 
-function setPool(actions: NextCandidate[]) {
-  poolRef.current = { actions, calendar: [], projects: [] };
+function calendarAction(overrides: Partial<CalendarCandidate> = {}): CalendarCandidate {
+  return {
+    id: 'c-1',
+    kind: 'calendar',
+    title: '周会',
+    // Seconds are deliberate: a title-only edit must not truncate them.
+    startsAt: '2026-09-21T10:30:45.000Z',
+    contextIds: [],
+    estMinutes: 30,
+    value: 3,
+    consecutiveSkips: 0,
+    dependencyDone: true,
+    createdAt: '2026-09-20T01:00:00.000Z',
+    ...overrides,
+  };
+}
+
+/** The full live row `listCalendarActions` returns for the edit hook. */
+function liveCalendar(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'c-1',
+    createdAt: '2026-09-20T01:00:00.000Z',
+    updatedAt: '2026-09-20T01:00:00.000Z',
+    deletedAt: null,
+    title: '周会',
+    startsAt: '2026-09-21T10:30:45.000Z',
+    contextIds: [],
+    estMinutes: 30,
+    value: 3,
+    category: 'work',
+    consecutiveSkips: 0,
+    status: 'open',
+    sourceInboxId: 'inbox-1',
+    ...overrides,
+  };
+}
+
+/**
+ * `actions` is the engine's candidate pool — open NextActions, today's
+ * HabitDays AND nearby CalendarActions (the screen resolves ids from this
+ * list only). `calendar` holds hard schedule blocks, which the screen never
+ * renders as a candidate.
+ */
+function setPool(actions: CandidateAction[], calendar: CalendarBlock[] = []) {
+  poolRef.current = { actions, calendar, projects: [] };
 }
 
 function context(id: string, name: string) {
@@ -293,6 +356,10 @@ beforeEach(() => {
   completeCalls.args = [];
   updateCalls.count = 0;
   updateCalls.actions = [];
+  calendarRowsRef.current = [];
+  calendarUpdateCalls.count = 0;
+  calendarUpdateCalls.actions = [];
+  calendarUpdateCalls.shouldFail = false;
   skipCalls.count = 0;
   skipCalls.shouldFail = false;
   skipCalls.args = [];
@@ -1366,6 +1433,156 @@ describe('Now screen', () => {
         id: 'action-edit-test',
         title: '写技术设计文档',
       });
+    });
+
+    it('edits a calendar action and preserves fields the form does not own', async () => {
+      // The calendar candidate belongs to the ENGINE POOL's actions list;
+      // `pool.calendar` is the hard-block list and never resolves to a card.
+      setPool([calendarAction()]);
+      calendarRowsRef.current = [liveCalendar()];
+      renderRouter('app', { initialUrl: '/(tabs)/now' });
+      await flushRenders();
+
+      await waitFor(() => expect(screen.getByText('周会')).toBeTruthy());
+      fireEvent.press(screen.getByRole('button', { name: '更多操作：周会' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: '编辑行动' })).toBeTruthy());
+      fireEvent.press(screen.getByRole('button', { name: '编辑行动' }));
+      await flushRenders();
+
+      expect(screen.getByText('编辑日历行动')).toBeTruthy();
+      expect(screen.getByLabelText('日程名称输入框').props.value).toBe('周会');
+
+      fireEvent.changeText(screen.getByLabelText('日程名称输入框'), '周会（改）');
+      fireEvent.press(screen.getByRole('button', { name: '保存修改' }));
+      await flushRenders();
+
+      await waitFor(() => expect(calendarUpdateCalls.count).toBe(1));
+      expect(calendarUpdateCalls.actions[0]).toMatchObject({
+        id: 'c-1',
+        title: '周会（改）',
+        // Untouched start keeps its stored seconds (dirty tracking).
+        startsAt: '2026-09-21T10:30:45.000Z',
+        // The hook merges the LIVE row; a pool-candidate rebuild would drop these.
+        category: 'work',
+        sourceInboxId: 'inbox-1',
+        status: 'open',
+      });
+    });
+
+    it('refills a date-only deadline as a day and keeps its sentinel on a title-only save', async () => {
+      const deadline = new Date(2026, 11, 1, 23, 59, 59).toISOString();
+      // The candidate carries the stored deadline; the form seeds from it.
+      setPool([calendarAction({ deadline })]);
+      calendarRowsRef.current = [liveCalendar({ deadline })];
+      renderRouter('app', { initialUrl: '/(tabs)/now' });
+      await flushRenders();
+
+      await waitFor(() => expect(screen.getByText('周会')).toBeTruthy());
+      fireEvent.press(screen.getByRole('button', { name: '更多操作：周会' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: '编辑行动' })).toBeTruthy());
+      fireEvent.press(screen.getByRole('button', { name: '编辑行动' }));
+      await flushRenders();
+
+      // The 23:59:59 sentinel reads as a plain day, never as a fake time.
+      expect(screen.getByLabelText('截止时间，当前 12月1日')).toBeTruthy();
+
+      fireEvent.changeText(screen.getByLabelText('日程名称输入框'), '周会（改）');
+      fireEvent.press(screen.getByRole('button', { name: '保存修改' }));
+      await flushRenders();
+
+      await waitFor(() => expect(calendarUpdateCalls.count).toBe(1));
+      const written = calendarUpdateCalls.actions[0] as { deadline?: string };
+      expect(written.deadline).toBe(deadline);
+    });
+
+    it('changing a date-only deadline day keeps the end-of-day sentinel', async () => {
+      const deadline = new Date(2026, 11, 1, 23, 59, 59).toISOString();
+      // The candidate carries the stored deadline; the form seeds from it.
+      setPool([calendarAction({ deadline })]);
+      calendarRowsRef.current = [liveCalendar({ deadline })];
+      renderRouter('app', { initialUrl: '/(tabs)/now' });
+      await flushRenders();
+
+      await waitFor(() => expect(screen.getByText('周会')).toBeTruthy());
+      fireEvent.press(screen.getByRole('button', { name: '更多操作：周会' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: '编辑行动' })).toBeTruthy());
+      fireEvent.press(screen.getByRole('button', { name: '编辑行动' }));
+      await flushRenders();
+
+      fireEvent.press(screen.getByLabelText('截止时间，当前 12月1日'));
+      await flushRenders();
+      fireEvent.press(screen.getByLabelText('日 2'));
+      fireEvent.press(screen.getByText('确定'));
+      await flushRenders();
+
+      fireEvent.press(screen.getByRole('button', { name: '保存修改' }));
+      await flushRenders();
+
+      await waitFor(() => expect(calendarUpdateCalls.count).toBe(1));
+      const written = calendarUpdateCalls.actions[0] as { deadline?: string };
+      expect(written.deadline).toBe(new Date(2026, 11, 2, 23, 59, 59).toISOString());
+    });
+
+    it('changes a calendar start day through the real picker', async () => {
+      // The calendar candidate belongs to the ENGINE POOL's actions list;
+      // `pool.calendar` is the hard-block list and never resolves to a card.
+      setPool([calendarAction()]);
+      calendarRowsRef.current = [liveCalendar()];
+      renderRouter('app', { initialUrl: '/(tabs)/now' });
+      await flushRenders();
+
+      await waitFor(() => expect(screen.getByText('周会')).toBeTruthy());
+      fireEvent.press(screen.getByRole('button', { name: '更多操作：周会' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: '编辑行动' })).toBeTruthy());
+      fireEvent.press(screen.getByRole('button', { name: '编辑行动' }));
+      await flushRenders();
+
+      fireEvent.press(screen.getByLabelText(/开始时间/));
+      await flushRenders();
+      fireEvent.press(screen.getByLabelText('日 23'));
+      fireEvent.press(screen.getByText('确定'));
+      await flushRenders();
+
+      fireEvent.press(screen.getByRole('button', { name: '保存修改' }));
+      await flushRenders();
+
+      await waitFor(() => expect(calendarUpdateCalls.count).toBe(1));
+      // The picker keeps the seed's local wall-clock time (10:30:45Z may not
+      // be 10:30 local), so derive the expectation from the seed itself.
+      const seeded = new Date('2026-09-21T10:30:45.000Z');
+      expect(calendarUpdateCalls.actions[0]).toMatchObject({
+        id: 'c-1',
+        startsAt: new Date(2026, 8, 23, seeded.getHours(), seeded.getMinutes()).toISOString(),
+      });
+    });
+
+    it('keeps the calendar edit open with its values when the write fails', async () => {
+      // The calendar candidate belongs to the ENGINE POOL's actions list;
+      // `pool.calendar` is the hard-block list and never resolves to a card.
+      setPool([calendarAction()]);
+      calendarRowsRef.current = [liveCalendar()];
+      calendarUpdateCalls.shouldFail = true;
+      renderRouter('app', { initialUrl: '/(tabs)/now' });
+      await flushRenders();
+
+      await waitFor(() => expect(screen.getByText('周会')).toBeTruthy());
+      fireEvent.press(screen.getByRole('button', { name: '更多操作：周会' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: '编辑行动' })).toBeTruthy());
+      fireEvent.press(screen.getByRole('button', { name: '编辑行动' }));
+      await flushRenders();
+
+      fireEvent.changeText(screen.getByLabelText('日程名称输入框'), '周会（失败）');
+      fireEvent.press(screen.getByRole('button', { name: '保存修改' }));
+      await flushRenders();
+
+      await waitFor(() => expect(screen.getByText('calendar write failed')).toBeTruthy());
+      expect(screen.getByText('编辑日历行动')).toBeTruthy();
+      expect(screen.getByLabelText('日程名称输入框').props.value).toBe('周会（失败）');
+
+      calendarUpdateCalls.shouldFail = false;
+      fireEvent.press(screen.getByRole('button', { name: '保存修改' }));
+      await flushRenders();
+      await waitFor(() => expect(calendarUpdateCalls.count).toBe(2));
     });
   });
 });

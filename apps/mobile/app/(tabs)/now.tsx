@@ -27,6 +27,7 @@ import {
   toIso,
   type CandidateAction,
   type CandidateKind,
+  type CalendarCandidate,
   type NextAction,
   type NextCandidate,
 } from '@nextdo/core';
@@ -50,6 +51,7 @@ import { SnoozeSheet } from '@/components/snooze-sheet';
 import { useSwipeReveal } from '@/hooks/use-swipe-reveal';
 import { DeadlineChip } from '@/components/deadline-chip';
 import { EditActionModal } from '@/components/edit-action-modal';
+import { CalendarEditModal } from '@/components/calendar-edit-modal';
 import { ActionMenuModal } from '@/components/action-menu-modal';
 import { HabitWindowConfirmModal } from '@/components/habit-window-confirm-modal';
 import { useAppTheme } from '@/lib/theme';
@@ -311,7 +313,7 @@ const ActionRow = memo(function ActionRow({
   onSnooze: (kind: CandidateKind, id: string) => void;
   onArchive: (kind: 'next' | 'calendar', id: string) => void;
   onTrash: (kind: CandidateKind, id: string) => void;
-  onEdit: (candidate: NextCandidate) => void;
+  onEdit: (candidate: CandidateAction) => void;
 }) {
   const action = entry.action;
   const { isDark } = useAppTheme();
@@ -435,9 +437,9 @@ const ActionRow = memo(function ActionRow({
       <ActionMenuModal
         visible={showMenu}
         actionTitle={action.title}
-        canEdit={action.kind === 'next'}
+        canEdit={action.kind !== 'habit'}
         onClose={() => setShowMenu(false)}
-        onEdit={() => onEdit(action as NextCandidate)}
+        onEdit={() => onEdit(action)}
         onSnooze={() => onSnooze(action.kind, action.id)}
         onArchiveToSomeday={
           action.kind === 'habit' ? undefined : () => onArchive(action.kind, action.id)
@@ -662,6 +664,9 @@ export default function NowScreen() {
   const projectTitles = useProjectTitles();
   const [snoozeTarget, setSnoozeTarget] = useState<{ kind: CandidateKind; id: string } | null>(null);
   const [editingAction, setEditingAction] = useState<NextAction | null>(null);
+  /** Issue #95: calendar actions edit through their own modal (title, start,
+   *  estimate, deadline, note) — the next-action modal owns different fields. */
+  const [editingCalendar, setEditingCalendar] = useState<CalendarCandidate | null>(null);
   const [skippedViewIds, setSkippedViewIds] = useState<string[]>([]);
   const skipInFlightRef = useRef(false);
   /**
@@ -807,7 +812,12 @@ export default function NowScreen() {
   );
 
   const handleEdit = useCallback(
-    (candidate: NextCandidate) => {
+    (candidate: CandidateAction) => {
+      if (candidate.kind === 'calendar') {
+        setEditingCalendar(candidate);
+        return;
+      }
+      if (candidate.kind !== 'next') return; // habits have no edit form
       setEditingAction(candidateToNextAction(candidate, now));
     },
     [now],
@@ -1146,11 +1156,13 @@ export default function NowScreen() {
                   <ActionMenuModal
                     visible={heroMenuEntry !== undefined}
                     actionTitle={heroMenuEntry?.action.title ?? ''}
-                    canEdit={heroMenuEntry?.action.kind === 'next'}
+                    canEdit={
+                      heroMenuEntry !== undefined && heroMenuEntry.action.kind !== 'habit'
+                    }
                     onClose={() => setHeroMenuTargetId(null)}
                     onEdit={() => {
                       if (heroMenuEntry !== undefined) {
-                        handleEdit(heroMenuEntry.action as NextCandidate);
+                        handleEdit(heroMenuEntry.action);
                       }
                     }}
                     onSnooze={() => {
@@ -1297,6 +1309,13 @@ export default function NowScreen() {
         visible={editingAction !== null}
         onClose={() => setEditingAction(null)}
         onSaved={() => setEditingAction(null)}
+      />
+
+      <CalendarEditModal
+        action={editingCalendar}
+        visible={editingCalendar !== null}
+        onClose={() => setEditingCalendar(null)}
+        onSaved={() => setEditingCalendar(null)}
       />
 
       <HabitWindowConfirmModal

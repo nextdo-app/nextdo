@@ -164,6 +164,22 @@ action kinds**. A
 `CalendarAction` is a hard schedule entry: the engine preempts it when it is near
 (see Next Action Engine). An action is never both `NextAction` and `CalendarAction`.
 
+- **Editing (issue #95, 2026-11-20):** the Now action menu's 「编辑行动」 opens
+  `CalendarEditModal` (`apps/mobile/components/calendar-edit-modal.tsx`); it edits
+  title, `startsAt`, `estMinutes`, `deadline` and `note` — the fields the issue
+  lists. `updateCalendarAction` is the edit-form update: inside the write
+  transaction it re-reads the CURRENT row and takes only those form-owned fields
+  from the incoming row. Status, value, category, context ids, snooze state,
+  skip streak and source ids come from the live row, so a form opened before
+  another device completed or trashed the action cannot resurrect it. A
+  trashed row raises `calendarAction.not-found`; a completed row keeps
+  `status = done`. Untouched date fields are omitted from the patch (dirty
+  tracking): a title-only edit keeps the stored ISO, seconds included. A
+  date-only `deadline` (the 23:59 sentinel) refills as a plain day, and a
+  day-only picker change writes the new day's sentinel.
+- The DB layer re-arms the auto reminder when `startsAt` changes — see
+  "Reminder" below for the exact rule and the snooze guard.
+
 ### SomedayMaybeItem
 `title`, `note?`. The weekly review currently re-asks only **keep** or **trash**
 (`apps/mobile/app/review/weekly.tsx`); promotion into a Project / NextAction is
@@ -336,6 +352,24 @@ enable carry-over or rewrite existing completed habits while editing history.
   | Habit window closing | `windowEnd − 30 min` (if before window end) | `normal` |
   | Deadline reminder (task 10-17, multi-select since 10-26 — the action form's 「提醒时间」) | = each moment the user picked; past moments create nothing | `normal` |
   | Repeated skips / "do nothing" nagging | **never** — forbidden by Proposal §6.4 | — |
+
+- **CalendarAction re-arm on edit (issue #95):** the 60-minute rule in the table
+  runs at creation AND when `updateCalendarAction` sees `startsAt` actually
+  change. The edit cancels the action's `scheduled` `important` reminders and
+  inserts one for the NEW start when it is still within 60 minutes; a new start
+  farther out only cancels. When the start changes and the title does NOT, a
+  future `snoozedUntil` owns the reminder: the edit leaves the `normal` snooze
+  row at the user's chosen moment (same id) and arms nothing. A non-`open`
+  action is never (re-)armed: completion already cancelled its reminders, and
+  a stale form must not resurrect them.
+- **Title change re-arms future reminders (issue #95):** the native delivery
+  layer keys pending notifications by reminder id and does not reschedule an
+  id that is already pending, so the old title in `content.body` would stick.
+  When an edit changes `title`, `updateCalendarAction` replaces every future
+  `scheduled` reminder of the action with a fresh row (new id, same `firesAt`
+  and intensity — the snooze moment included) in the same transaction. Past
+  rows are left untouched: a replacement past row would never be scheduled,
+  silently swallowing a notification that is about to fire.
 - **The deadline reminder (task 10-17, multi-select since task 10-26)** is the
   one creator driven by a FORM rather than a transaction rule: the action forms
   carry an optional 「提醒时间」 (`apps/mobile/hooks/use-action-reminder.ts` +
