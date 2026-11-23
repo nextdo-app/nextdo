@@ -293,7 +293,6 @@ import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-librar
 import { useCloudSync } from '@/hooks/use-cloud-sync';
 import { Linking, Platform } from 'react-native';
 import { UPDATE_PROXY_PREFIX, UPDATE_REPO } from '@/lib/app-update';
-import { stopDesktopUpdatePolling } from '@/hooks/use-app-update';
 import {
   __resetReminderDeliveryFeedbackForTests,
   reportReminderDeliveryFailure,
@@ -388,8 +387,6 @@ beforeEach(() => {
   (globalThis as { fetch: unknown }).fetch = mockUpdateFetch;
   openedUrls = [];
   downloadedUrls = [];
-  installedFilePaths = [];
-  openedFilePaths = [];
   mockDownloadProgress = {
     state: 'idle',
     downloaded_bytes: 0,
@@ -410,7 +407,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  stopDesktopUpdatePolling();
   Object.defineProperty(Platform, 'OS', { value: 'ios', configurable: true });
   delete (globalThis as { window?: unknown }).window;
 });
@@ -440,14 +436,10 @@ function atomFeedResponse(xml: string): { ok: true; text: () => Promise<string> 
 
 /** The fetch stub the update check drives (mutable per case). */
 let mockUpdateFetch: jest.Mock;
-/** Every URL handed to Linking.openURL by the update block. */
+/** Every URL handed to Linking.openURL / the Tauri open_url command. */
 let openedUrls: string[] = [];
 /** Every URL handed to Tauri download_update command. */
 let downloadedUrls: string[] = [];
-/** Every filePath handed to Tauri install_update_and_restart command. */
-let installedFilePaths: string[] = [];
-/** Every filePath handed to Tauri open_downloaded_file command. */
-let openedFilePaths: string[] = [];
 /** Mocked download progress returned by get_download_progress. */
 let mockDownloadProgress = {
   state: 'idle',
@@ -466,8 +458,6 @@ let mockDownloadProgress = {
  * rather than from a guess.
  */
 const MAC_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15';
-const LINUX_UA =
-  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
 
 function pretendDesktopShell(userAgent: string, arch: 'aarch64' | 'x86_64' | null = null): void {
   Object.defineProperty(Platform, 'OS', { value: 'web', configurable: true });
@@ -483,14 +473,6 @@ function pretendDesktopShell(userAgent: string, arch: 'aarch64' | 'x86_64' | nul
           downloadedUrls.push(args.url);
           return undefined;
         }
-        if (cmd === 'install_update_and_restart' && args?.filePath) {
-          installedFilePaths.push(args.filePath);
-          return undefined;
-        }
-        if (cmd === 'open_downloaded_file' && args?.filePath) {
-          openedFilePaths.push(args.filePath);
-          return undefined;
-        }
         if (cmd === 'get_download_progress') {
           return mockDownloadProgress;
         }
@@ -502,10 +484,6 @@ function pretendDesktopShell(userAgent: string, arch: 'aarch64' | 'x86_64' | nul
 
 function pretendDesktopMac(arch: 'aarch64' | 'x86_64' = 'aarch64'): void {
   pretendDesktopShell(MAC_UA, arch);
-}
-
-function pretendDesktopLinux(): void {
-  pretendDesktopShell(LINUX_UA);
 }
 
 /** Press 检查更新 and flush the request → compare → setState chain. */
@@ -573,50 +551,114 @@ describe('settings update-check block', () => {
     expect(mockUpdateFetch).not.toHaveBeenCalled();
   });
 
-  it('queries the version through the accelerator prefix, never straight from GitHub', async () => {
-    mockUpdateFetch.mockResolvedValue(redirectedTo('v0.1.3'));
-    renderRouter('app', { initialUrl: '/(tabs)/settings' });
-    await flush();
-
-    await pressCheckForUpdate();
-
-    expect(mockUpdateFetch).toHaveBeenCalledTimes(1);
-    const requested = mockUpdateFetch.mock.calls[0][0] as string;
-    expect(requested).toBe(`${PROXY}${GITHUB_RELEASES}.atom`);
-    // The GitHub API is rate-limited per IP and the accelerator's IP is
-    // shared — going through it would 403 for most users.
-    expect(requested).not.toContain('api.github.com');
-  });
-
-  it('same version → 已是最新版本 and no download buttons', async () => {
-    mockUpdateFetch.mockResolvedValue(redirectedTo('v0.1.3'));
-    renderRouter('app', { initialUrl: '/(tabs)/settings' });
-    await flush();
-
-    await pressCheckForUpdate();
-
-    expect(screen.getByText(/已是最新版本/)).toBeTruthy();
-    expect(screen.queryByText(/发现新版本/)).toBeNull();
-  });
-
-  it('newer version on a platform without an installer (iOS) → explains it and offers the proxied release page', async () => {
+  it('manual check opens the SAME update dialog and queries through the accelerator prefix', async () => {
     mockUpdateFetch.mockResolvedValue(redirectedTo('v0.1.4'));
     renderRouter('app', { initialUrl: '/(tabs)/settings' });
     await flush();
 
     await pressCheckForUpdate();
 
-    expect(screen.getByText('发现新版本 v0.1.4')).toBeTruthy();
-    expect(screen.getByText(/没能识别你的设备型号|暂无安装包/)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /^下载 / })).toBeNull();
-
-    fireEvent.press(screen.getByRole('link', { name: '查看全部安装包' }));
-    await flush();
-
-    expect(openedUrls).toEqual([`${PROXY}https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4`]);
+    // The version query goes through the accelerator prefix and the atom
+    // feed (never the rate-limited GitHub API).
+    expect(mockUpdateFetch).toHaveBeenCalledTimes(1);
+    const requested = mockUpdateFetch.mock.calls[0][0] as string;
+    expect(requested).toBe(`${PROXY}${GITHUB_RELEASES}.atom`);
+    expect(requested).not.toContain('api.github.com');
+    // It is literally the background notifier's dialog, not a second card.
+    expect(screen.getByTestId('auto-update-dialog-card')).toBeTruthy();
+    expect(screen.getByText('发现新版本')).toBeTruthy();
+    expect(screen.getByText('v0.1.4')).toBeTruthy();
   });
 
-  it('newer version on macOS desktop → ONLY the installer matching the detected chip, and pressing it triggers in-app download', async () => {
+  it('shows the checking state immediately, in the same dialog, before the request settles', async () => {
+    let resolveCheck: (value: unknown) => void = () => {};
+    mockUpdateFetch.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCheck = resolve;
+      }),
+    );
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+
+    fireEvent.press(screen.getByRole('button', { name: '检查更新' }));
+    await flush(2);
+
+    expect(screen.getByTestId('update-check-status-dialog')).toBeTruthy();
+    expect(screen.getByText('正在检查更新…')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '取消' })).toBeTruthy();
+
+    resolveCheck(redirectedTo('v0.1.4'));
+    await flush();
+
+    expect(screen.getByTestId('auto-update-dialog-card')).toBeTruthy();
+    expect(screen.getByText('发现新版本')).toBeTruthy();
+  });
+
+  it('same version → the dialog says 已是最新版本 and shows no download action', async () => {
+    mockUpdateFetch.mockResolvedValue(redirectedTo('v0.1.3'));
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+
+    await pressCheckForUpdate();
+
+    expect(screen.getByTestId('update-check-status-dialog')).toBeTruthy();
+    expect(screen.getByText(/已是最新版本（当前版本 0\.1\.3）/)).toBeTruthy();
+    expect(screen.queryByText(/发现新版本/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /^下载/ })).toBeNull();
+  });
+
+  it('an older feed than the installed build still reports the installed version as current', async () => {
+    mockUpdateFetch.mockResolvedValue(redirectedTo('v0.1.2'));
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+
+    await pressCheckForUpdate();
+
+    // The feed can lag behind the running build. The conclusion must name the
+    // installed version, not repeat an older release as if it were the latest.
+    expect(screen.getByText(/已是最新版本（当前版本 0\.1\.3）/)).toBeTruthy();
+    expect(screen.queryByText(/已是最新版本（[^）]*0\.1\.2/)).toBeNull();
+  });
+
+  it('a failure is shown in the dialog and 重试 runs a second check', async () => {
+    mockUpdateFetch.mockRejectedValue(new Error('offline'));
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+
+    await pressCheckForUpdate();
+
+    expect(screen.getByTestId('update-check-status-dialog')).toBeTruthy();
+    expect(screen.getByText('检查更新失败')).toBeTruthy();
+    expect(screen.getByText(/连不上更新服务器/)).toBeTruthy();
+
+    mockUpdateFetch.mockReset();
+    mockUpdateFetch.mockResolvedValue(redirectedTo('v0.1.3'));
+    fireEvent.press(screen.getByRole('button', { name: '重试' }));
+    await flush();
+
+    expect(screen.getByText(/已是最新版本/)).toBeTruthy();
+  });
+
+  it('newer version on a platform without an installer (iOS) → the dialog offers the proxied release page', async () => {
+    mockUpdateFetch.mockResolvedValue(redirectedTo('v0.1.4'));
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+
+    await pressCheckForUpdate();
+
+    expect(screen.getByText('发现新版本')).toBeTruthy();
+    expect(screen.getByText('v0.1.4')).toBeTruthy();
+    // No in-app installer on iOS — the primary action falls back to the page.
+    expect(screen.getByRole('button', { name: '前往下载' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^下载并安装/ })).toBeNull();
+
+    fireEvent.press(screen.getByRole('button', { name: '前往下载' }));
+    await flush();
+
+    expect(openedUrls).toEqual([`${PROXY}${GITHUB_RELEASES}/tag/v0.1.4`]);
+  });
+
+  it('macOS desktop auto-downloads the installer matching the detected chip', async () => {
     pretendDesktopMac('aarch64');
     mockUpdateFetch.mockResolvedValue(redirectedTo('v0.1.4'));
     renderRouter('app', { initialUrl: '/(tabs)/settings' });
@@ -624,82 +666,35 @@ describe('settings update-check block', () => {
 
     await pressCheckForUpdate();
 
-    // Exactly one button — never both architectures, the user must not choose.
-    expect(screen.getAllByRole('button', { name: /^下载并安装 / })).toHaveLength(1);
-    const installer = screen.getByRole('button', { name: '下载并安装 macOS 安装包（Apple 芯片）' });
-    expect(screen.queryByRole('button', { name: /Intel/ })).toBeNull();
-
-    fireEvent.press(installer);
-    await flush();
-
+    expect(screen.getByText('发现新版本')).toBeTruthy();
+    // 自动下载偏好默认开启：弹窗出现即在后台下载对应架构的安装包。
     expect(downloadedUrls).toEqual([
       `${PROXY}${GITHUB_DOWNLOAD}/v0.1.4/Nextdo_0.1.4_aarch64.dmg`,
     ]);
     // …and never the bare GitHub URL.
     expect(downloadedUrls[0]?.startsWith('https://github.com/')).toBe(false);
+    expect(screen.getByText(/正在下载/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Intel/ })).toBeNull();
   });
 
-  it('an Intel mac desktop gets the OTHER installer — the choice follows the host, not a fixed default', async () => {
-    pretendDesktopMac('x86_64');
-    mockUpdateFetch.mockResolvedValue(redirectedTo('v0.1.4'));
+  it('renders changelog release notes in the update dialog', async () => {
+    const atomXmlWithNotes = `
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <entry>
+          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.7"/>
+          <updated>2026-10-13T08:00:00Z</updated>
+          <content type="html">&lt;p&gt;Key changes:&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Auto update checking&lt;/li&gt;&lt;/ul&gt;</content>
+        </entry>
+      </feed>
+    `;
+    mockUpdateFetch.mockResolvedValue(atomFeedResponse(atomXmlWithNotes));
     renderRouter('app', { initialUrl: '/(tabs)/settings' });
     await flush();
 
     await pressCheckForUpdate();
 
-    const installer = screen.getByRole('button', { name: '下载并安装 macOS 安装包（Intel）' });
-    expect(screen.queryByRole('button', { name: /Apple 芯片/ })).toBeNull();
-
-    fireEvent.press(installer);
-    await flush();
-
-    expect(downloadedUrls).toEqual([`${PROXY}${GITHUB_DOWNLOAD}/v0.1.4/Nextdo_0.1.4_x64.dmg`]);
-  });
-
-  it('macOS whose architecture cannot be detected → NO installer button, just the release page', async () => {
-    // Safari: macOS user agent, but no Tauri bridge and no userAgentData.
-    Object.defineProperty(Platform, 'OS', { value: 'web', configurable: true });
-    (globalThis as { window?: unknown }).window = {
-      navigator: { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15' },
-    };
-    mockUpdateFetch.mockResolvedValue(redirectedTo('v0.1.4'));
-    renderRouter('app', { initialUrl: '/(tabs)/settings' });
-    await flush();
-
-    await pressCheckForUpdate();
-
-    expect(screen.getByText('发现新版本 v0.1.4')).toBeTruthy();
-    // Guessing an architecture would hand the user a .dmg that cannot install.
-    expect(screen.queryByRole('button', { name: /^下载 / })).toBeNull();
-    expect(screen.getByText(/没能识别你的设备型号/)).toBeTruthy();
-
-    fireEvent.press(screen.getByRole('link', { name: '查看全部安装包' }));
-    await flush();
-
-    expect(openedUrls).toEqual([`${PROXY}https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4`]);
-  });
-
-  it.each([
-    ['a network failure', async () => { throw new Error('offline'); }, /连不上更新服务器/],
-    ['a non-2xx proxy response', async () => ({ ok: false, status: 502 }), /更新服务器暂时不可用/],
-    ['a final URL with no tag', async () => ({ ok: true, url: `${PROXY}${GITHUB_RELEASES}/latest` }), /没能读到版本信息/],
-  ])('%s → an inline message, and the button stays usable for a retry', async (_label, respond, expected) => {
-    mockUpdateFetch.mockImplementation(respond);
-    renderRouter('app', { initialUrl: '/(tabs)/settings' });
-    await flush();
-
-    await pressCheckForUpdate();
-
-    expect(screen.getByText(expected)).toBeTruthy();
-    expect(screen.queryByText(/发现新版本/)).toBeNull();
-
-    // A retry re-issues the (proxied) request rather than dead-ending.
-    // In failure modes, fetchDualChannelReleases attempts atom then falls back to /latest,
-    // so the initial failed check makes 2 requests and the retry makes 1 (total 3).
-    mockUpdateFetch.mockResolvedValue(redirectedTo('v0.1.3'));
-    await pressCheckForUpdate();
-    expect(mockUpdateFetch).toHaveBeenCalledTimes(3);
-    expect(screen.getByText(/已是最新版本/)).toBeTruthy();
+    expect(screen.getByText('更新说明 (ChangeLog)')).toBeTruthy();
+    expect(screen.getByText(/Auto update checking/)).toBeTruthy();
   });
 
   it('a 0.1.10 release outranks 0.1.9 — version compare is numeric, not lexical', async () => {
@@ -709,7 +704,36 @@ describe('settings update-check block', () => {
 
     await pressCheckForUpdate();
 
-    expect(screen.getByText('发现新版本 v0.1.10')).toBeTruthy();
+    expect(screen.getByText('v0.1.10')).toBeTruthy();
+  });
+
+  it('beta preference selects the beta release when both channels are newer', async () => {
+    const atomXml = `
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <entry>
+          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.5-beta.1"/>
+          <updated>2026-10-12T08:00:00Z</updated>
+        </entry>
+        <entry>
+          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4"/>
+          <updated>2026-10-10T12:00:00Z</updated>
+        </entry>
+      </feed>
+    `;
+    mockUpdateFetch.mockResolvedValue(atomFeedResponse(atomXml));
+    renderRouter('app', { initialUrl: '/(tabs)/settings' });
+    await flush();
+
+    fireEvent.press(screen.getByRole('button', { name: '偏好测试版渠道' }));
+    await flush();
+
+    await pressCheckForUpdate();
+
+    // The dialog opens on the preferred channel and allows switching back.
+    expect(screen.getByText('v0.1.5-beta.1')).toBeTruthy();
+    fireEvent.press(screen.getByRole('button', { name: '切换到正式版' }));
+    await flush();
+    expect(screen.getByText('v0.1.4')).toBeTruthy();
   });
 
   it('allows toggling auto update check switch', async () => {
@@ -731,366 +755,6 @@ describe('settings update-check block', () => {
     await flush();
 
     expect(switchBtn.props.accessibilityState?.checked).toBe(true);
-  });
-
-  it('renders changelog release notes when available for selected version', async () => {
-    const atomXmlWithNotes = `
-      <feed xmlns="http://www.w3.org/2005/Atom">
-        <entry>
-          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.7"/>
-          <updated>2026-10-13T08:00:00Z</updated>
-          <content type="html">&lt;p&gt;Key changes:&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Auto update checking&lt;/li&gt;&lt;/ul&gt;</content>
-        </entry>
-      </feed>
-    `;
-    mockUpdateFetch.mockResolvedValue(atomFeedResponse(atomXmlWithNotes));
-    renderRouter('app', { initialUrl: '/(tabs)/settings' });
-    await flush();
-
-    await pressCheckForUpdate();
-
-    expect(screen.getByText('版本更新说明 (v0.1.7)')).toBeTruthy();
-    expect(screen.getByText(/Auto update checking/)).toBeTruthy();
-  });
-
-  it('allows switching update channel preference between stable and beta', async () => {
-    renderRouter('app', { initialUrl: '/(tabs)/settings' });
-    await flush();
-
-    expect(screen.getByText('更新渠道偏好')).toBeTruthy();
-    const betaButton = screen.getByRole('button', { name: '偏好测试版渠道' });
-    const stableButton = screen.getByRole('button', { name: '偏好正式版渠道' });
-
-    expect(betaButton).toBeTruthy();
-    expect(stableButton).toBeTruthy();
-
-    fireEvent.press(betaButton);
-    await flush();
-
-    expect(betaButton.props.accessibilityState?.selected).toBe(true);
-
-    fireEvent.press(stableButton);
-    await flush();
-
-    expect(stableButton.props.accessibilityState?.selected).toBe(true);
-  });
-
-  it('when both stable and beta updates are available, displays options and allows selecting between them', async () => {
-    const atomXml = `
-      <feed xmlns="http://www.w3.org/2005/Atom">
-        <entry>
-          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.5-beta.1"/>
-          <updated>2026-10-12T08:00:00Z</updated>
-        </entry>
-        <entry>
-          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4"/>
-          <updated>2026-10-10T12:00:00Z</updated>
-        </entry>
-      </feed>
-    `;
-    mockUpdateFetch.mockResolvedValue(atomFeedResponse(atomXml));
-    renderRouter('app', { initialUrl: '/(tabs)/settings' });
-    await flush();
-
-    await pressCheckForUpdate();
-
-    expect(screen.getByText('发现可用新版本，请选择要更新的目标：')).toBeTruthy();
-    const betaOption = screen.getByRole('button', { name: /选择更新至 测试版 v0\.1\.5-beta\.1/ });
-    const stableOption = screen.getByRole('button', { name: /选择更新至 正式版 v0\.1\.4/ });
-    expect(betaOption).toBeTruthy();
-    expect(stableOption).toBeTruthy();
-
-    // Default preference is stable, so v0.1.4 is selected initially
-    expect(stableOption.props.accessibilityState?.selected).toBe(true);
-    expect(betaOption.props.accessibilityState?.selected).toBe(false);
-
-    // Opening release page directs to the initially selected version's tag (v0.1.4)
-    fireEvent.press(screen.getByRole('link', { name: '查看全部安装包' }));
-    await flush();
-    expect(openedUrls).toEqual([`${PROXY}https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4`]);
-
-    // Switch to beta option
-    fireEvent.press(betaOption);
-    await flush();
-
-    expect(betaOption.props.accessibilityState?.selected).toBe(true);
-    expect(stableOption.props.accessibilityState?.selected).toBe(false);
-
-    // Opening release page directs to the newly selected version's tag (v0.1.5-beta.1)
-    fireEvent.press(screen.getByRole('link', { name: '查看全部安装包' }));
-    await flush();
-    expect(openedUrls).toEqual([
-      `${PROXY}https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4`,
-      `${PROXY}https://github.com/nextdo-app/nextdo/releases/tag/v0.1.5-beta.1`,
-    ]);
-  });
-
-  it('switching the selected target discards the installer downloaded for the previous version', async () => {
-    const atomXml = `
-      <feed xmlns="http://www.w3.org/2005/Atom">
-        <entry>
-          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.5-beta.1"/>
-          <updated>2026-10-12T08:00:00Z</updated>
-        </entry>
-        <entry>
-          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4"/>
-          <updated>2026-10-10T12:00:00Z</updated>
-        </entry>
-      </feed>
-    `;
-    mockDownloadProgress = {
-      state: 'done',
-      downloaded_bytes: 50 * 1024 * 1024,
-      total_bytes: 50 * 1024 * 1024,
-      file_path: '/tmp/Nextdo_0.1.4_aarch64.dmg',
-      error: '',
-    };
-    pretendDesktopMac('aarch64');
-    mockUpdateFetch.mockResolvedValue(atomFeedResponse(atomXml));
-    renderRouter('app', { initialUrl: '/(tabs)/settings' });
-    await flush();
-
-    await pressCheckForUpdate();
-
-    // 默认选中正式版 v0.1.4：下载它，进入「已下载完成，可立即安装」。
-    fireEvent.press(screen.getByRole('button', { name: '下载并安装 macOS 安装包（Apple 芯片）' }));
-    await flush();
-    expect(screen.getByText(/新版本已下载完成，可立即安装更新/)).toBeTruthy();
-
-    // 切换到测试版 v0.1.5-beta.1：为 v0.1.4 下载的安装包不再属于当前目标，
-    // 不能继续显示「立即安装」——否则用户会以为装的是测试版。
-    fireEvent.press(screen.getByRole('button', { name: /选择更新至 测试版 v0\.1\.5-beta\.1/ }));
-    await flush();
-
-    expect(screen.queryByText(/新版本已下载完成/)).toBeNull();
-    expect(screen.queryByRole('button', { name: '立即安装并重启' })).toBeNull();
-    expect(screen.queryByRole('button', { name: '手动打开安装包' })).toBeNull();
-
-    // 下载按钮重新出现，并指向测试版的安装包。
-    mockDownloadProgress = {
-      state: 'done',
-      downloaded_bytes: 50 * 1024 * 1024,
-      total_bytes: 50 * 1024 * 1024,
-      file_path: '/tmp/Nextdo_0.1.5-beta.1_aarch64.dmg',
-      error: '',
-    };
-    fireEvent.press(screen.getByRole('button', { name: '下载并安装 macOS 安装包（Apple 芯片）' }));
-    await flush();
-
-    expect(downloadedUrls).toEqual([
-      `${PROXY}${GITHUB_DOWNLOAD}/v0.1.4/Nextdo_0.1.4_aarch64.dmg`,
-      `${PROXY}${GITHUB_DOWNLOAD}/v0.1.5-beta.1/Nextdo_0.1.5-beta.1_aarch64.dmg`,
-    ]);
-
-    // 这次安装按钮对应的是测试版下载出来的文件，不是正式版那份。
-    fireEvent.press(screen.getByRole('button', { name: '立即安装并重启' }));
-    await flush();
-    expect(installedFilePaths).toEqual(['/tmp/Nextdo_0.1.5-beta.1_aarch64.dmg']);
-  });
-
-  it('does not switch the selected target while a download is still running', async () => {
-    const atomXml = `
-      <feed xmlns="http://www.w3.org/2005/Atom">
-        <entry>
-          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.5-beta.1"/>
-          <updated>2026-10-12T08:00:00Z</updated>
-        </entry>
-        <entry>
-          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4"/>
-          <updated>2026-10-10T12:00:00Z</updated>
-        </entry>
-      </feed>
-    `;
-    mockDownloadProgress = {
-      state: 'downloading',
-      downloaded_bytes: 1024,
-      total_bytes: 0,
-      file_path: '',
-      error: '',
-    };
-    pretendDesktopMac('aarch64');
-    mockUpdateFetch.mockResolvedValue(atomFeedResponse(atomXml));
-    renderRouter('app', { initialUrl: '/(tabs)/settings' });
-    await flush();
-
-    await pressCheckForUpdate();
-    fireEvent.press(screen.getByRole('button', { name: '下载并安装 macOS 安装包（Apple 芯片）' }));
-    await flush();
-
-    const betaOption = screen.getByRole('button', { name: /选择更新至 测试版 v0\.1\.5-beta\.1/ });
-    expect(betaOption.props.accessibilityState?.disabled).toBe(true);
-
-    fireEvent.press(betaOption);
-    await flush();
-
-    // 仍停在正式版：下载没结束前切换目标会让下载归属变得含糊。
-    expect(
-      screen.getByRole('button', { name: /选择更新至 正式版 v0\.1\.4/ }).props.accessibilityState
-        ?.selected,
-    ).toBe(true);
-  });
-
-  it('a check result that lands after a download started must not reset the chosen target', async () => {
-    const atomXml = `
-      <feed xmlns="http://www.w3.org/2005/Atom">
-        <entry>
-          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.5-beta.1"/>
-          <updated>2026-10-12T08:00:00Z</updated>
-        </entry>
-        <entry>
-          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4"/>
-          <updated>2026-10-10T12:00:00Z</updated>
-        </entry>
-      </feed>
-    `;
-    mockDownloadProgress = {
-      state: 'downloading',
-      downloaded_bytes: 1024,
-      total_bytes: 0,
-      file_path: '',
-      error: '',
-    };
-    pretendDesktopMac('aarch64');
-    mockUpdateFetch.mockResolvedValue(atomFeedResponse(atomXml));
-    renderRouter('app', { initialUrl: '/(tabs)/settings' });
-    await flush();
-
-    await pressCheckForUpdate();
-
-    // 手动选测试版，并让下一次检查请求挂起（模拟慢网络）。
-    fireEvent.press(screen.getByRole('button', { name: /选择更新至 测试版 v0\.1\.5-beta\.1/ }));
-    await flush();
-
-    let resolveCheck: (value: unknown) => void = () => {};
-    mockUpdateFetch.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveCheck = resolve;
-      }),
-    );
-    fireEvent.press(screen.getByRole('button', { name: '检查更新' }));
-    await flush();
-
-    // 检查还在飞行，用户开始下载测试版。
-    fireEvent.press(screen.getByRole('button', { name: '下载并安装 macOS 安装包（Apple 芯片）' }));
-    await flush();
-    expect(screen.getByText(/正在下载/)).toBeTruthy();
-
-    // 旧的检查结果此刻才落地：不能把选中版本重置回正式版，也不能吞掉进度。
-    resolveCheck(atomFeedResponse(atomXml));
-    await flush();
-
-    expect(
-      screen.getByRole('button', { name: /选择更新至 测试版 v0\.1\.5-beta\.1/ }).props
-        .accessibilityState?.selected,
-    ).toBe(true);
-    expect(screen.getByText(/正在下载/)).toBeTruthy();
-    expect(downloadedUrls).toEqual([
-      `${PROXY}${GITHUB_DOWNLOAD}/v0.1.5-beta.1/Nextdo_0.1.5-beta.1_aarch64.dmg`,
-    ]);
-  });
-
-  it('Linux desktop install resolves without quitting the app → target switching is unlocked', async () => {
-    const atomXml = `
-      <feed xmlns="http://www.w3.org/2005/Atom">
-        <entry>
-          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.5-beta.1"/>
-          <updated>2026-10-12T08:00:00Z</updated>
-        </entry>
-        <entry>
-          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.4"/>
-          <updated>2026-10-10T12:00:00Z</updated>
-        </entry>
-      </feed>
-    `;
-    mockDownloadProgress = {
-      state: 'done',
-      downloaded_bytes: 50 * 1024 * 1024,
-      total_bytes: 50 * 1024 * 1024,
-      file_path: '/tmp/Nextdo_0.1.4_amd64.deb',
-      error: '',
-    };
-    pretendDesktopLinux();
-    mockUpdateFetch.mockResolvedValue(atomFeedResponse(atomXml));
-    renderRouter('app', { initialUrl: '/(tabs)/settings' });
-    await flush();
-
-    await pressCheckForUpdate();
-
-    fireEvent.press(screen.getByRole('button', { name: '下载并安装 Linux · deb' }));
-    await flush();
-    expect(screen.getByText(/新版本已下载完成/)).toBeTruthy();
-
-    fireEvent.press(screen.getByRole('button', { name: '立即安装并重启' }));
-    await flush();
-    expect(installedFilePaths).toEqual(['/tmp/Nextdo_0.1.4_amd64.deb']);
-
-    // xdg-open 路径正常 resolve（应用没退出）→ installing 必须复位，能再切版本。
-    const betaOption = screen.getByRole('button', { name: /选择更新至 测试版 v0\.1\.5-beta\.1/ });
-    expect(betaOption.props.accessibilityState?.disabled).toBe(false);
-    fireEvent.press(betaOption);
-    await flush();
-    expect(betaOption.props.accessibilityState?.selected).toBe(true);
-  });
-
-  it('issue 29: up-to-date message uses beta channel and version when beta channel preferred', async () => {
-    const atomXml = `
-      <feed xmlns="http://www.w3.org/2005/Atom">
-        <entry>
-          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.3-beta.2"/>
-          <updated>2026-10-13T12:00:00Z</updated>
-        </entry>
-        <entry>
-          <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v0.1.2"/>
-          <updated>2026-10-10T12:00:00Z</updated>
-        </entry>
-      </feed>
-    `;
-    mockUpdateFetch.mockResolvedValue(atomFeedResponse(atomXml));
-    renderRouter('app', { initialUrl: '/(tabs)/settings' });
-    await flush();
-
-    // Switch preferred channel to beta
-    fireEvent.press(screen.getByRole('button', { name: '偏好测试版渠道' }));
-    await flush();
-
-    await pressCheckForUpdate();
-
-    expect(screen.getByText(/已是最新版本（测试版 0\.1\.3-beta\.2）/)).toBeTruthy();
-    expect(screen.getByText(/正式版：v0\.1\.2 · 测试版：v0\.1\.3-beta\.2/)).toBeTruthy();
-  });
-
-  it('macOS desktop update download completion renders install-and-restart and manual open buttons', async () => {
-    mockDownloadProgress = {
-      state: 'done',
-      downloaded_bytes: 50 * 1024 * 1024,
-      total_bytes: 50 * 1024 * 1024,
-      file_path: '/tmp/Nextdo_0.1.4_aarch64.dmg',
-      error: '',
-    };
-    pretendDesktopMac('aarch64');
-    mockUpdateFetch.mockResolvedValue(redirectedTo('v0.1.4'));
-    renderRouter('app', { initialUrl: '/(tabs)/settings' });
-    await flush();
-
-    await pressCheckForUpdate();
-
-    const installer = screen.getByRole('button', { name: '下载并安装 macOS 安装包（Apple 芯片）' });
-    fireEvent.press(installer);
-    await flush();
-
-    expect(screen.getByText(/新版本已下载完成，可立即安装更新/)).toBeTruthy();
-    const restartBtn = screen.getByRole('button', { name: '立即安装并重启' });
-    const manualBtn = screen.getByRole('button', { name: '手动打开安装包' });
-    expect(restartBtn).toBeTruthy();
-    expect(manualBtn).toBeTruthy();
-
-    fireEvent.press(restartBtn);
-    await flush();
-    expect(installedFilePaths).toEqual(['/tmp/Nextdo_0.1.4_aarch64.dmg']);
-
-    fireEvent.press(manualBtn);
-    await flush();
-    expect(openedFilePaths).toEqual(['/tmp/Nextdo_0.1.4_aarch64.dmg']);
   });
 
   it('desktop: the 自动下载更新 switch is shown and persists the toggle', async () => {

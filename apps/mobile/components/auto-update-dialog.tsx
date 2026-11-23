@@ -12,7 +12,17 @@
  * 5. 应用内安装：桌面壳（Tauri）下载后直接替换重启，Android 下载 APK 后直接调起
  *    系统安装器 —— 两条路都不再把用户丢去浏览器自己找安装包。
  */
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  createContext,
+  memo,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   Modal,
   Pressable,
@@ -49,10 +59,12 @@ import {
   startDesktopDownload,
   type AndroidAbi,
   type DesktopDownloadProgress,
+  type DualChannelReleases,
   type MacArch,
   type ReleaseDownload,
   type ReleaseInfo,
   type UpdateChannelPreference,
+  type UpdateFailureReason,
 } from '@/lib/app-update';
 
 /** 运行期间的后台复查间隔（启动检查之外）。 */
@@ -98,6 +110,15 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
   const [autoDownload, setAutoDownload] = useState(false);
   /** 自动下载只触发一次（同一个版本）。 */
   const autoDownloadStartedRef = useRef(false);
+  /**
+   * 桌面壳的原生下载是全局单槽（`download_update` 在 downloading 时直接
+   * 返回 Ok，`get_download_progress` 读的是同一个任务）。下载 / 安装未结束
+   * 时切换目标再发起下载，会读到旧任务的文件。任务期间锁定发起它的
+   * release，直到任务结束才允许切目标。
+   */
+  const taskReleaseRef = useRef<ReleaseInfo | null>(null);
+  /** 任务期间渠道偏好真的发生变化时置位，任务结束后再应用。 */
+  const pendingChannelPreferenceRef = useRef(false);
 
   useEffect(() => {
     if (!visible) return;
@@ -124,8 +145,16 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
   const betaIsNewer =
     beta !== null && (currentVersion === '' || compareVersions(beta.version, currentVersion) > 0);
 
-  // 初始化选中的渠道
+  // 下载 / 安装任务进行中：锁定发起时的 release，不允许目标切换。
+  const downloadTaskActive = downloadState.kind === 'downloading' || installing;
+
+  // 渠道偏好（或可用渠道）变化时应用新的默认渠道。任务期间原生下载槽仍在
+  // 为旧版本工作，先记下这次变化，等任务结束后再应用。
   useEffect(() => {
+    if (downloadTaskActive) {
+      pendingChannelPreferenceRef.current = true;
+      return;
+    }
     if (preferredChannel === 'beta' && betaIsNewer) {
       setSelectedChannel('beta');
     } else if (stableIsNewer) {
@@ -135,8 +164,25 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
     }
   }, [preferredChannel, stableIsNewer, betaIsNewer]);
 
-  const activeRelease: ReleaseInfo | null =
+  // 只应用任务期间真正发生过的偏好变化。任务完成本身不是重置用户选择的
+  // 理由：用户在弹窗里主动选了 beta 并下载完成时，必须继续显示 beta。
+  useEffect(() => {
+    if (downloadTaskActive || !pendingChannelPreferenceRef.current) return;
+    pendingChannelPreferenceRef.current = false;
+    if (preferredChannel === 'beta' && betaIsNewer) {
+      setSelectedChannel('beta');
+    } else if (stableIsNewer) {
+      setSelectedChannel('stable');
+    } else if (betaIsNewer) {
+      setSelectedChannel('beta');
+    }
+  }, [downloadTaskActive, preferredChannel, stableIsNewer, betaIsNewer]);
+
+  const inferredRelease: ReleaseInfo | null =
     selectedChannel === 'beta' ? beta ?? stable : stable ?? beta;
+  const activeRelease: ReleaseInfo | null = downloadTaskActive
+    ? taskReleaseRef.current ?? inferredRelease
+    : inferredRelease;
 
   const downloads: ReleaseDownload[] = useMemo(() => {
     if (!activeRelease) return [];
@@ -149,13 +195,6 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
   const activeIsNewer =
     activeRelease !== null &&
     (currentVersion === '' || compareVersions(activeRelease.version, currentVersion) > 0);
-
-  // 换版本（或切换渠道）时丢弃上一份下载状态，避免把旧安装包当成新版本安装。
-  useEffect(() => {
-    setDownloadState({ kind: 'idle' });
-    setInstallError(null);
-    autoDownloadStartedRef.current = false;
-  }, [activeRelease?.tag]);
 
   // 桌面端下载轮询
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -173,6 +212,25 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
   }, [stopPolling]);
 
   /**
+   * 当前弹窗展示的 release tag。下载是异步的，用户可能先关掉弹窗、去设置页
+   * 切换渠道，再手动检查出另一个目标版本；这时旧下载的回调不允许再改状态，
+   * 否则会把旧安装包的进度 / 完成态显示在新版本上。
+   */
+  const activeReleaseTagRef = useRef<string | null>(null);
+  useEffect(() => {
+    activeReleaseTagRef.current = activeRelease?.tag ?? null;
+  }, [activeRelease?.tag]);
+
+  // 换版本（或切换渠道）时丢弃上一份下载状态，避免把旧安装包当成新版本安装。
+  useEffect(() => {
+    stopPolling();
+    setDownloadState({ kind: 'idle' });
+    setInstallError(null);
+    autoDownloadStartedRef.current = false;
+    taskReleaseRef.current = null;
+  }, [activeRelease?.tag, stopPolling]);
+
+  /**
    * 开始下载安装包。`autoInstall` 为 true 时（用户点了「立即更新」）安卓下载
    * 完成后直接调起系统安装器；自动后台下载传 false，把安装决定留给用户。
    */
@@ -185,11 +243,18 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
         return;
       }
 
+      // 这次下载属于哪个版本。目标版本一变（例如关掉弹窗、切换渠道后手动
+      // 重查），旧下载的异步回调就必须作废。
+      const startedTag = activeRelease?.tag ?? null;
+      const stillCurrent = () => activeReleaseTagRef.current === startedTag;
+
       if (canInstallInApp) {
         // 安卓：下到应用缓存，下完的「完成态」再由用户一键交给系统安装器。
         setInstallError(null);
+        taskReleaseRef.current = activeRelease;
         setDownloadState({ kind: 'downloading', downloadedBytes: 0, totalBytes: 0 });
         void downloadAndroidUpdate(activeDownloadUrl, (progress) => {
+          if (!stillCurrent()) return;
           setDownloadState({
             kind: 'downloading',
             downloadedBytes: progress.downloadedBytes,
@@ -197,6 +262,7 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
           });
         })
           .then(async (fileUri) => {
+            if (!stillCurrent()) return;
             setDownloadState({ kind: 'done', filePath: fileUri });
             if (!autoInstall) return;
             // 安卓端下载完成自动调起系统安装器，无需等待用户二次点击
@@ -204,12 +270,13 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
               setInstalling(true);
               await installAndroidUpdate(fileUri);
             } catch (e) {
-              setInstallError(String(e));
+              if (stillCurrent()) setInstallError(String(e));
             } finally {
               setInstalling(false);
             }
           })
           .catch((err) => {
+            if (!stillCurrent()) return;
             setDownloadState({ kind: 'error', error: String(err) });
           });
         return;
@@ -220,8 +287,10 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
         return;
       }
 
+      taskReleaseRef.current = activeRelease;
       setDownloadState({ kind: 'downloading', downloadedBytes: 0, totalBytes: 0 });
       void startDesktopDownload(activeDownloadUrl).catch((err) => {
+        if (!stillCurrent()) return;
         setDownloadState({ kind: 'error', error: String(err) });
       });
 
@@ -229,6 +298,7 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
 
       const checkProgress = () => {
         void pollDesktopDownloadProgress().then((p: DesktopDownloadProgress) => {
+          if (!stillCurrent()) return;
           if (p.state === 'downloading') {
             setDownloadState({
               kind: 'downloading',
@@ -625,97 +695,304 @@ export const AutoUpdateDialog = memo(function AutoUpdateDialog({
   );
 });
 
+/* ------------------------------------------------------------------ *
+ * 手动检查 + 后台检查共用的更新弹窗
+ *
+ * 设置页的「检查更新」不再把结果渲染成一张内联卡片，而是调用这里的
+ * `checkForUpdates()`：同一个弹窗先显示「正在检查更新…」，再落到
+ * 发现新版本 / 已是最新版本 / 检查失败三种结果。后台定时检查也走同一个
+ * 状态机，所以用户从两个入口看到的界面与交互完全一致。
+ * ------------------------------------------------------------------ */
+
+/** 弹窗当前展示的内容。 */
+type UpdatePromptStatus = 'checking' | 'available' | 'up-to-date' | 'failed';
+
+/** 检查失败的三种原因 → 提示文案（文案归 UI，逻辑层只给 reason）。 */
+const UPDATE_FAILURE_COPY: Record<UpdateFailureReason, string> = {
+  network: '连不上更新服务器，请检查网络后重试。',
+  http: '更新服务器暂时不可用，请稍后重试。',
+  payload: '没能读到版本信息，请稍后重试。',
+};
+
+export interface UseUpdatePromptResult {
+  /** 手动检查更新：立即打开更新弹窗并展示检查结果。 */
+  checkForUpdates: () => void;
+  /** 手动检查请求进行中（设置页按钮据此禁用）。 */
+  checking: boolean;
+}
+
+const UpdatePromptContext = createContext<UseUpdatePromptResult | null>(null);
+
+/** 读取共享的更新弹窗入口；必须挂载在 `UpdatePromptProvider` 内。 */
+export function useUpdatePrompt(): UseUpdatePromptResult {
+  const value = useContext(UpdatePromptContext);
+  if (value === null) {
+    throw new Error('useUpdatePrompt must be used inside UpdatePromptProvider');
+  }
+  return value;
+}
+
+interface UpdateStatusDialogProps {
+  visible: boolean;
+  status: 'checking' | 'up-to-date' | 'failed';
+  currentVersion: string;
+  releases: DualChannelReleases;
+  failureReason: UpdateFailureReason | null;
+  onClose: () => void;
+  onRetry: () => void;
+}
+
 /**
- * 自动更新监听与提醒控制器（挂载在根视图）。
+ * 检查中 / 已是最新 / 检查失败时的弹窗。外壳与 `AutoUpdateDialog` 保持同一套
+ * 卡片样式，让手动检查和后台提醒看起来就是同一个提示。
  */
-export function AutoUpdateNotifier() {
-  const [modalVisible, setModalVisible] = useState(false);
-  const [releases, setReleases] = useState<{
-    stable: ReleaseInfo | null;
-    beta: ReleaseInfo | null;
-  }>({ stable: null, beta: null });
-  const [prefChannel, setPrefChannel] = useState<UpdateChannelPreference>('stable');
+function UpdateStatusDialog({
+  visible,
+  status,
+  currentVersion,
+  releases,
+  failureReason,
+  onClose,
+  onRetry,
+}: UpdateStatusDialogProps) {
+  if (!visible) return null;
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <View className="flex-1 items-center justify-center bg-black/60 p-4">
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="关闭更新弹窗"
+          className="absolute inset-0"
+          onPress={onClose}
+        />
+        <View
+          testID="update-check-status-dialog"
+          className="w-full max-w-lg overflow-hidden rounded-2xl border border-border/80 bg-surface p-5 shadow-2xl dark:border-border-dark dark:bg-surface-dark"
+        >
+          <View className="gap-1.5 border-b border-border/60 pb-3 dark:border-border-dark/60">
+            <Text className="font-display text-lg font-bold text-ink dark:text-ink-dark">
+              应用更新
+            </Text>
+            <Text className="font-sans text-xs text-muted dark:text-muted-dark">
+              当前版本：{currentVersion || '0.0.0'}
+            </Text>
+          </View>
+
+          {status === 'checking' ? (
+            <View className="gap-1.5 py-5">
+              <Text className="font-sans text-base font-bold text-ink dark:text-ink-dark">
+                正在检查更新…
+              </Text>
+              <Text className="font-sans text-xs text-muted dark:text-muted-dark">
+                正在获取最新版本信息，请稍候。
+              </Text>
+            </View>
+          ) : status === 'up-to-date' ? (
+            <View className="gap-1.5 py-5">
+              <Text className="font-sans text-base font-bold text-ink dark:text-ink-dark">
+                已是最新版本（当前版本 {currentVersion || '0.0.0'}）
+              </Text>
+              {releases.stable !== null || releases.beta !== null ? (
+                <Text className="font-sans text-xs text-muted dark:text-muted-dark">
+                  {releases.stable !== null ? `正式版：v${releases.stable.version}` : ''}
+                  {releases.stable !== null && releases.beta !== null ? ' · ' : ''}
+                  {releases.beta !== null ? `测试版：v${releases.beta.version}` : ''}
+                </Text>
+              ) : null}
+            </View>
+          ) : (
+            <View className="gap-1.5 py-5">
+              <Text className="font-sans text-base font-bold text-ink dark:text-ink-dark">
+                检查更新失败
+              </Text>
+              <Text
+                testID="update-check-error"
+                className="font-sans text-sm text-danger dark:text-danger-dark"
+              >
+                {failureReason === null ? UPDATE_FAILURE_COPY.network : UPDATE_FAILURE_COPY[failureReason]}
+              </Text>
+            </View>
+          )}
+
+          <View className="flex-row items-center justify-end gap-2.5 pt-2">
+            {status === 'failed' ? <Button label="重试" onPress={onRetry} /> : null}
+            <Button
+              label={status === 'checking' ? '取消' : '关闭'}
+              variant="secondary"
+              onPress={onClose}
+            />
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+/**
+ * 自动更新监听与提醒控制器，同时向设置页提供手动检查入口。
+ *
+ * 一个状态机、一个弹窗：后台检查只在「确实有更新且未被跳过/稍后提醒」时打开
+ * 弹窗；手动检查无论结果如何都打开同一个弹窗（包括已是最新和失败），因为
+ * 用户明确点了按钮。
+ */
+export function UpdatePromptProvider({ children }: { children?: ReactNode }) {
+  const [visible, setVisible] = useState(false);
+  const [status, setStatus] = useState<UpdatePromptStatus>('checking');
+  const [releases, setReleases] = useState<DualChannelReleases>({ stable: null, beta: null });
+  const [preferredChannel, setPreferredChannelState] = useState<UpdateChannelPreference>('stable');
+  const [failureReason, setFailureReason] = useState<UpdateFailureReason | null>(null);
+  const [checking, setChecking] = useState(false);
 
   const mountedRef = useRef(true);
-  /** 弹窗打开期间不重复触发检查（用户正在读更新说明）。 */
   const visibleRef = useRef(false);
+  const checkingRef = useRef(false);
+  /** 每次发起检查自增；较旧的异步结果据此丢弃。 */
+  const requestRef = useRef(0);
 
   useEffect(() => {
-    visibleRef.current = modalVisible;
-  }, [modalVisible]);
+    visibleRef.current = visible;
+  }, [visible]);
+
+  useEffect(() => {
+    checkingRef.current = checking;
+  }, [checking]);
+
+  const runCheck = useCallback(async (manual: boolean) => {
+    if (!manual) {
+      // 弹窗已经打开时（人工正在读更新说明 / 手动检查结果），后台检查不打扰。
+      if (visibleRef.current) return;
+      try {
+        if (!(await getAutoUpdateCheckPreference())) return;
+      } catch {
+        return;
+      }
+      if (visibleRef.current) return;
+    } else {
+      // 手动检查：先打开弹窗的「检查中」态，请求结束再落到结果。
+      if (checkingRef.current) return;
+      checkingRef.current = true;
+      setChecking(true);
+      setFailureReason(null);
+      setStatus('checking');
+      setVisible(true);
+    }
+
+    const requestId = ++requestRef.current;
+    try {
+      const pref = await getUpdateChannelPreference();
+      const result = await fetchDualChannelReleases();
+      if (!mountedRef.current || requestId !== requestRef.current) return;
+
+      if (!result.ok) {
+        if (manual) {
+          setFailureReason(result.reason);
+          setStatus('failed');
+        }
+        return;
+      }
+
+      const { stable, beta } = result.releases;
+      const currentVer = currentAppVersion();
+      const stableIsNewer =
+        stable !== null && (currentVer === '' || compareVersions(stable.version, currentVer) > 0);
+      const betaIsNewer =
+        beta !== null && (currentVer === '' || compareVersions(beta.version, currentVer) > 0);
+
+      setReleases(result.releases);
+      setPreferredChannelState(pref);
+
+      if (!stableIsNewer && !betaIsNewer) {
+        // 手动检查明确告诉用户「已是最新」；后台检查保持安静。
+        if (manual) setStatus('up-to-date');
+        return;
+      }
+
+      if (!manual) {
+        // 后台提醒遵守「稍后再说 / 跳过此版本」。手动检查是用户的明确动作，
+        // 不因静默记录而隐藏结果。
+        const targetRelease =
+          pref === 'beta'
+            ? betaIsNewer && beta !== null
+              ? beta
+              : stable
+            : stableIsNewer && stable !== null
+              ? stable
+              : beta;
+        if (targetRelease === null) return;
+        if (await isUpdateSuppressed(targetRelease.version)) return;
+        // 等待期间用户可能已经打开/关闭弹窗，或发起了新的检查。
+        if (!mountedRef.current || requestId !== requestRef.current || visibleRef.current) return;
+      }
+
+      setStatus('available');
+      setVisible(true);
+    } finally {
+      // 手动检查的按钮锁只在「这次请求仍是最新」时释放；关闭弹窗或新检查
+      // 已经重置过锁时不要覆盖它们。
+      if (manual && mountedRef.current && requestId === requestRef.current) {
+        checkingRef.current = false;
+        setChecking(false);
+      }
+    }
+  }, []);
+
+  const checkForUpdates = useCallback(() => {
+    void runCheck(true);
+  }, [runCheck]);
+
+  const close = useCallback(() => {
+    // 取消正在进行的检查：请求继续跑完也不会再改弹窗，按钮立刻恢复可用。
+    if (checkingRef.current) {
+      requestRef.current += 1;
+      checkingRef.current = false;
+      setChecking(false);
+    }
+    setVisible(false);
+  }, []);
 
   useEffect(() => {
     mountedRef.current = true;
-
-    const runCheck = async () => {
-      try {
-        const autoCheck = await getAutoUpdateCheckPreference();
-        if (!autoCheck || !mountedRef.current || visibleRef.current) return;
-
-        const pref = await getUpdateChannelPreference();
-        const result = await fetchDualChannelReleases();
-        if (!result.ok || !mountedRef.current || visibleRef.current) return;
-
-        const currentVer = currentAppVersion();
-        const { stable, beta } = result.releases;
-
-        const stableIsNewer =
-          stable !== null && (currentVer === '' || compareVersions(stable.version, currentVer) > 0);
-        const betaIsNewer =
-          beta !== null && (currentVer === '' || compareVersions(beta.version, currentVer) > 0);
-
-        if (!stableIsNewer && !betaIsNewer) return;
-
-        // 挑选目标版本
-        const targetRelease =
-          pref === 'beta'
-            ? betaIsNewer && beta
-              ? beta
-              : stable
-            : stableIsNewer && stable
-              ? stable
-              : beta;
-
-        if (!targetRelease) return;
-
-        // 用户「稍后再说」未到期，或已「跳过此版本」→ 保持安静。
-        if (await isUpdateSuppressed(targetRelease.version)) return;
-        if (!mountedRef.current || visibleRef.current) return;
-
-        setPrefChannel(pref);
-        setReleases({ stable, beta });
-        setModalVisible(true);
-      } catch {
-        // 静默检查，异常不阻断应用
-      }
-    };
-
     const initialTimer = setTimeout(() => {
-      void runCheck();
+      void runCheck(false);
     }, INITIAL_CHECK_DELAY_MS);
     // 长期运行的桌面应用不会错过发版：启动检查之后每 6 小时复查一次。
     // 每次复查都会重新读取设置，用户中途关掉「自动检查更新」会立即生效。
     const intervalTimer = setInterval(() => {
-      void runCheck();
+      void runCheck(false);
     }, AUTO_UPDATE_CHECK_INTERVAL_MS);
 
     return () => {
       mountedRef.current = false;
+      requestRef.current += 1;
       clearTimeout(initialTimer);
       clearInterval(intervalTimer);
     };
-  }, []);
+  }, [runCheck]);
 
-  const handleClose = useCallback(() => {
-    setModalVisible(false);
-  }, []);
+  const contextValue = useMemo<UseUpdatePromptResult>(
+    () => ({ checkForUpdates, checking }),
+    [checkForUpdates, checking],
+  );
 
   return (
-    <AutoUpdateDialog
-      visible={modalVisible}
-      onClose={handleClose}
-      releases={releases}
-      preferredChannel={prefChannel}
-    />
+    <UpdatePromptContext.Provider value={contextValue}>
+      {children}
+      <AutoUpdateDialog
+        visible={visible && status === 'available'}
+        onClose={close}
+        releases={releases}
+        preferredChannel={preferredChannel}
+      />
+      <UpdateStatusDialog
+        visible={visible && status !== 'available'}
+        status={status === 'available' ? 'checking' : status}
+        currentVersion={currentAppVersion()}
+        releases={releases}
+        failureReason={failureReason}
+        onClose={close}
+        onRetry={checkForUpdates}
+      />
+    </UpdatePromptContext.Provider>
   );
 }

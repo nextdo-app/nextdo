@@ -45,7 +45,7 @@ import { ReminderActionNotice } from '@/components/reminder-action-notice';
 import { useCalendarSync } from '@/hooks/use-calendar-sync';
 import { useSyncedSettings } from '@/hooks/use-synced-settings';
 import { IosInstallPrompt } from '@/components/ios-install-prompt';
-import { AutoUpdateNotifier } from '@/components/auto-update-dialog';
+import { UpdatePromptProvider } from '@/components/auto-update-dialog';
 import { SyncedSettingsBanner } from '@/components/synced-settings-banner';
 import { maybeRequestNotificationPermission } from '@/lib/reminders/permission';
 import { colors } from '@nextdo/ui';
@@ -315,16 +315,19 @@ function MainRootLayout() {
       />
       <PowerSyncProvider>
         <FocusProvider>
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: {
-                backgroundColor: isDark ? colors.canvasDark : colors.canvas,
-              },
-            }}
-          />
-          <IosInstallPrompt />
-          <AutoUpdateNotifier />
+          {/* 更新弹窗 provider 包住整个 Stack：后台检查与设置页的手动
+              「检查更新」共用同一个弹窗与交互。 */}
+          <UpdatePromptProvider>
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: {
+                  backgroundColor: isDark ? colors.canvasDark : colors.canvas,
+                },
+              }}
+            />
+            <IosInstallPrompt />
+          </UpdatePromptProvider>
         </FocusProvider>
       </PowerSyncProvider>
       <SyncedSettingsBanner />

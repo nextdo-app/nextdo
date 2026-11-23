@@ -17,6 +17,14 @@
  *   evening times are not hidden off-screen);
  * - the chip list is usage-ranked (`useQuickTimePresets`) and always keeps
  *   morning / afternoon / evening defaults for a fresh user.
+ *
+ * Issue #105 follow-up (desktop layout):
+ * - on wide windows (>= 720 px) the dialog uses the available space
+ *   (`max-w-4xl` in `datetime` mode) and puts the calendar and the time
+ *   wheels SIDE BY SIDE, so both the date and the selected time are visible
+ *   without scrolling;
+ * - compact screens keep one column, with the wheels first so the time can
+ *   never be pushed below the fold by the date controls.
  */
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -134,6 +142,10 @@ export function DateTimePicker({
   const { isDark } = useAppTheme();
   const { width: screenWidth } = useWindowDimensions();
   const isCompact = screenWidth < 380;
+  // Desktop / tablet windows are wide enough to show the calendar and the
+  // time wheels AT THE SAME TIME. The dialog must use that space instead of
+  // staying phone-sized and forcing a scroll inside a large window.
+  const isWide = screenWidth >= 720;
   const { presets: quickTimePresets, record: recordTimeUse } = useQuickTimePresets();
 
   const dateMatch = mode === 'date' ? DATE_ONLY.exec(value) : null;
@@ -200,15 +212,22 @@ export function DateTimePicker({
   const minuteRef = useRef(minute);
   minuteRef.current = minute;
 
-  // Sync hour/minute scroll position
+  // Sync hour/minute scroll position.
+  //
+  // `isWide` is part of the dependency list on purpose: crossing the 720px
+  // threshold swaps the two-column and single-column branches, which remounts
+  // the wheel ScrollViews. Without a re-sync here the new nodes start at
+  // scrollTop 0 while `hour` / `minute` still hold the selected time, so the
+  // visible wheel and the confirmed value disagree. Read through the refs so
+  // the timer always uses the latest selection.
   useEffect(() => {
     if (mode === 'date') return;
     const timer = setTimeout(() => {
-      hourScrollRef.current?.scrollTo({ y: hour * ITEM_HEIGHT, animated: false });
-      minuteScrollRef.current?.scrollTo({ y: minute * ITEM_HEIGHT, animated: false });
+      hourScrollRef.current?.scrollTo({ y: hourRef.current * ITEM_HEIGHT, animated: false });
+      minuteScrollRef.current?.scrollTo({ y: minuteRef.current * ITEM_HEIGHT, animated: false });
     }, 50);
     return () => clearTimeout(timer);
-  }, [mode]);
+  }, [mode, isWide]);
 
   const quickPresets = getQuickDatePresets(now);
   const selectedDateKey = `${selectedYear}-${pad(selectedMonth)}-${pad(selectedDay)}`;
@@ -355,6 +374,771 @@ export function DateTimePicker({
   const display12Hour = hour % 12 || 12;
   const isPM = hour >= 12;
 
+  // The four body blocks are defined once and re-ordered by the responsive
+  // layout below: wide screens put the calendar and the time wheels side by
+  // side; compact screens stack them with the time wheels first.
+  const quickDatePresetsBlock = (
+    <>
+                {/* Quick Date Presets (in date and datetime modes) */}
+                {mode !== 'time' ? (
+                  <View className="mb-3">
+                    <View className="flex-row gap-1.5">
+                      {quickPresets.map((preset) => {
+                        const isSelected = selectedDateKey === preset.key;
+                        return (
+                          <Pressable
+                            key={preset.id}
+                            accessibilityRole="button"
+                            accessibilityLabel={`快捷 ${preset.label}`}
+                            accessibilityState={{ selected: isSelected }}
+                            onPress={() => applyDate(preset.date)}
+                            className={cn(
+                              'flex-1 flex-col items-center justify-center rounded-2xl py-2 px-1 border transition-all',
+                              isSelected
+                                ? 'border-accent bg-accent/15 shadow-sm dark:border-accent-dark dark:bg-accent-dark/20'
+                                : 'border-border/60 bg-surface-container/40 active:bg-surface-container dark:border-border-dark/60 dark:bg-surface-container-dark/40',
+                            )}
+                          >
+                            <Ionicons
+                              name={preset.iconName}
+                              size={15}
+                              color={
+                                isSelected
+                                  ? isDark
+                                    ? colors.accentDark
+                                    : colors.accent
+                                  : isDark
+                                    ? colors.mutedDark
+                                    : colors.muted
+                              }
+                            />
+                            <Text
+                              className={cn(
+                                'font-sans text-xs mt-1',
+                                isSelected
+                                  ? 'font-bold text-accent dark:text-accent-dark'
+                                  : 'font-semibold text-ink dark:text-ink-dark',
+                              )}
+                            >
+                              {preset.label}
+                            </Text>
+                            <Text
+                              className={cn(
+                                'font-sans text-[10px] mt-0.5',
+                                isSelected
+                                  ? 'font-medium text-accent/90 dark:text-accent-dark/90'
+                                  : 'text-muted dark:text-muted-dark',
+                              )}
+                            >
+                              {preset.sublabel}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </View>
+                ) : null}
+    </>
+  );
+  const statusBannerBlock = (
+    <>
+                {/* Current Selection Status Banner */}
+                <View className="mb-3 flex-row items-center justify-between rounded-2xl border border-border/60 bg-surface-container/50 px-3.5 py-2.5 dark:border-border-dark/60 dark:bg-surface-container-dark/50">
+                  {mode === 'date' ? (
+                    <View className="w-full flex-row items-baseline justify-between">
+                      <View className="flex-row items-baseline gap-2">
+                        <Text className="font-sans text-lg font-extrabold tracking-tight text-ink dark:text-ink-dark">
+                          {selectedYear}年{pad(selectedMonth)}月{pad(selectedDay)}日
+                        </Text>
+                        {selectedDateKey === todayKey ? (
+                          <View className="rounded-full bg-accent/15 px-2 py-0.5 dark:bg-accent-dark/20">
+                            <Text className="font-sans text-xs font-bold text-accent dark:text-accent-dark">
+                              今天
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      <Text className="font-sans text-xs font-medium text-muted dark:text-muted-dark">
+                        周{['日', '一', '二', '三', '四', '五', '六'][new Date(selectedYear, selectedMonth - 1, selectedDay).getDay()]}
+                      </Text>
+                    </View>
+                  ) : mode === 'time' ? (
+                    <View className="w-full flex-row items-center justify-between">
+                      {/* Left: Big Digital Clock + Contextual AM/PM selector (in 12h) */}
+                      <View className="flex-col">
+                        <View className="flex-row items-center gap-2">
+                          <Text
+                            accessibilityLabel="当前选中时间"
+                            className="font-sans text-3xl font-black tracking-tight text-ink dark:text-ink-dark"
+                          >
+                            {is12Hour
+                              ? `${pad(display12Hour)}:${pad(minute)}`
+                              : `${pad(hour)}:${pad(minute)}`}
+                          </Text>
+
+                          {is12Hour ? (
+                            <View className="flex-row items-center rounded-xl border border-border/70 bg-surface-container/90 p-0.5 dark:border-border-dark/70 dark:bg-surface-container-dark/90">
+                              <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel="切换到上午"
+                                accessibilityState={{ selected: !isPM }}
+                                onPress={() => toggleAmPm('AM')}
+                                className={cn(
+                                  'rounded-lg px-2 py-0.5 transition-all',
+                                  !isPM
+                                    ? 'bg-accent shadow-sm dark:bg-accent-dark'
+                                    : 'bg-transparent',
+                                )}
+                              >
+                                <Text
+                                  className={cn(
+                                    'font-sans text-xs font-bold',
+                                    !isPM
+                                      ? 'text-on-accent'
+                                      : 'text-muted dark:text-muted-dark',
+                                  )}
+                                >
+                                  上午
+                                </Text>
+                              </Pressable>
+                              <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel="切换到下午"
+                                accessibilityState={{ selected: isPM }}
+                                onPress={() => toggleAmPm('PM')}
+                                className={cn(
+                                  'rounded-lg px-2 py-0.5 transition-all',
+                                  isPM
+                                    ? 'bg-accent shadow-sm dark:bg-accent-dark'
+                                    : 'bg-transparent',
+                                )}
+                              >
+                                <Text
+                                  className={cn(
+                                    'font-sans text-xs font-bold',
+                                    isPM
+                                      ? 'text-on-accent'
+                                      : 'text-muted dark:text-muted-dark',
+                                  )}
+                                >
+                                  下午
+                                </Text>
+                              </Pressable>
+                            </View>
+                          ) : (
+                            <View className="rounded-full bg-accent/15 px-2 py-0.5 dark:bg-accent-dark/20">
+                              <Text className="font-sans text-xs font-bold text-accent dark:text-accent-dark">
+                                {hour < 6
+                                  ? '凌晨'
+                                  : hour < 12
+                                    ? '上午'
+                                    : hour < 18
+                                      ? '下午'
+                                      : '晚间'}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text className="mt-0.5 font-sans text-[11px] font-medium text-muted dark:text-muted-dark">
+                          {is12Hour ? '12小时制' : '24小时制'}
+                        </Text>
+                      </View>
+
+                      {/* Right: 24h / 12h Switcher */}
+                      <View className="flex-row items-center rounded-xl border border-border/70 bg-surface-container/90 p-0.5 dark:border-border-dark/70 dark:bg-surface-container-dark/90">
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="24小时制"
+                          accessibilityState={{ selected: !is12Hour }}
+                          onPress={() => setIs12Hour(false)}
+                          className={cn(
+                            'rounded-lg px-2.5 py-1 transition-all',
+                            !is12Hour
+                              ? 'bg-accent shadow-sm dark:bg-accent-dark'
+                              : 'bg-transparent',
+                          )}
+                        >
+                          <Text
+                            className={cn(
+                              'font-sans text-[11px] font-bold',
+                              !is12Hour
+                                ? 'text-on-accent'
+                                : 'text-muted dark:text-muted-dark',
+                            )}
+                          >
+                            24h
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="12小时制"
+                          accessibilityState={{ selected: is12Hour }}
+                          onPress={() => setIs12Hour(true)}
+                          className={cn(
+                            'rounded-lg px-2.5 py-1 transition-all',
+                            is12Hour
+                              ? 'bg-accent shadow-sm dark:bg-accent-dark'
+                              : 'bg-transparent',
+                          )}
+                        >
+                          <Text
+                            className={cn(
+                              'font-sans text-[11px] font-bold',
+                              is12Hour
+                                ? 'text-on-accent'
+                                : 'text-muted dark:text-muted-dark',
+                            )}
+                          >
+                            12h
+                          </Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  ) : (
+                    <View className="w-full flex-row items-center justify-between">
+                      <View className="flex-row items-baseline gap-1.5">
+                        <Text className="font-sans text-base font-bold text-ink dark:text-ink-dark">
+                          {pad(selectedMonth)}月{pad(selectedDay)}日
+                        </Text>
+                        {selectedDateKey === todayKey ? (
+                          <Text className="font-sans text-xs font-bold text-accent dark:text-accent-dark">
+                            今天
+                          </Text>
+                        ) : null}
+                      </View>
+                      <View className="flex-row items-baseline gap-1">
+                        <Ionicons name="time-outline" size={13} color={isDark ? colors.accentDark : colors.accent} />
+                        <Text className="font-sans text-xl font-black text-accent dark:text-accent-dark">
+                          {is12Hour
+                            ? `${pad(display12Hour)}:${pad(minute)} ${isPM ? 'PM' : 'AM'}`
+                            : `${pad(hour)}:${pad(minute)}`}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+                </View>
+    </>
+  );
+  const timeSectionBlock = (
+    <>
+                {/* Time Configuration Section (in time & datetime modes) */}
+                {mode !== 'date' ? (
+                  <View className="gap-2.5">
+                    {/* Datetime mode specific format switch header */}
+                    {mode === 'datetime' ? (
+                      <View className="flex-row items-center justify-between px-1">
+                        <Text className="font-sans text-xs font-bold text-muted dark:text-muted-dark">
+                          选择时间 ({is12Hour ? '12小时制' : '24小时制'})
+                        </Text>
+                        <View className="flex-row items-center gap-1.5">
+                          {is12Hour ? (
+                            <View className="flex-row items-center rounded-lg bg-surface-container/90 p-0.5 dark:bg-surface-container-dark/90">
+                              <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel="切换到上午"
+                                accessibilityState={{ selected: !isPM }}
+                                onPress={() => toggleAmPm('AM')}
+                                className={cn(
+                                  'rounded-md px-1.5 py-0.5',
+                                  !isPM ? 'bg-accent dark:bg-accent-dark' : 'bg-transparent',
+                                )}
+                              >
+                                <Text
+                                  className={cn(
+                                    'font-sans text-[10px] font-bold',
+                                    !isPM ? 'text-on-accent' : 'text-muted dark:text-muted-dark',
+                                  )}
+                                >
+                                  上午
+                                </Text>
+                              </Pressable>
+                              <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel="切换到下午"
+                                accessibilityState={{ selected: isPM }}
+                                onPress={() => toggleAmPm('PM')}
+                                className={cn(
+                                  'rounded-md px-1.5 py-0.5',
+                                  isPM ? 'bg-accent dark:bg-accent-dark' : 'bg-transparent',
+                                )}
+                              >
+                                <Text
+                                  className={cn(
+                                    'font-sans text-[10px] font-bold',
+                                    isPM ? 'text-on-accent' : 'text-muted dark:text-muted-dark',
+                                  )}
+                                >
+                                  下午
+                                </Text>
+                              </Pressable>
+                            </View>
+                          ) : null}
+
+                          <View className="flex-row items-center rounded-lg bg-surface-container/90 p-0.5 dark:bg-surface-container-dark/90">
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel="24小时制"
+                              accessibilityState={{ selected: !is12Hour }}
+                              onPress={() => setIs12Hour(false)}
+                              className={cn(
+                                'rounded-md px-2 py-0.5',
+                                !is12Hour ? 'bg-accent dark:bg-accent-dark' : 'bg-transparent',
+                              )}
+                            >
+                              <Text
+                                className={cn(
+                                  'font-sans text-[10px] font-bold',
+                                  !is12Hour ? 'text-on-accent' : 'text-muted dark:text-muted-dark',
+                                )}
+                              >
+                                24h
+                              </Text>
+                            </Pressable>
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel="12小时制"
+                              accessibilityState={{ selected: is12Hour }}
+                              onPress={() => setIs12Hour(true)}
+                              className={cn(
+                                'rounded-md px-2 py-0.5',
+                                is12Hour ? 'bg-accent dark:bg-accent-dark' : 'bg-transparent',
+                              )}
+                            >
+                              <Text
+                                className={cn(
+                                  'font-sans text-[10px] font-bold',
+                                  is12Hour ? 'text-on-accent' : 'text-muted dark:text-muted-dark',
+                                )}
+                              >
+                                12h
+                              </Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                      </View>
+                    ) : null}
+
+                    {/* Column Headers for Wheels */}
+                    <View className="flex-row items-center px-4 py-1">
+                      <View className="flex-1 items-center">
+                        <Text className="font-sans text-xs font-bold tracking-widest text-muted/75 dark:text-muted-dark/75">
+                          时
+                        </Text>
+                      </View>
+                      <View className="w-8" />
+                      <View className="flex-1 items-center">
+                        <Text className="font-sans text-xs font-bold tracking-widest text-muted/75 dark:text-muted-dark/75">
+                          分
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Tactile Time Wheel Picker with Selection Lens & Fade Masks */}
+                    <View
+                      style={{
+                        height: WHEEL_HEIGHT,
+                        ...(Platform.OS === 'web'
+                          ? {
+                              WebkitMaskImage:
+                                'linear-gradient(to bottom, transparent 0%, black 24%, black 76%, transparent 100%)',
+                              maskImage:
+                                'linear-gradient(to bottom, transparent 0%, black 24%, black 76%, transparent 100%)',
+                            }
+                          : {}),
+                      }}
+                      className="relative overflow-hidden rounded-2xl border border-border/80 bg-surface-container/35 dark:border-border-dark/80 dark:bg-surface-container-dark/35"
+                    >
+                      {/* Selection Lens (highlight centered row) */}
+                      <View
+                        pointerEvents="none"
+                        style={{ top: WHEEL_PADDING, height: ITEM_HEIGHT }}
+                        className="absolute left-2.5 right-2.5 rounded-xl border border-accent/35 bg-accent/12 shadow-sm dark:border-accent-dark/40 dark:bg-accent-dark/20"
+                      />
+
+                      {/* Fallback gradient overlay for non-web platforms */}
+                      {Platform.OS !== 'web' ? (
+                        <>
+                          <View
+                            pointerEvents="none"
+                            style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 36, zIndex: 10 }}
+                            className="bg-surface/60 dark:bg-surface-dark/60"
+                          />
+                          <View
+                            pointerEvents="none"
+                            style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 36, zIndex: 10 }}
+                            className="bg-surface/60 dark:bg-surface-dark/60"
+                          />
+                        </>
+                      ) : null}
+
+                      <View style={{ height: WHEEL_HEIGHT }} className="flex-row items-stretch">
+                        {/* Hour Scroll Column */}
+                        <ScrollView
+                          ref={hourScrollRef}
+                          testID="hour-wheel"
+                          className="h-full flex-1"
+                          style={{ height: WHEEL_HEIGHT }}
+                          showsVerticalScrollIndicator={false}
+                          nestedScrollEnabled
+                          snapToInterval={ITEM_HEIGHT}
+                          decelerationRate="fast"
+                          contentContainerStyle={{ paddingTop: WHEEL_PADDING, paddingBottom: WHEEL_PADDING }}
+                          onScroll={(e) => {
+                            const h = Math.min(
+                              23,
+                              Math.max(0, Math.round(e.nativeEvent.contentOffset.y / ITEM_HEIGHT)),
+                            );
+                            if (h !== hourRef.current) setTimeTouched(true);
+                            setHour(h);
+                          }}
+                        >
+                          {HOURS.map((h) => {
+                            const active = hour === h;
+                            const labelNumber = is12Hour ? h % 12 || 12 : h;
+                            return (
+                              <Pressable
+                                key={h}
+                                accessibilityRole="button"
+                                accessibilityLabel={`小时 ${pad(h)}`}
+                                accessibilityState={{ selected: active }}
+                                onPress={() => selectHour(h)}
+                                style={{ height: ITEM_HEIGHT }}
+                                className="items-center justify-center"
+                              >
+                                <Text
+                                  className={cn(
+                                    'font-sans transition-all',
+                                    active
+                                      ? 'text-2xl font-black text-accent dark:text-accent-dark scale-105'
+                                      : 'text-sm font-semibold text-ink/35 dark:text-ink-dark/35',
+                                  )}
+                                >
+                                  {pad(labelNumber)}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
+                        </ScrollView>
+
+                        {/* Centered Colon Separator */}
+                        <View className="w-8 items-center justify-center">
+                          <Text className="font-sans text-2xl font-black text-accent/50 dark:text-accent-dark/50">
+                            :
+                          </Text>
+                        </View>
+
+                        {/* Minute Scroll Column */}
+                        <ScrollView
+                          ref={minuteScrollRef}
+                          testID="minute-wheel"
+                          className="h-full flex-1"
+                          style={{ height: WHEEL_HEIGHT }}
+                          showsVerticalScrollIndicator={false}
+                          nestedScrollEnabled
+                          snapToInterval={ITEM_HEIGHT}
+                          decelerationRate="fast"
+                          contentContainerStyle={{ paddingTop: WHEEL_PADDING, paddingBottom: WHEEL_PADDING }}
+                          onScroll={(e) => {
+                            const m = Math.min(
+                              59,
+                              Math.max(0, Math.round(e.nativeEvent.contentOffset.y / ITEM_HEIGHT)),
+                            );
+                            if (m !== minuteRef.current) setTimeTouched(true);
+                            setMinute(m);
+                          }}
+                        >
+                          {MINUTES.map((m) => {
+                            const active = minute === m;
+                            return (
+                              <Pressable
+                                key={m}
+                                accessibilityRole="button"
+                                accessibilityLabel={`分钟 ${pad(m)}`}
+                                accessibilityState={{ selected: active }}
+                                onPress={() => selectMinute(m)}
+                                style={{ height: ITEM_HEIGHT }}
+                                className="items-center justify-center"
+                              >
+                                <Text
+                                  className={cn(
+                                    'font-sans transition-all',
+                                    active
+                                      ? 'text-2xl font-black text-accent dark:text-accent-dark scale-105'
+                                      : 'text-sm font-semibold text-ink/35 dark:text-ink-dark/35',
+                                  )}
+                                >
+                                  {pad(m)}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
+                        </ScrollView>
+                      </View>
+                    </View>
+
+                    {/* Minute Presets + Fine-tune Steppers Toolbar */}
+                    <View className="flex-row items-center justify-between rounded-2xl border border-border/70 bg-surface-container/40 p-1 dark:border-border-dark/70 dark:bg-surface-container-dark/40">
+                      {/* Left: Quick Minute Jumps (:00, :15, :30, :45) */}
+                      <View className="flex-row items-center gap-1">
+                        {MINUTE_PRESETS.map((m) => {
+                          const isMinActive = minute === m;
+                          return (
+                            <Pressable
+                              key={m}
+                              accessibilityRole="button"
+                              accessibilityLabel={`快捷 ${pad(m)}分`}
+                              onPress={() => selectMinute(m)}
+                              className={cn(
+                                'rounded-lg px-2 py-1 transition-all',
+                                isMinActive
+                                  ? 'bg-accent shadow-sm dark:bg-accent-dark'
+                                  : 'bg-surface/90 active:bg-surface-container dark:bg-surface-dark/90',
+                              )}
+                            >
+                              <Text
+                                className={cn(
+                                  'font-sans text-[11px]',
+                                  isMinActive
+                                    ? 'font-bold text-on-accent dark:text-on-accent-dark'
+                                    : 'font-semibold text-ink dark:text-ink-dark',
+                                )}
+                              >
+                                :{pad(m)}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+
+                      {/* Vertical Divider */}
+                      <View className="mx-0.5 h-4 w-px bg-border/80 dark:bg-border-dark/80" />
+
+                      {/* Right: Fine-tune Steppers (-5m, +5m, -1m, +1m) */}
+                      <View className="flex-row items-center gap-1">
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="微调 减5分钟"
+                          onPress={() => adjustMinute(-5)}
+                          className="rounded-lg bg-surface/90 px-1.5 py-1 active:bg-surface-container dark:bg-surface-dark/90"
+                        >
+                          <Text className="font-sans text-[11px] font-bold text-ink dark:text-ink-dark">
+                            -5m
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="微调 加5分钟"
+                          onPress={() => adjustMinute(5)}
+                          className="rounded-lg bg-surface/90 px-1.5 py-1 active:bg-surface-container dark:bg-surface-dark/90"
+                        >
+                          <Text className="font-sans text-[11px] font-bold text-ink dark:text-ink-dark">
+                            +5m
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="微调 减1分钟"
+                          onPress={() => adjustMinute(-1)}
+                          className="rounded-lg bg-surface/90 px-1.5 py-1 active:bg-surface-container dark:bg-surface-dark/90"
+                        >
+                          <Text className="font-sans text-[11px] font-bold text-ink dark:text-ink-dark">
+                            -1m
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="微调 加1分钟"
+                          onPress={() => adjustMinute(1)}
+                          className="rounded-lg bg-surface/90 px-1.5 py-1 active:bg-surface-container dark:bg-surface-dark/90"
+                        >
+                          <Text className="font-sans text-[11px] font-bold text-ink dark:text-ink-dark">
+                            +1m
+                          </Text>
+                        </Pressable>
+                      </View>
+                    </View>
+
+                    {mode === 'datetime' ? (
+                      <Text className="px-1 font-sans text-[11px] text-muted dark:text-muted-dark">
+                        不调整时刻 = 只记日期（当天截止）
+                      </Text>
+                    ) : null}
+
+                    {/* Quick time presets (issue #105) sit AFTER the wheels so the
+                        growing chip block cannot push the selected wheel row out
+                        of the modal's clipped viewport. Usage-ranked first,
+                        defaults keep morning/afternoon/evening coverage. Chips
+                        WRAP instead of horizontal-scrolling — otherwise the
+                        afternoon/evening times sit off-screen and the row reads
+                        as "morning only". */}
+                    <View>
+                      <View className="mb-1.5 flex-row items-center justify-between px-1">
+                        <Text className="font-sans text-xs font-bold text-muted dark:text-muted-dark">
+                          常用时段
+                        </Text>
+                        <Text className="font-sans text-[11px] text-muted/60 dark:text-muted-dark/60">
+                          快速点选
+                        </Text>
+                      </View>
+                      <View className="flex-row flex-wrap gap-1.5">
+                        {quickTimePresets.map((p) => {
+                          const isPresetActive = hour === p.h && minute === p.m;
+                          return (
+                            <Pressable
+                              key={p.label}
+                              accessibilityRole="button"
+                              accessibilityLabel={`时段 ${p.label}`}
+                              onPress={() => {
+                                setTimeTouched(true);
+                                selectHour(p.h);
+                                selectMinute(p.m);
+                              }}
+                              className={cn(
+                                'flex-row items-center gap-1.5 rounded-xl border px-2.5 py-1.5 transition-all',
+                                isPresetActive
+                                  ? 'border-accent bg-accent shadow-sm dark:border-accent-dark dark:bg-accent-dark'
+                                  : 'border-border/60 bg-surface-container/60 active:bg-surface-container dark:border-border-dark/60 dark:bg-surface-container-dark/60',
+                              )}
+                            >
+                              <Text
+                                className={cn(
+                                  'font-sans text-xs',
+                                  isPresetActive
+                                    ? 'font-bold text-on-accent dark:text-on-accent-dark'
+                                    : 'font-medium text-ink/80 dark:text-ink-dark/80',
+                                )}
+                              >
+                                {p.label}
+                              </Text>
+                              <Text
+                                className={cn(
+                                  'font-sans text-[10px]',
+                                  isPresetActive
+                                    ? 'text-on-accent/80'
+                                    : 'text-muted dark:text-muted-dark',
+                                )}
+                              >
+                                {p.period}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  </View>
+                ) : null}
+    </>
+  );
+  const calendarBlock = (
+    <>
+                {/* Modern Calendar Grid (in date & datetime modes) */}
+                {mode !== 'time' ? (
+                  <View className="mb-3 rounded-2xl border border-border/50 bg-surface-container/20 p-3 dark:border-border-dark/50 dark:bg-surface-container-dark/20">
+                    {/* Month Navigation Strip */}
+                    <View className="mb-2 flex-row items-center justify-between px-1">
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="上个月"
+                        onPress={prevMonth}
+                        className="h-7 w-7 items-center justify-center rounded-xl bg-surface-container/60 active:bg-surface-container dark:bg-surface-container-dark/60"
+                      >
+                        <Ionicons name="chevron-back" size={15} color={isDark ? colors.mutedDark : colors.muted} />
+                      </Pressable>
+
+                      <View className="flex-row items-center justify-center">
+                        <Text className="font-sans text-sm font-bold text-ink dark:text-ink-dark">
+                          {viewYear}年 {pad(viewMonth)}月
+                        </Text>
+                      </View>
+
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="下个月"
+                        onPress={nextMonth}
+                        className="h-7 w-7 items-center justify-center rounded-xl bg-surface-container/60 active:bg-surface-container dark:bg-surface-container-dark/60"
+                      >
+                        <Ionicons name="chevron-forward" size={15} color={isDark ? colors.mutedDark : colors.muted} />
+                      </Pressable>
+                    </View>
+
+                    {/* Weekday Names Strip */}
+                    <View className="mb-1 flex-row">
+                      {WEEKDAY_NAMES.map((col) => (
+                        <View key={col.label} className="flex-1 items-center py-0.5">
+                          <Text
+                            className={cn(
+                              'font-sans text-[11px] font-bold',
+                              col.isWeekend
+                                ? 'text-accent/70 dark:text-accent-dark/70'
+                                : 'text-muted dark:text-muted-dark',
+                            )}
+                          >
+                            {col.label}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+
+                    {/* 7-column Calendar Cells */}
+                    <View className="flex-row flex-wrap">
+                      {calendarCells.map((cell) => {
+                        const isCurrentMonth = cell.type === 'current';
+                        const isSelected = cell.key === selectedDateKey;
+                        const isToday = cell.key === todayKey;
+
+                        return (
+                          <View key={cell.key} style={{ width: '14.285%' }} className="items-center py-0.5">
+                            <Pressable
+                              accessibilityRole="button"
+                              // Adjacent-month days repeat day numbers (the grid fills whole
+                              // weeks), so their label carries the month — two buttons with the
+                              // same accessible name are indistinguishable.
+                              accessibilityLabel={
+                                isCurrentMonth ? `日 ${cell.day}` : `${cell.month}月${cell.day}日`
+                              }
+                              accessibilityState={{ selected: isSelected }}
+                              onPress={() => {
+                                setSelectedYear(cell.year);
+                                setSelectedMonth(cell.month);
+                                setSelectedDay(cell.day);
+                                if (!isCurrentMonth) {
+                                  setViewYear(cell.year);
+                                  setViewMonth(cell.month);
+                                }
+                              }}
+                              className={cn(
+                                'h-7 w-7 items-center justify-center rounded-xl transition-all',
+                                isSelected
+                                  ? 'bg-accent shadow-sm shadow-accent/40 dark:bg-accent-dark'
+                                  : isToday
+                                    ? 'border border-accent/80 bg-accent/10 dark:border-accent-dark/80 dark:bg-accent-dark/15'
+                                    : 'active:bg-surface-container dark:active:bg-surface-container-dark',
+                              )}
+                            >
+                              <Text
+                                className={cn(
+                                  'font-sans text-xs',
+                                  isSelected
+                                    ? 'font-black text-on-accent dark:text-on-accent-dark'
+                                    : isCurrentMonth
+                                      ? isToday
+                                        ? 'font-black text-accent dark:text-accent-dark'
+                                        : 'font-semibold text-ink dark:text-ink-dark'
+                                      : 'text-muted/30 dark:text-muted-dark/30',
+                                )}
+                              >
+                                {cell.day}
+                              </Text>
+                            </Pressable>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
+                ) : null}
+    </>
+  );
+
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <View
@@ -373,9 +1157,15 @@ export function DateTimePicker({
 
         {/* Modal Window Container: Structured with flex-col & max-h to guarantee fixed footer */}
         <View
+          testID="datetime-picker-dialog"
           className={cn(
-            'relative z-10 w-full max-w-md flex-col rounded-3xl border border-border/80 bg-surface shadow-2xl dark:border-border-dark dark:bg-surface-dark',
-            isCompact ? 'p-3.5 max-h-[92vh]' : 'p-5 max-h-[88vh]',
+            'relative z-10 w-full flex-col rounded-3xl border border-border/80 bg-surface shadow-2xl dark:border-border-dark dark:bg-surface-dark',
+            isWide
+              ? mode === 'datetime'
+                ? 'max-w-4xl'
+                : 'max-w-2xl'
+              : 'max-w-md',
+            isCompact ? 'p-3.5 max-h-[94vh]' : 'p-5 max-h-[92vh]',
           )}
         >
           {/* Top Bar (Fixed Header): Icon + Title + Close Button */}
@@ -455,754 +1245,39 @@ export function DateTimePicker({
             nestedScrollEnabled
             contentContainerStyle={{ paddingBottom: 6 }}
           >
-            {/* Quick Date Presets (in date and datetime modes) */}
-            {mode !== 'time' ? (
-              <View className="mb-3">
-                <View className="flex-row gap-1.5">
-                  {quickPresets.map((preset) => {
-                    const isSelected = selectedDateKey === preset.key;
-                    return (
-                      <Pressable
-                        key={preset.id}
-                        accessibilityRole="button"
-                        accessibilityLabel={`快捷 ${preset.label}`}
-                        accessibilityState={{ selected: isSelected }}
-                        onPress={() => applyDate(preset.date)}
-                        className={cn(
-                          'flex-1 flex-col items-center justify-center rounded-2xl py-2 px-1 border transition-all',
-                          isSelected
-                            ? 'border-accent bg-accent/15 shadow-sm dark:border-accent-dark dark:bg-accent-dark/20'
-                            : 'border-border/60 bg-surface-container/40 active:bg-surface-container dark:border-border-dark/60 dark:bg-surface-container-dark/40',
-                        )}
-                      >
-                        <Ionicons
-                          name={preset.iconName}
-                          size={15}
-                          color={
-                            isSelected
-                              ? isDark
-                                ? colors.accentDark
-                                : colors.accent
-                              : isDark
-                                ? colors.mutedDark
-                                : colors.muted
-                          }
-                        />
-                        <Text
-                          className={cn(
-                            'font-sans text-xs mt-1',
-                            isSelected
-                              ? 'font-bold text-accent dark:text-accent-dark'
-                              : 'font-semibold text-ink dark:text-ink-dark',
-                          )}
-                        >
-                          {preset.label}
-                        </Text>
-                        <Text
-                          className={cn(
-                            'font-sans text-[10px] mt-0.5',
-                            isSelected
-                              ? 'font-medium text-accent/90 dark:text-accent-dark/90'
-                              : 'text-muted dark:text-muted-dark',
-                          )}
-                        >
-                          {preset.sublabel}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
-            ) : null}
+            {statusBannerBlock}
 
-            {/* Current Selection Status Banner */}
-            <View className="mb-3 flex-row items-center justify-between rounded-2xl border border-border/60 bg-surface-container/50 px-3.5 py-2.5 dark:border-border-dark/60 dark:bg-surface-container-dark/50">
-              {mode === 'date' ? (
-                <View className="w-full flex-row items-baseline justify-between">
-                  <View className="flex-row items-baseline gap-2">
-                    <Text className="font-sans text-lg font-extrabold tracking-tight text-ink dark:text-ink-dark">
-                      {selectedYear}年{pad(selectedMonth)}月{pad(selectedDay)}日
-                    </Text>
-                    {selectedDateKey === todayKey ? (
-                      <View className="rounded-full bg-accent/15 px-2 py-0.5 dark:bg-accent-dark/20">
-                        <Text className="font-sans text-xs font-bold text-accent dark:text-accent-dark">
-                          今天
-                        </Text>
-                      </View>
-                    ) : null}
+            {mode === 'datetime' ? (
+              isWide ? (
+                <View
+                  testID="datetime-picker-two-column"
+                  className="flex-row items-start gap-4"
+                >
+                  <View className="min-w-0 flex-1">
+                    {quickDatePresetsBlock}
+                    {calendarBlock}
                   </View>
-                  <Text className="font-sans text-xs font-medium text-muted dark:text-muted-dark">
-                    周{['日', '一', '二', '三', '四', '五', '六'][new Date(selectedYear, selectedMonth - 1, selectedDay).getDay()]}
-                  </Text>
-                </View>
-              ) : mode === 'time' ? (
-                <View className="w-full flex-row items-center justify-between">
-                  {/* Left: Big Digital Clock + Contextual AM/PM selector (in 12h) */}
-                  <View className="flex-col">
-                    <View className="flex-row items-center gap-2">
-                      <Text
-                        accessibilityLabel="当前选中时间"
-                        className="font-sans text-3xl font-black tracking-tight text-ink dark:text-ink-dark"
-                      >
-                        {is12Hour
-                          ? `${pad(display12Hour)}:${pad(minute)}`
-                          : `${pad(hour)}:${pad(minute)}`}
-                      </Text>
-
-                      {is12Hour ? (
-                        <View className="flex-row items-center rounded-xl border border-border/70 bg-surface-container/90 p-0.5 dark:border-border-dark/70 dark:bg-surface-container-dark/90">
-                          <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel="切换到上午"
-                            accessibilityState={{ selected: !isPM }}
-                            onPress={() => toggleAmPm('AM')}
-                            className={cn(
-                              'rounded-lg px-2 py-0.5 transition-all',
-                              !isPM
-                                ? 'bg-accent shadow-sm dark:bg-accent-dark'
-                                : 'bg-transparent',
-                            )}
-                          >
-                            <Text
-                              className={cn(
-                                'font-sans text-xs font-bold',
-                                !isPM
-                                  ? 'text-on-accent'
-                                  : 'text-muted dark:text-muted-dark',
-                              )}
-                            >
-                              上午
-                            </Text>
-                          </Pressable>
-                          <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel="切换到下午"
-                            accessibilityState={{ selected: isPM }}
-                            onPress={() => toggleAmPm('PM')}
-                            className={cn(
-                              'rounded-lg px-2 py-0.5 transition-all',
-                              isPM
-                                ? 'bg-accent shadow-sm dark:bg-accent-dark'
-                                : 'bg-transparent',
-                            )}
-                          >
-                            <Text
-                              className={cn(
-                                'font-sans text-xs font-bold',
-                                isPM
-                                  ? 'text-on-accent'
-                                  : 'text-muted dark:text-muted-dark',
-                              )}
-                            >
-                              下午
-                            </Text>
-                          </Pressable>
-                        </View>
-                      ) : (
-                        <View className="rounded-full bg-accent/15 px-2 py-0.5 dark:bg-accent-dark/20">
-                          <Text className="font-sans text-xs font-bold text-accent dark:text-accent-dark">
-                            {hour < 6
-                              ? '凌晨'
-                              : hour < 12
-                                ? '上午'
-                                : hour < 18
-                                  ? '下午'
-                                  : '晚间'}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                    <Text className="mt-0.5 font-sans text-[11px] font-medium text-muted dark:text-muted-dark">
-                      {is12Hour ? '12小时制' : '24小时制'}
-                    </Text>
-                  </View>
-
-                  {/* Right: 24h / 12h Switcher */}
-                  <View className="flex-row items-center rounded-xl border border-border/70 bg-surface-container/90 p-0.5 dark:border-border-dark/70 dark:bg-surface-container-dark/90">
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="24小时制"
-                      accessibilityState={{ selected: !is12Hour }}
-                      onPress={() => setIs12Hour(false)}
-                      className={cn(
-                        'rounded-lg px-2.5 py-1 transition-all',
-                        !is12Hour
-                          ? 'bg-accent shadow-sm dark:bg-accent-dark'
-                          : 'bg-transparent',
-                      )}
-                    >
-                      <Text
-                        className={cn(
-                          'font-sans text-[11px] font-bold',
-                          !is12Hour
-                            ? 'text-on-accent'
-                            : 'text-muted dark:text-muted-dark',
-                        )}
-                      >
-                        24h
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="12小时制"
-                      accessibilityState={{ selected: is12Hour }}
-                      onPress={() => setIs12Hour(true)}
-                      className={cn(
-                        'rounded-lg px-2.5 py-1 transition-all',
-                        is12Hour
-                          ? 'bg-accent shadow-sm dark:bg-accent-dark'
-                          : 'bg-transparent',
-                      )}
-                    >
-                      <Text
-                        className={cn(
-                          'font-sans text-[11px] font-bold',
-                          is12Hour
-                            ? 'text-on-accent'
-                            : 'text-muted dark:text-muted-dark',
-                        )}
-                      >
-                        12h
-                      </Text>
-                    </Pressable>
-                  </View>
+                  <View className="min-w-0 flex-1">{timeSectionBlock}</View>
                 </View>
               ) : (
-                <View className="w-full flex-row items-center justify-between">
-                  <View className="flex-row items-baseline gap-1.5">
-                    <Text className="font-sans text-base font-bold text-ink dark:text-ink-dark">
-                      {pad(selectedMonth)}月{pad(selectedDay)}日
-                    </Text>
-                    {selectedDateKey === todayKey ? (
-                      <Text className="font-sans text-xs font-bold text-accent dark:text-accent-dark">
-                        今天
-                      </Text>
-                    ) : null}
-                  </View>
-                  <View className="flex-row items-baseline gap-1">
-                    <Ionicons name="time-outline" size={13} color={isDark ? colors.accentDark : colors.accent} />
-                    <Text className="font-sans text-xl font-black text-accent dark:text-accent-dark">
-                      {is12Hour
-                        ? `${pad(display12Hour)}:${pad(minute)} ${isPM ? 'PM' : 'AM'}`
-                        : `${pad(hour)}:${pad(minute)}`}
-                    </Text>
-                  </View>
+                <View className="gap-1">
+                  {timeSectionBlock}
+                  {quickDatePresetsBlock}
+                  {calendarBlock}
                 </View>
-              )}
-            </View>
-
-            {/* Time Configuration Section (in time & datetime modes) */}
-            {mode !== 'date' ? (
-              <View className="gap-2.5">
-                {/* Datetime mode specific format switch header */}
-                {mode === 'datetime' ? (
-                  <View className="flex-row items-center justify-between px-1">
-                    <Text className="font-sans text-xs font-bold text-muted dark:text-muted-dark">
-                      选择时间 ({is12Hour ? '12小时制' : '24小时制'})
-                    </Text>
-                    <View className="flex-row items-center gap-1.5">
-                      {is12Hour ? (
-                        <View className="flex-row items-center rounded-lg bg-surface-container/90 p-0.5 dark:bg-surface-container-dark/90">
-                          <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel="切换到上午"
-                            accessibilityState={{ selected: !isPM }}
-                            onPress={() => toggleAmPm('AM')}
-                            className={cn(
-                              'rounded-md px-1.5 py-0.5',
-                              !isPM ? 'bg-accent dark:bg-accent-dark' : 'bg-transparent',
-                            )}
-                          >
-                            <Text
-                              className={cn(
-                                'font-sans text-[10px] font-bold',
-                                !isPM ? 'text-on-accent' : 'text-muted dark:text-muted-dark',
-                              )}
-                            >
-                              上午
-                            </Text>
-                          </Pressable>
-                          <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel="切换到下午"
-                            accessibilityState={{ selected: isPM }}
-                            onPress={() => toggleAmPm('PM')}
-                            className={cn(
-                              'rounded-md px-1.5 py-0.5',
-                              isPM ? 'bg-accent dark:bg-accent-dark' : 'bg-transparent',
-                            )}
-                          >
-                            <Text
-                              className={cn(
-                                'font-sans text-[10px] font-bold',
-                                isPM ? 'text-on-accent' : 'text-muted dark:text-muted-dark',
-                              )}
-                            >
-                              下午
-                            </Text>
-                          </Pressable>
-                        </View>
-                      ) : null}
-
-                      <View className="flex-row items-center rounded-lg bg-surface-container/90 p-0.5 dark:bg-surface-container-dark/90">
-                        <Pressable
-                          accessibilityRole="button"
-                          accessibilityLabel="24小时制"
-                          accessibilityState={{ selected: !is12Hour }}
-                          onPress={() => setIs12Hour(false)}
-                          className={cn(
-                            'rounded-md px-2 py-0.5',
-                            !is12Hour ? 'bg-accent dark:bg-accent-dark' : 'bg-transparent',
-                          )}
-                        >
-                          <Text
-                            className={cn(
-                              'font-sans text-[10px] font-bold',
-                              !is12Hour ? 'text-on-accent' : 'text-muted dark:text-muted-dark',
-                            )}
-                          >
-                            24h
-                          </Text>
-                        </Pressable>
-                        <Pressable
-                          accessibilityRole="button"
-                          accessibilityLabel="12小时制"
-                          accessibilityState={{ selected: is12Hour }}
-                          onPress={() => setIs12Hour(true)}
-                          className={cn(
-                            'rounded-md px-2 py-0.5',
-                            is12Hour ? 'bg-accent dark:bg-accent-dark' : 'bg-transparent',
-                          )}
-                        >
-                          <Text
-                            className={cn(
-                              'font-sans text-[10px] font-bold',
-                              is12Hour ? 'text-on-accent' : 'text-muted dark:text-muted-dark',
-                            )}
-                          >
-                            12h
-                          </Text>
-                        </Pressable>
-                      </View>
-                    </View>
-                  </View>
-                ) : null}
-
-                {/* Column Headers for Wheels */}
-                <View className="flex-row items-center px-4 py-1">
-                  <View className="flex-1 items-center">
-                    <Text className="font-sans text-xs font-bold tracking-widest text-muted/75 dark:text-muted-dark/75">
-                      时
-                    </Text>
-                  </View>
-                  <View className="w-8" />
-                  <View className="flex-1 items-center">
-                    <Text className="font-sans text-xs font-bold tracking-widest text-muted/75 dark:text-muted-dark/75">
-                      分
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Tactile Time Wheel Picker with Selection Lens & Fade Masks */}
-                <View
-                  style={{
-                    height: WHEEL_HEIGHT,
-                    ...(Platform.OS === 'web'
-                      ? {
-                          WebkitMaskImage:
-                            'linear-gradient(to bottom, transparent 0%, black 24%, black 76%, transparent 100%)',
-                          maskImage:
-                            'linear-gradient(to bottom, transparent 0%, black 24%, black 76%, transparent 100%)',
-                        }
-                      : {}),
-                  }}
-                  className="relative overflow-hidden rounded-2xl border border-border/80 bg-surface-container/35 dark:border-border-dark/80 dark:bg-surface-container-dark/35"
-                >
-                  {/* Selection Lens (highlight centered row) */}
-                  <View
-                    pointerEvents="none"
-                    style={{ top: WHEEL_PADDING, height: ITEM_HEIGHT }}
-                    className="absolute left-2.5 right-2.5 rounded-xl border border-accent/35 bg-accent/12 shadow-sm dark:border-accent-dark/40 dark:bg-accent-dark/20"
-                  />
-
-                  {/* Fallback gradient overlay for non-web platforms */}
-                  {Platform.OS !== 'web' ? (
-                    <>
-                      <View
-                        pointerEvents="none"
-                        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 36, zIndex: 10 }}
-                        className="bg-surface/60 dark:bg-surface-dark/60"
-                      />
-                      <View
-                        pointerEvents="none"
-                        style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 36, zIndex: 10 }}
-                        className="bg-surface/60 dark:bg-surface-dark/60"
-                      />
-                    </>
-                  ) : null}
-
-                  <View style={{ height: WHEEL_HEIGHT }} className="flex-row items-stretch">
-                    {/* Hour Scroll Column */}
-                    <ScrollView
-                      ref={hourScrollRef}
-                      testID="hour-wheel"
-                      className="h-full flex-1"
-                      style={{ height: WHEEL_HEIGHT }}
-                      showsVerticalScrollIndicator={false}
-                      nestedScrollEnabled
-                      snapToInterval={ITEM_HEIGHT}
-                      decelerationRate="fast"
-                      contentContainerStyle={{ paddingTop: WHEEL_PADDING, paddingBottom: WHEEL_PADDING }}
-                      onScroll={(e) => {
-                        const h = Math.min(
-                          23,
-                          Math.max(0, Math.round(e.nativeEvent.contentOffset.y / ITEM_HEIGHT)),
-                        );
-                        if (h !== hourRef.current) setTimeTouched(true);
-                        setHour(h);
-                      }}
-                    >
-                      {HOURS.map((h) => {
-                        const active = hour === h;
-                        const labelNumber = is12Hour ? h % 12 || 12 : h;
-                        return (
-                          <Pressable
-                            key={h}
-                            accessibilityRole="button"
-                            accessibilityLabel={`小时 ${pad(h)}`}
-                            accessibilityState={{ selected: active }}
-                            onPress={() => selectHour(h)}
-                            style={{ height: ITEM_HEIGHT }}
-                            className="items-center justify-center"
-                          >
-                            <Text
-                              className={cn(
-                                'font-sans transition-all',
-                                active
-                                  ? 'text-2xl font-black text-accent dark:text-accent-dark scale-105'
-                                  : 'text-sm font-semibold text-ink/35 dark:text-ink-dark/35',
-                              )}
-                            >
-                              {pad(labelNumber)}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
-                    </ScrollView>
-
-                    {/* Centered Colon Separator */}
-                    <View className="w-8 items-center justify-center">
-                      <Text className="font-sans text-2xl font-black text-accent/50 dark:text-accent-dark/50">
-                        :
-                      </Text>
-                    </View>
-
-                    {/* Minute Scroll Column */}
-                    <ScrollView
-                      ref={minuteScrollRef}
-                      testID="minute-wheel"
-                      className="h-full flex-1"
-                      style={{ height: WHEEL_HEIGHT }}
-                      showsVerticalScrollIndicator={false}
-                      nestedScrollEnabled
-                      snapToInterval={ITEM_HEIGHT}
-                      decelerationRate="fast"
-                      contentContainerStyle={{ paddingTop: WHEEL_PADDING, paddingBottom: WHEEL_PADDING }}
-                      onScroll={(e) => {
-                        const m = Math.min(
-                          59,
-                          Math.max(0, Math.round(e.nativeEvent.contentOffset.y / ITEM_HEIGHT)),
-                        );
-                        if (m !== minuteRef.current) setTimeTouched(true);
-                        setMinute(m);
-                      }}
-                    >
-                      {MINUTES.map((m) => {
-                        const active = minute === m;
-                        return (
-                          <Pressable
-                            key={m}
-                            accessibilityRole="button"
-                            accessibilityLabel={`分钟 ${pad(m)}`}
-                            accessibilityState={{ selected: active }}
-                            onPress={() => selectMinute(m)}
-                            style={{ height: ITEM_HEIGHT }}
-                            className="items-center justify-center"
-                          >
-                            <Text
-                              className={cn(
-                                'font-sans transition-all',
-                                active
-                                  ? 'text-2xl font-black text-accent dark:text-accent-dark scale-105'
-                                  : 'text-sm font-semibold text-ink/35 dark:text-ink-dark/35',
-                              )}
-                            >
-                              {pad(m)}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
-                    </ScrollView>
-                  </View>
-                </View>
-
-                {/* Minute Presets + Fine-tune Steppers Toolbar */}
-                <View className="flex-row items-center justify-between rounded-2xl border border-border/70 bg-surface-container/40 p-1 dark:border-border-dark/70 dark:bg-surface-container-dark/40">
-                  {/* Left: Quick Minute Jumps (:00, :15, :30, :45) */}
-                  <View className="flex-row items-center gap-1">
-                    {MINUTE_PRESETS.map((m) => {
-                      const isMinActive = minute === m;
-                      return (
-                        <Pressable
-                          key={m}
-                          accessibilityRole="button"
-                          accessibilityLabel={`快捷 ${pad(m)}分`}
-                          onPress={() => selectMinute(m)}
-                          className={cn(
-                            'rounded-lg px-2 py-1 transition-all',
-                            isMinActive
-                              ? 'bg-accent shadow-sm dark:bg-accent-dark'
-                              : 'bg-surface/90 active:bg-surface-container dark:bg-surface-dark/90',
-                          )}
-                        >
-                          <Text
-                            className={cn(
-                              'font-sans text-[11px]',
-                              isMinActive
-                                ? 'font-bold text-on-accent dark:text-on-accent-dark'
-                                : 'font-semibold text-ink dark:text-ink-dark',
-                            )}
-                          >
-                            :{pad(m)}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-
-                  {/* Vertical Divider */}
-                  <View className="mx-0.5 h-4 w-px bg-border/80 dark:bg-border-dark/80" />
-
-                  {/* Right: Fine-tune Steppers (-5m, +5m, -1m, +1m) */}
-                  <View className="flex-row items-center gap-1">
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="微调 减5分钟"
-                      onPress={() => adjustMinute(-5)}
-                      className="rounded-lg bg-surface/90 px-1.5 py-1 active:bg-surface-container dark:bg-surface-dark/90"
-                    >
-                      <Text className="font-sans text-[11px] font-bold text-ink dark:text-ink-dark">
-                        -5m
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="微调 加5分钟"
-                      onPress={() => adjustMinute(5)}
-                      className="rounded-lg bg-surface/90 px-1.5 py-1 active:bg-surface-container dark:bg-surface-dark/90"
-                    >
-                      <Text className="font-sans text-[11px] font-bold text-ink dark:text-ink-dark">
-                        +5m
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="微调 减1分钟"
-                      onPress={() => adjustMinute(-1)}
-                      className="rounded-lg bg-surface/90 px-1.5 py-1 active:bg-surface-container dark:bg-surface-dark/90"
-                    >
-                      <Text className="font-sans text-[11px] font-bold text-ink dark:text-ink-dark">
-                        -1m
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="微调 加1分钟"
-                      onPress={() => adjustMinute(1)}
-                      className="rounded-lg bg-surface/90 px-1.5 py-1 active:bg-surface-container dark:bg-surface-dark/90"
-                    >
-                      <Text className="font-sans text-[11px] font-bold text-ink dark:text-ink-dark">
-                        +1m
-                      </Text>
-                    </Pressable>
-                  </View>
-                </View>
-
-                {mode === 'datetime' ? (
-                  <Text className="px-1 font-sans text-[11px] text-muted dark:text-muted-dark">
-                    不调整时刻 = 只记日期（当天截止）
-                  </Text>
-                ) : null}
-
-                {/* Quick time presets (issue #105) sit AFTER the wheels so the
-                    growing chip block cannot push the selected wheel row out
-                    of the modal's clipped viewport. Usage-ranked first,
-                    defaults keep morning/afternoon/evening coverage. Chips
-                    WRAP instead of horizontal-scrolling — otherwise the
-                    afternoon/evening times sit off-screen and the row reads
-                    as "morning only". */}
-                <View>
-                  <View className="mb-1.5 flex-row items-center justify-between px-1">
-                    <Text className="font-sans text-xs font-bold text-muted dark:text-muted-dark">
-                      常用时段
-                    </Text>
-                    <Text className="font-sans text-[11px] text-muted/60 dark:text-muted-dark/60">
-                      快速点选
-                    </Text>
-                  </View>
-                  <View className="flex-row flex-wrap gap-1.5">
-                    {quickTimePresets.map((p) => {
-                      const isPresetActive = hour === p.h && minute === p.m;
-                      return (
-                        <Pressable
-                          key={p.label}
-                          accessibilityRole="button"
-                          accessibilityLabel={`时段 ${p.label}`}
-                          onPress={() => {
-                            setTimeTouched(true);
-                            selectHour(p.h);
-                            selectMinute(p.m);
-                          }}
-                          className={cn(
-                            'flex-row items-center gap-1.5 rounded-xl border px-2.5 py-1.5 transition-all',
-                            isPresetActive
-                              ? 'border-accent bg-accent shadow-sm dark:border-accent-dark dark:bg-accent-dark'
-                              : 'border-border/60 bg-surface-container/60 active:bg-surface-container dark:border-border-dark/60 dark:bg-surface-container-dark/60',
-                          )}
-                        >
-                          <Text
-                            className={cn(
-                              'font-sans text-xs',
-                              isPresetActive
-                                ? 'font-bold text-on-accent dark:text-on-accent-dark'
-                                : 'font-medium text-ink/80 dark:text-ink-dark/80',
-                            )}
-                          >
-                            {p.label}
-                          </Text>
-                          <Text
-                            className={cn(
-                              'font-sans text-[10px]',
-                              isPresetActive
-                                ? 'text-on-accent/80'
-                                : 'text-muted dark:text-muted-dark',
-                            )}
-                          >
-                            {p.period}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </View>
+              )
+            ) : (
+              <View className={isWide ? 'mx-auto w-full max-w-xl' : ''}>
+                {mode === 'date' ? (
+                  <>
+                    {quickDatePresetsBlock}
+                    {calendarBlock}
+                  </>
+                ) : (
+                  timeSectionBlock
+                )}
               </View>
-            ) : null}
-
-            {/* Modern Calendar Grid (in date & datetime modes) */}
-            {mode !== 'time' ? (
-              <View className="mb-3 rounded-2xl border border-border/50 bg-surface-container/20 p-3 dark:border-border-dark/50 dark:bg-surface-container-dark/20">
-                {/* Month Navigation Strip */}
-                <View className="mb-2 flex-row items-center justify-between px-1">
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="上个月"
-                    onPress={prevMonth}
-                    className="h-7 w-7 items-center justify-center rounded-xl bg-surface-container/60 active:bg-surface-container dark:bg-surface-container-dark/60"
-                  >
-                    <Ionicons name="chevron-back" size={15} color={isDark ? colors.mutedDark : colors.muted} />
-                  </Pressable>
-
-                  <View className="flex-row items-center justify-center">
-                    <Text className="font-sans text-sm font-bold text-ink dark:text-ink-dark">
-                      {viewYear}年 {pad(viewMonth)}月
-                    </Text>
-                  </View>
-
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="下个月"
-                    onPress={nextMonth}
-                    className="h-7 w-7 items-center justify-center rounded-xl bg-surface-container/60 active:bg-surface-container dark:bg-surface-container-dark/60"
-                  >
-                    <Ionicons name="chevron-forward" size={15} color={isDark ? colors.mutedDark : colors.muted} />
-                  </Pressable>
-                </View>
-
-                {/* Weekday Names Strip */}
-                <View className="mb-1 flex-row">
-                  {WEEKDAY_NAMES.map((col) => (
-                    <View key={col.label} className="flex-1 items-center py-0.5">
-                      <Text
-                        className={cn(
-                          'font-sans text-[11px] font-bold',
-                          col.isWeekend
-                            ? 'text-accent/70 dark:text-accent-dark/70'
-                            : 'text-muted dark:text-muted-dark',
-                        )}
-                      >
-                        {col.label}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-
-                {/* 7-column Calendar Cells */}
-                <View className="flex-row flex-wrap">
-                  {calendarCells.map((cell) => {
-                    const isCurrentMonth = cell.type === 'current';
-                    const isSelected = cell.key === selectedDateKey;
-                    const isToday = cell.key === todayKey;
-
-                    return (
-                      <View key={cell.key} style={{ width: '14.285%' }} className="items-center py-0.5">
-                        <Pressable
-                          accessibilityRole="button"
-                          // Adjacent-month days repeat day numbers (the grid fills whole
-                          // weeks), so their label carries the month — two buttons with the
-                          // same accessible name are indistinguishable.
-                          accessibilityLabel={
-                            isCurrentMonth ? `日 ${cell.day}` : `${cell.month}月${cell.day}日`
-                          }
-                          accessibilityState={{ selected: isSelected }}
-                          onPress={() => {
-                            setSelectedYear(cell.year);
-                            setSelectedMonth(cell.month);
-                            setSelectedDay(cell.day);
-                            if (!isCurrentMonth) {
-                              setViewYear(cell.year);
-                              setViewMonth(cell.month);
-                            }
-                          }}
-                          className={cn(
-                            'h-7 w-7 items-center justify-center rounded-xl transition-all',
-                            isSelected
-                              ? 'bg-accent shadow-sm shadow-accent/40 dark:bg-accent-dark'
-                              : isToday
-                                ? 'border border-accent/80 bg-accent/10 dark:border-accent-dark/80 dark:bg-accent-dark/15'
-                                : 'active:bg-surface-container dark:active:bg-surface-container-dark',
-                          )}
-                        >
-                          <Text
-                            className={cn(
-                              'font-sans text-xs',
-                              isSelected
-                                ? 'font-black text-on-accent dark:text-on-accent-dark'
-                                : isCurrentMonth
-                                  ? isToday
-                                    ? 'font-black text-accent dark:text-accent-dark'
-                                    : 'font-semibold text-ink dark:text-ink-dark'
-                                  : 'text-muted/30 dark:text-muted-dark/30',
-                            )}
-                          >
-                            {cell.day}
-                          </Text>
-                        </Pressable>
-                      </View>
-                    );
-                  })}
-                </View>
-              </View>
-            ) : null}
+            )}
           </ScrollView>
 
           {/* Fixed Footer Buttons: Always docked at bottom without needing scroll */}

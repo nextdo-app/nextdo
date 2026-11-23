@@ -1,10 +1,11 @@
 import React from 'react';
-import { Platform } from 'react-native';
+import { Button, Platform } from 'react-native';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import {
   AUTO_UPDATE_CHECK_INTERVAL_MS,
   AutoUpdateDialog,
-  AutoUpdateNotifier,
+  UpdatePromptProvider,
+  useUpdatePrompt,
 } from '@/components/auto-update-dialog';
 import {
   UPDATE_PROXY_PREFIX,
@@ -12,6 +13,7 @@ import {
   isUpdateSuppressed,
   setAutoDownloadPreference,
   setAutoUpdateCheckPreference,
+  setUpdateChannelPreference,
   type ReleaseInfo,
 } from '@/lib/app-update';
 
@@ -297,6 +299,79 @@ describe('AutoUpdateDialog - desktop in-app install', () => {
     // 旧行为（把安装包丢回给用户手动处理）不能再出现。
     expect(openedPaths).toEqual([]);
   });
+
+  it('keeps the user-selected beta channel when the download finishes', async () => {
+    jest.useFakeTimers();
+    await setAutoDownloadPreference(false);
+    Object.defineProperty(Platform, 'OS', { value: 'web', configurable: true });
+
+    const betaRelease: ReleaseInfo = {
+      ...desktopRelease,
+      tag: 'v0.1.8-beta.1',
+      version: '0.1.8-beta.1',
+      channel: 'beta',
+      channelLabel: '测试版',
+    };
+    const downloadedUrls: string[] = [];
+    const installedPaths: string[] = [];
+    let done = false;
+    (globalThis as { window?: unknown }).window = {
+      navigator: { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' },
+      __TAURI_INTERNALS__: {
+        invoke: jest.fn(
+          async (command: string, args?: { url?: string; filePath?: string }) => {
+            if (command === 'current_arch') return 'aarch64';
+            if (command === 'download_update' && args?.url !== undefined) {
+              downloadedUrls.push(args.url);
+            }
+            if (command === 'get_download_progress') {
+              return {
+                state: done ? 'done' : 'downloading',
+                downloaded_bytes: done ? 12 : 1,
+                total_bytes: 12,
+                file_path: '/tmp/Nextdo_0.1.8-beta.1_aarch64.dmg',
+                error: '',
+              };
+            }
+            if (command === 'install_update_and_restart' && args?.filePath !== undefined) {
+              installedPaths.push(args.filePath);
+            }
+            return undefined;
+          },
+        ),
+      },
+    };
+
+    render(
+      <AutoUpdateDialog
+        visible={true}
+        onClose={jest.fn()}
+        releases={{ stable: desktopRelease, beta: betaRelease }}
+        preferredChannel="stable"
+      />,
+    );
+    await flush();
+
+    // 用户在弹窗里主动选 beta 并开始下载。设置页偏好仍是 stable。
+    fireEvent.press(screen.getByRole('button', { name: '切换到测试版' }));
+    expect(screen.getByText('v0.1.8-beta.1')).toBeTruthy();
+    fireEvent.press(screen.getByRole('button', { name: '立即更新' }));
+    await flush();
+    expect(downloadedUrls).toHaveLength(1);
+    expect(downloadedUrls[0]).toContain('Nextdo_0.1.8-beta.1_aarch64.dmg');
+
+    // 下载完成时，偏好 effect 重新运行也不能把用户选的 beta 切回 stable。
+    done = true;
+    await act(async () => {
+      jest.advanceTimersByTime(400);
+    });
+    await flush();
+    expect(screen.getByText('v0.1.8-beta.1')).toBeTruthy();
+
+    fireEvent.press(screen.getByRole('button', { name: '立即安装并重启' }));
+    await flush();
+    expect(installedPaths).toEqual(['/tmp/Nextdo_0.1.8-beta.1_aarch64.dmg']);
+  });
 });
 
 /**
@@ -419,7 +494,7 @@ describe('AutoUpdateDialog - Android in-app install', () => {
  * 后台监听器：启动检查之外，运行期间按周期复查；「稍后再说」在静默期内
  * 不重复弹窗，静默期过后重新提醒。
  */
-describe('AutoUpdateNotifier - periodic background checks', () => {
+describe('UpdatePromptProvider - periodic background checks', () => {
   const originalFetch = globalThis.fetch;
 
   afterEach(() => {
@@ -455,7 +530,7 @@ describe('AutoUpdateNotifier - periodic background checks', () => {
       text: async () => atomXml,
     }) as unknown as typeof fetch;
 
-    render(<AutoUpdateNotifier />);
+    render(<UpdatePromptProvider />);
 
     await act(async () => {
       jest.advanceTimersByTime(1500);
@@ -483,5 +558,135 @@ describe('AutoUpdateNotifier - periodic background checks', () => {
     });
     await flush();
     expect(screen.getByText('发现新版本')).toBeTruthy();
+  });
+});
+
+/**
+ * 手动入口的完整下载保护场景：stable 安装包还在下载时，用户「稍后再说」
+ * 关闭弹窗、把渠道改成 beta、再次手动检查。原生下载仍是 stable 任务，因此
+ * 弹窗重新打开的是该任务而不是 beta；旧下载的进度 / 完成态不得写回，也
+ * 绝不能让「立即安装并重启」拿到 stable 的安装包。
+ */
+describe('UpdatePromptProvider - manual recheck during an active download', () => {
+  const originalOS = Platform.OS;
+  const originalFetch = globalThis.fetch;
+
+  afterEach(async () => {
+    jest.useRealTimers();
+    globalThis.fetch = originalFetch;
+    Object.defineProperty(Platform, 'OS', { value: originalOS, configurable: true });
+    (globalThis as { window?: unknown }).window = undefined;
+    await setAutoDownloadPreference(true);
+    await setUpdateChannelPreference('stable');
+  });
+
+  /** Flush the provider check + desktop download promise chains. */
+  async function flush(rounds = 25): Promise<void> {
+    let p: Promise<unknown> = Promise.resolve();
+    for (let i = 0; i < rounds; i++) {
+      p = p.then(() => act(async () => {}));
+    }
+    await p;
+  }
+
+  function ManualCheckButton() {
+    const prompt = useUpdatePrompt();
+    return <Button title="manual-check" onPress={prompt.checkForUpdates} />;
+  }
+
+  it('never installs the stable package after switching to beta mid-download', async () => {
+    jest.useFakeTimers();
+    await setAutoDownloadPreference(false);
+    await setAutoUpdateCheckPreference(false);
+    await setUpdateChannelPreference('stable');
+    // Tauri 桌面壳的 webview：同一套 IPC 命令，可精确控制下载何时完成。
+    Object.defineProperty(Platform, 'OS', { value: 'web', configurable: true });
+
+    const downloadedUrls: string[] = [];
+    const installedPaths: string[] = [];
+    let downloadDone = false;
+    (globalThis as { window?: unknown }).window = {
+      navigator: { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' },
+      __TAURI_INTERNALS__: {
+        invoke: jest.fn(async (command: string, args?: { url?: string; filePath?: string }) => {
+          if (command === 'current_arch') return 'aarch64';
+          if (command === 'download_update' && args?.url !== undefined) {
+            downloadedUrls.push(args.url);
+          }
+          if (command === 'get_download_progress') {
+            return {
+              state: downloadDone ? 'done' : 'downloading',
+              downloaded_bytes: downloadDone ? 100 : 10,
+              total_bytes: 100,
+              file_path: '/tmp/Nextdo_9.9.0_aarch64.dmg',
+              error: '',
+            };
+          }
+          if (command === 'install_update_and_restart' && args?.filePath !== undefined) {
+            installedPaths.push(args.filePath);
+          }
+          return undefined;
+        }),
+      },
+    };
+
+    globalThis.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      text: async () => `
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <entry>
+            <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v9.9.0"/>
+            <updated>2026-11-20T00:00:00Z</updated>
+            <content type="html">stable notes</content>
+          </entry>
+          <entry>
+            <link rel="alternate" href="https://github.com/nextdo-app/nextdo/releases/tag/v9.9.1-beta.1"/>
+            <updated>2026-11-21T00:00:00Z</updated>
+            <content type="html">beta notes</content>
+          </entry>
+        </feed>
+      `,
+    }) as unknown as typeof fetch;
+
+    render(
+      <UpdatePromptProvider>
+        <ManualCheckButton />
+      </UpdatePromptProvider>,
+    );
+
+    // 1. 手动检查出 stable，点「立即更新」开始下载。
+    fireEvent.press(screen.getByText('manual-check'));
+    await flush();
+    expect(screen.getByText('v9.9.0')).toBeTruthy();
+    fireEvent.press(screen.getByRole('button', { name: '立即更新' }));
+    await flush();
+    expect(downloadedUrls).toHaveLength(1);
+    expect(downloadedUrls[0]).toContain('Nextdo_9.9.0_aarch64.dmg');
+
+    // 2. 下载未结束时关闭弹窗，改渠道为 beta，再次手动检查。
+    fireEvent.press(screen.getByRole('button', { name: '稍后再说' }));
+    await flush(6);
+    await setUpdateChannelPreference('beta');
+    fireEvent.press(screen.getByText('manual-check'));
+    await flush();
+
+    // 原生桌面下载是全局单槽：任务未结束时手动入口重新打开的是**该任务**，
+    // 不是 beta。此时不能出现可点的「立即更新」，也不会发起第二次下载。
+    expect(screen.getByText('v9.9.0')).toBeTruthy();
+    expect(screen.queryByText('v9.9.1-beta.1')).toBeNull();
+    expect(screen.queryByRole('button', { name: '立即更新' })).toBeNull();
+    expect(downloadedUrls).toHaveLength(1);
+
+    // 3. stable 的下载此时才完成。任务结束后才允许切到 beta；旧任务的结果
+    //    不得变成 beta 的安装包，「立即安装并重启」也不能出现。
+    downloadDone = true;
+    await act(async () => {
+      jest.advanceTimersByTime(400);
+    });
+    await flush();
+    expect(screen.getByText('v9.9.1-beta.1')).toBeTruthy();
+    expect(screen.queryByText(/正在下载/)).toBeNull();
+    expect(screen.queryByRole('button', { name: '立即安装并重启' })).toBeNull();
+    expect(installedPaths).toEqual([]);
   });
 });

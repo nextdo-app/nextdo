@@ -29,15 +29,18 @@
  *   subscription then disconnects sync; local data is untouched, so no
  *   confirmation is needed in v1).
  * - update check (last card): the app version from app.json plus a manual
- *   「检查更新」 button. BOTH the version query and every installer link go
- *   through the download-proxy prefix built in `lib/app-update.ts` —
- *   nothing here touches GitHub directly. A newer version renders one
- *   button per platform-matched installer; macOS offers both
- *   architectures, because a webview's user agent reports "Intel Mac"
- *   even on Apple Silicon and guessing wrong is worse than asking.
- *   Downloads are handed to the system browser, and iOS / web — which
- *   the release pipeline ships no installer for — only get the release
- *   page link.
+ *   「检查更新」 button. The button hands off to the SAME update dialog the
+ *   background notifier uses (`useUpdatePrompt`), so a manual check shows
+ *   the identical 「检查中 / 发现新版本 / 已是最新版本 / 检查失败」 popup
+ *   instead of a second inline result card. BOTH the version query and every
+ *   installer link go through the download-proxy prefix built in
+ *   `lib/app-update.ts` — nothing here touches GitHub directly.
+ *   A newer version renders one button per platform-matched installer;
+ *   macOS offers both architectures, because a webview's user agent reports
+ *   "Intel Mac" even on Apple Silicon and guessing wrong is worse than
+ *   asking. Downloads are handed to the system browser on platforms without
+ *   in-app installation, and iOS / web — which the release pipeline ships no
+ *   installer for — only get the release page link.
  *
  * All auth work goes through the `useCloudSync` UI hook (the packages/db
  * boundary); this screen owns only the form's transient state.
@@ -72,7 +75,8 @@ import { PickerField } from '@/components/picker-field';
 import { FormField } from '@/components/form-field';
 import { DateTimePicker } from '@/components/datetime-picker';
 import { useAppUpdate } from '@/hooks/use-app-update';
-import { formatReleaseDate, openExternalUrl, type UpdateFailureReason } from '@/lib/app-update';
+import { useUpdatePrompt } from '@/components/auto-update-dialog';
+import { openExternalUrl } from '@/lib/app-update';
 import {
   describeSyncFailure,
   formatLastSyncedAt,
@@ -189,12 +193,7 @@ function SectionHeader({
   );
 }
 
-/** 检查失败的三种原因 → 提示文案（文案归屏幕，逻辑层只给 reason）。 */
-const UPDATE_FAILURE_COPY: Record<UpdateFailureReason, string> = {
-  network: '连不上更新服务器，请检查网络后重试。',
-  http: '更新服务器暂时不可用，请稍后重试。',
-  payload: '没能读到版本信息，请稍后重试。',
-};
+/** 检查失败的三种原因与文案已随共享更新弹窗移入 auto-update-dialog.tsx。 */
 
 /**
  * 云同步状态文案（issue #22）——逻辑层只给 `kind` 与数据，句子归屏幕。
@@ -459,6 +458,8 @@ export default function SettingsScreen() {
   const { options: habitReminderOptions, update: updateHabitReminders } = useHabitReminders(now);
   const [openHabitTimePicker, setOpenHabitTimePicker] = useState(false);
   const update = useAppUpdate();
+  // 手动检查与后台提醒共用同一个更新弹窗（组件常驻根布局）。
+  const updatePrompt = useUpdatePrompt();
   // The deep-link route (`app/sync.tsx`) hands a failed connect back here
   // as `?syncError=…` so the user SEES the reason instead of a silent
   // no-op. Read once per arrival (the value is a fresh string each time).
@@ -1988,275 +1989,10 @@ export default function SettingsScreen() {
           ) : null}
 
           <Button
-            label={update.checking ? '检查中…' : '检查更新'}
-            disabled={update.checking || update.downloadBusy || update.installing}
-            onPress={update.check}
+            label={updatePrompt.checking ? '检查中…' : '检查更新'}
+            disabled={updatePrompt.checking}
+            onPress={updatePrompt.checkForUpdates}
           />
-          {update.outcome?.kind === 'up-to-date' ? (
-            <View className="gap-1">
-              <Text className="font-sans text-sm text-muted dark:text-muted-dark">
-                已是最新版本（{update.outcome.channel === 'beta' ? `测试版 ${update.outcome.latestVersion}` : `正式版 ${update.outcome.latestVersion}`}）。
-              </Text>
-              {update.outcome.stableRelease || update.outcome.betaRelease ? (
-                <Text className="font-sans text-xs text-muted/80 dark:text-muted-dark/80">
-                  {update.outcome.stableRelease ? `正式版：v${update.outcome.stableRelease.version}` : ''}
-                  {update.outcome.stableRelease && update.outcome.betaRelease ? ' · ' : ''}
-                  {update.outcome.betaRelease ? `测试版：v${update.outcome.betaRelease.version}` : ''}
-                </Text>
-              ) : null}
-            </View>
-          ) : null}
-          {update.outcome?.kind === 'failed' ? (
-            <Text className="font-sans text-sm text-danger dark:text-danger-dark">
-              {UPDATE_FAILURE_COPY[update.outcome.reason]}
-            </Text>
-          ) : null}
-          {update.outcome?.kind === 'available' ? (
-            <View className="gap-3">
-              {/* 多版本选择：当有两个或以上更新可用时让用户自主点选目标版本 */}
-              {update.outcome.options.length > 1 ? (
-                <View className="gap-2">
-                  <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
-                    发现可用新版本，请选择要更新的目标：
-                  </Text>
-                  <View className="gap-2">
-                    {update.outcome.options.map((opt) => {
-                      const isSelected = opt.version === update.selectedVersion;
-                      // 下载进行中不允许换目标：安装包只对下载它的版本有效。
-                      const targetLocked = update.downloadBusy || update.installing;
-                      return (
-                        <Pressable
-                          key={opt.version}
-                          accessibilityRole="button"
-                          accessibilityLabel={`选择更新至 ${opt.channelLabel} v${opt.version}`}
-                          accessibilityState={{ selected: isSelected, disabled: targetLocked }}
-                          disabled={targetLocked}
-                          onPress={() => {
-                            update.selectVersion(opt.version);
-                          }}
-                          className={cn(
-                            'rounded-xl border p-3 flex-row items-center justify-between',
-                            isSelected
-                              ? 'border-accent bg-accent/10 dark:border-accent-dark dark:bg-accent-dark/15'
-                              : 'border-border/80 bg-surface dark:border-border-dark dark:bg-surface-dark',
-                            targetLocked ? 'opacity-60' : '',
-                          )}
-                        >
-                          <View className="gap-1">
-                            <View className="flex-row items-center gap-2">
-                              <View
-                                className={cn(
-                                  'rounded-full px-2 py-0.5',
-                                  opt.channel === 'stable'
-                                    ? 'bg-surface-container dark:bg-surface-container-dark'
-                                    : 'bg-accent/20 dark:bg-accent-dark/25',
-                                )}
-                              >
-                                <Text
-                                  className={cn(
-                                    'font-sans text-[11px] font-semibold',
-                                    opt.channel === 'stable'
-                                      ? 'text-muted dark:text-muted-dark'
-                                      : 'text-accent dark:text-accent-dark',
-                                  )}
-                                >
-                                  {opt.channelLabel}
-                                </Text>
-                              </View>
-                              <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
-                                v{opt.version}
-                              </Text>
-                              {opt.isPreferred ? (
-                                <Text className="font-sans text-[11px] text-muted dark:text-muted-dark">
-                                  (偏好)
-                                </Text>
-                              ) : null}
-                            </View>
-                            {opt.publishedAt ? (
-                              <Text className="font-sans text-xs text-muted dark:text-muted-dark">
-                                发布于 {formatReleaseDate(opt.publishedAt)}
-                              </Text>
-                            ) : null}
-                          </View>
-                          <View
-                            className={cn(
-                              'h-5 w-5 rounded-full border items-center justify-center',
-                              isSelected
-                                ? 'border-accent bg-accent dark:border-accent-dark dark:bg-accent-dark'
-                                : 'border-muted/40 dark:border-muted-dark/40',
-                            )}
-                          >
-                            {isSelected ? (
-                              <Text className="text-white text-[10px] font-bold">✓</Text>
-                            ) : null}
-                          </View>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </View>
-              ) : (
-                <View className="gap-1">
-                  <View className="flex-row items-center gap-2">
-                    <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
-                      发现新版本 v{update.outcome.latestVersion}
-                    </Text>
-                    {update.outcome.options[0] ? (
-                      <View
-                        className={cn(
-                          'rounded-full px-2 py-0.5',
-                          update.outcome.options[0].channel === 'stable'
-                            ? 'bg-surface-container dark:bg-surface-container-dark'
-                            : 'bg-accent/15 dark:bg-accent-dark/20',
-                        )}
-                      >
-                        <Text
-                          className={cn(
-                            'font-sans text-[11px] font-semibold',
-                            update.outcome.options[0].channel === 'stable'
-                              ? 'text-muted dark:text-muted-dark'
-                              : 'text-accent dark:text-accent-dark',
-                          )}
-                        >
-                          {update.outcome.options[0].channelLabel}
-                        </Text>
-                      </View>
-                    ) : null}
-                  </View>
-                  {update.outcome.options[0]?.publishedAt ? (
-                    <Text className="font-sans text-xs text-muted dark:text-muted-dark">
-                      发布于 {formatReleaseDate(update.outcome.options[0].publishedAt)}
-                    </Text>
-                  ) : null}
-                  {update.preferredChannel === 'stable' &&
-                  update.outcome.options[0]?.channel !== 'stable' ? (
-                    <Text className="font-sans text-xs text-muted/90 dark:text-muted-dark/90 mt-0.5">
-                      提示：正式版当前已是最新，发现更高版本的测试版可供尝鲜。
-                    </Text>
-                  ) : null}
-                </View>
-              )}
-              {/* 当前选定版本的 ChangeLog 更新说明展示 */}
-              {(() => {
-                const selectedOpt =
-                  update.outcome.options.find((opt) => opt.version === update.selectedVersion) ??
-                  update.outcome.options[0];
-                if (!selectedOpt?.notes) return null;
-                return (
-                  <View className="gap-1 rounded-xl border border-border/70 bg-surface-container/30 p-3 dark:border-border-dark/70 dark:bg-surface-container-dark/30">
-                    <Text className="font-sans text-xs font-semibold text-ink dark:text-ink-dark">
-                      版本更新说明 (v{selectedOpt.version})
-                    </Text>
-                    <ScrollView nestedScrollEnabled className="max-h-40">
-                      <Text className="font-sans text-xs leading-relaxed text-ink dark:text-ink-dark whitespace-pre-wrap">
-                        {selectedOpt.notes}
-                      </Text>
-                    </ScrollView>
-                  </View>
-                );
-              })()}
-              {update.outcome.downloads.length === 0 ? (
-                <Text className="font-sans text-xs text-muted dark:text-muted-dark">
-                  没能识别你的设备型号，请在下方 release 页面选择安装包。
-                </Text>
-              ) : (
-                <View className="gap-2">
-                  {/* 应用内下载进度条（桌面端及支持应用内安装的安卓端） */}
-                  {(update.isDesktop || update.canInstallInApp) && update.download.kind === 'downloading' ? (
-                    <View className="gap-1.5">
-                      <Text className="font-sans text-xs text-muted dark:text-muted-dark">
-                        正在下载…{' '}
-                        {update.download.downloadedBytes > 0
-                          ? `${(update.download.downloadedBytes / 1024 / 1024).toFixed(1)} MB`
-                          : ''}
-                      </Text>
-                      <View className="h-2 overflow-hidden rounded-full bg-muted/20 dark:bg-muted-dark/20">
-                        {/* 总大小未知时用不确定态（宽度 30% 动画），已知时按比例 */}
-                        <View
-                          className="h-full rounded-full bg-accent dark:bg-accent-dark"
-                          style={{
-                            width:
-                              update.download.totalBytes > 0
-                                ? `${Math.min(100, (update.download.downloadedBytes / update.download.totalBytes) * 100)}%`
-                                : '30%',
-                          }}
-                        />
-                      </View>
-                    </View>
-                  ) : null}
-                  {(update.isDesktop || update.canInstallInApp) && update.download.kind === 'done' ? (
-                    <View className="gap-1.5">
-                      <Text className="font-sans text-xs text-accent dark:text-accent-dark">
-                        ✓ 新版本已下载完成，可立即安装更新
-                      </Text>
-                      {update.installError ? (
-                        <Text className="font-sans text-xs text-danger dark:text-danger-dark">
-                          自动安装失败：{update.installError}
-                        </Text>
-                      ) : null}
-                      <Button
-                        label={
-                          update.isDesktop
-                            ? update.installing
-                              ? '正在安装并重启…'
-                              : '立即安装并重启'
-                            : update.installing
-                              ? '正在打开安装程序…'
-                              : '立即安装'
-                        }
-                        variant="secondary"
-                        onPress={update.installUpdate}
-                        disabled={update.installing}
-                      />
-                      <Button
-                        label="手动打开安装包"
-                        variant="ghost"
-                        onPress={update.openInstaller}
-                      />
-                    </View>
-                  ) : null}
-                  {(update.isDesktop || update.canInstallInApp) && update.download.kind === 'error' ? (
-                    <Text className="font-sans text-xs text-danger dark:text-danger-dark">
-                      下载失败：{update.download.error}
-                    </Text>
-                  ) : null}
-                  {/* 下载按钮：桌面端及安卓端走应用内下载，其他端走浏览器 */}
-                  {update.download.kind !== 'downloading' && update.download.kind !== 'done'
-                    ? update.outcome.downloads.map((dl) => (
-                        <Button
-                          key={dl.url}
-                          label={
-                            update.isDesktop || update.canInstallInApp
-                              ? `下载并安装 ${dl.label}`
-                              : `下载 ${dl.label}`
-                          }
-                          variant="secondary"
-                          onPress={() => {
-                            if (update.isDesktop || update.canInstallInApp) {
-                              update.startDownload(dl.url);
-                            } else {
-                              void openExternalUrl(dl.url);
-                            }
-                          }}
-                        />
-                      ))
-                    : null}
-                </View>
-              )}
-              <Pressable
-                accessibilityRole="link"
-                accessibilityLabel="查看全部安装包"
-                onPress={() => {
-                  void openExternalUrl(update.pageUrl);
-                }}
-                className="self-start py-0.5"
-              >
-                <Text className="font-sans text-xs font-semibold text-accent dark:text-accent-dark">
-                  查看全部安装包 →
-                </Text>
-              </Pressable>
-            </View>
-          ) : null}
         </Card>
         </View>
       </ScrollView>

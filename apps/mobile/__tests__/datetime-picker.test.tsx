@@ -1,13 +1,25 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { Dimensions } from 'react-native';
 import { DateTimePicker } from '../components/datetime-picker';
 
 describe('DateTimePicker', () => {
   const now = new Date(2026, 8, 25, 14, 30); // 2026-09-25 14:30
   const onConfirm = jest.fn();
   const onClose = jest.fn();
+  const defaultWindow = Dimensions.get('window');
+
+  function setWindowSize(width: number, height: number): void {
+    const dims = { ...defaultWindow, width, height, scale: 1, fontScale: 1 };
+    Dimensions.set({ window: dims, screen: dims });
+  }
 
   beforeEach(() => {
     jest.clearAllMocks();
+    setWindowSize(defaultWindow.width, defaultWindow.height);
+  });
+
+  afterAll(() => {
+    setWindowSize(defaultWindow.width, defaultWindow.height);
   });
 
   /** Confirm also records time usage (#105) — flush the async persist. */
@@ -323,6 +335,76 @@ describe('DateTimePicker', () => {
     expect(screen.getByLabelText('时段 14:00')).toBeTruthy();
     expect(screen.getByLabelText('时段 19:30')).toBeTruthy();
     expect(screen.getByLabelText('时段 22:30')).toBeTruthy();
+  });
+
+  it('uses the desktop window: calendar and time wheels share one row (#105 redesign)', () => {
+    setWindowSize(1280, 900);
+    render(
+      <DateTimePicker
+        mode="datetime"
+        title="选择截止时间"
+        value=""
+        now={now}
+        onConfirm={onConfirm}
+        onClose={onClose}
+      />,
+    );
+
+    // Desktop windows get a wider dialog with two columns — the date and the
+    // wheels are visible at the same time, with no scrolling inside the modal.
+    expect(screen.getByTestId('datetime-picker-two-column')).toBeTruthy();
+    expect(screen.getByLabelText('快捷 明天')).toBeTruthy();
+    expect(screen.getByLabelText('小时 14')).toBeTruthy();
+    expect(screen.getByLabelText('分钟 30')).toBeTruthy();
+  });
+
+  it('keeps the single-column stack on phone widths, with the wheels before the date grid (#105 redesign)', () => {
+    setWindowSize(390, 700);
+    render(
+      <DateTimePicker
+        mode="datetime"
+        title="选择截止时间"
+        value=""
+        now={now}
+        onConfirm={onConfirm}
+        onClose={onClose}
+      />,
+    );
+
+    expect(screen.queryByTestId('datetime-picker-two-column')).toBeNull();
+    // The time controls still render (and are listed before the calendar in
+    // the component tree, so they occupy the first screen).
+    expect(screen.getByLabelText('小时 14')).toBeTruthy();
+    expect(screen.getByLabelText('日 25')).toBeTruthy();
+  });
+
+  it('re-lays out when the window crosses the 720px threshold while the dialog is open (#105 redesign)', () => {
+    setWindowSize(1280, 900);
+    render(
+      <DateTimePicker
+        mode="datetime"
+        title="选择截止时间"
+        value=""
+        now={now}
+        onConfirm={onConfirm}
+        onClose={onClose}
+      />,
+    );
+    expect(screen.getByTestId('datetime-picker-two-column')).toBeTruthy();
+
+    // 弹窗不关闭、只拖动窗口宽度：布局必须跟着窗口重排，不能停留在打开时
+    // 的尺寸上。滚轮偏移的恢复由浏览器用例读取 scrollTop 验证（jest 环境里
+    // 的 ScrollView 没有可观察的命令式滚动）。
+    act(() => {
+      setWindowSize(390, 700);
+    });
+    expect(screen.queryByTestId('datetime-picker-two-column')).toBeNull();
+    expect(screen.getByLabelText('小时 14')).toBeTruthy();
+
+    act(() => {
+      setWindowSize(1280, 900);
+    });
+    expect(screen.getByTestId('datetime-picker-two-column')).toBeTruthy();
   });
 
   it('puts the most-used time first on the next open (#105)', async () => {
