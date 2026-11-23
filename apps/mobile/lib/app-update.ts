@@ -28,8 +28,9 @@
  *
  * 本模块负责 URL 拼接、版本号比较、tag 解析、按平台拼安装包，以及唯一一次
  * 网络调用 `fetchLatestRelease()`；平台探测与当前版本读取也在这里（都不需要
- * React）。Settings 页面只通过 `useAppUpdate` 读结果，不直接触碰本模块的
- * 网络部分（component-guidelines：屏幕不碰平台模块）。
+ * React）。界面只通过共享的更新弹窗（`components/auto-update-dialog.tsx`）
+ * 读取检查结果，不直接触碰本模块的网络部分（component-guidelines：屏幕不碰
+ * 平台模块）。
  */
 import { Linking, Platform } from 'react-native';
 import Constants from 'expo-constants';

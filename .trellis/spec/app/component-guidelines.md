@@ -264,7 +264,8 @@
   reminder events have their own mapping map, independent of the 「写入系统日历」
   action-sync switch; native-only is a hard platform rule, not a UI preference.
 - The one-shot first-run guide (`components/notification-optin-dialog.tsx`,
-  mounted in the root layout beside `IosInstallPrompt` / `AutoUpdateNotifier`)
+  mounted in the root layout inside `UpdatePromptProvider`, beside
+  `IosInstallPrompt`)
   shows only while the OS state is `undetermined` AND the user has never been
   asked, and it records BOTH answers (`optInPromptSeen`) — a declined user is
   never re-nagged (issue #24 AC3). A preference READ failure counts as
@@ -305,6 +306,14 @@
   `accessibilityRole="progressbar"` + `accessibilityValue` (width is never
   the only signal).
 
+- **DateTimePicker 按窗口宽度重排**：`datetime` 模式在 `width >= 720` 时用
+  `max-w-4xl`，状态横幅下方分左右两栏 —— 左栏是快捷日期 + 日历，右栏是
+  时间区（滚轮、分钟工具条、常用时段）。日期与时间必须同时可见，不允许在
+  宽窗口里继续用固定 `max-w-md` 把日期或时间挤到滚动区外。窄窗口保持单列，
+  顺序是 横幅 → 时间区 → 快捷日期 → 日历；滚轮必须在首屏。`date` / `time`
+  模式的宽屏内容限制在 `max-w-2xl` / `max-w-xl`，单列控件不拉成通栏。
+  跨 720px 重挂载滚轮时，必须用当前 `hour` / `minute` 重新同步滚动偏移；
+  只依赖 `mode` 的同步 effect 会让新滚轮停在 0，可见行与确认值不一致。
 - **DateTimePicker 模态弹窗与滚动体布局（Issue #50）**：
   在未设显式固定 `height` 的弹窗容器中（仅有 `max-height`），内部主体 `ScrollView` 严禁使用 `flex-1`（即 `flexGrow: 1, flexShrink: 1, flexBasis: 0`）。在 React Native Yoga 布局引擎下，未确定主轴高度的容器无法向 `flexBasis: 0` 的子项分配剩余空间，会导致滚动区域固有尺寸测量为 0、整个中间时间转盘坍塌消失。应使用 `className="shrink"` / `style={{ flexGrow: 0, flexShrink: 1 }}`，让 `ScrollView` 自适应由内容撑开，并在内容总高超过容器 `max-height` 约束时触发弹性收缩和内部滚动。
 - **DateTimePicker 日历格子的无障碍标签**：日期网格会补齐整周，相邻月份的日子出现在首尾（如 10 月 1 日与 11 月 1 日同屏）。本月格子用 `日 N`，补位格子必须用 `M月D日` —— 否则两个无障碍名称相同的按钮既无法被屏幕阅读器区分，也让 `getByLabelText` 在测试里抛 "multiple elements"。
@@ -334,41 +343,65 @@
   into the field, and reset the preview flag whenever the edited entity
   changes so reopening the form never lands on a stale preview.
 
-## App update (Settings 「应用更新」 card + startup 「发现新版本」 dialog)
+## App update (Settings 「应用更新」 card + shared update dialog)
 
 - ONE flow behind two entry points: `apps/mobile/lib/app-update.ts` (feed fetch,
   version compare, installer pick, Tauri IPC wrappers) →
-  `hooks/use-app-update.ts` (Settings card state machine) and
-  `components/auto-update-dialog.tsx` (background notifier). Neither entry point
-  owns a second copy of the version rules; the dialog is not a second
+  `components/auto-update-dialog.tsx` (`UpdatePromptProvider`: the single
+  checking state machine + the dialog). `hooks/use-app-update.ts` only holds
+  the Settings card's preferences and version/channel display; it must NOT
+  grow a second check/download state machine. The dialog is not a second
   implementation of the hook.
+- **Manual and background checks share the dialog.** `useUpdatePrompt()`
+  (consumed by Settings) exposes `checkForUpdates()` and `checking`; a manual
+  press opens the same modal immediately in the `checking` state and lands on
+  `发现新版本` / `已是最新版本` / `检查失败`. The background notifier opens
+  ONLY when a newer version exists and is not suppressed. Manual checks are an
+  explicit user action: they ignore 「稍后再说」 / 「跳过此版本」.
+- **A download task owns its release until it ends.** The desktop shell has ONE
+  global download slot (`download_update` returns Ok while downloading;
+  `get_download_progress` reads that same task). While a download / install is
+  active, pin the release that started it: a manual re-check reopens THAT task,
+  not the newly preferred channel, and must not start a second download. Apply
+  a channel preference read during the task only after it ends, and only if it
+  actually changed — task completion alone must NOT reset a channel the user
+  explicitly picked in the dialog (default stable + beta download → keep beta).
+  At the point a target really changes, clear the old download state and drop
+  late progress / done / error callbacks from the old tag. The install button
+  may only use the CURRENT task's completed download — never an installer
+  downloaded for another channel or version.
 - **Background checks run at startup and every 6 hours** while the app stays
   open (`AUTO_UPDATE_CHECK_INTERVAL_MS`), so a long-running desktop window does
   not miss a release. Each pass re-reads the preferences, so turning 「自动检查更新」
-  off in Settings takes effect on the next pass.
+  off in Settings takes effect on the next pass. A check does not disturb an
+  already-open dialog.
 - **Dismissals are persisted per exact version**: 「稍后再说」 snoozes the version
   for 24 hours (`snoozeUpdateVersion` / `isUpdateSuppressed`), 「跳过此版本」 keeps
   it quiet until a higher version appears (`skipUpdateVersion`). The notifier
   never re-prompts a suppressed version in a later session.
 - **Auto-download** (`getAutoDownloadPreference`, default on) starts the in-app
-  package download as soon as the dialog is shown, but only where in-app
-  install exists (Tauri shell / Android). The install itself is always the
-  user's explicit action.
-- The ChangeLog in both places is the GitHub release **body**, rendered as-is
+  package download as soon as the available-update dialog is shown, but only
+  where in-app install exists (Tauri shell / Android). The install itself is
+  always the user's explicit action.
+- The ChangeLog in the dialog is the GitHub release **body**, rendered as-is
   (source contract: the release-notes pitfall in
   `project/quality-guidelines.md`). Do not re-parse or re-format it.
+- **The Settings card renders only the version, channel preference, the two
+  auto-update switches, and the 「检查更新」 button.** Installer buttons,
+  download progress, version selection and failure copy live in the dialog;
+  do not reintroduce an inline result card beside the button.
 - **Desktop install goes through `install_update_and_restart`.** The Rust command
   (`apps/desktop/src-tauri/src/lib.rs`) mounts the `.dmg`, spawns a detached
   helper that waits for the app to exit, `ditto`s the new bundle over the running
   one, clears quarantine and relaunches it; on Windows it launches the NSIS
   installer and exits. The user never has to quit the app or drag the installer.
   `open_downloaded_file` hands the file to the OS (Finder / NSIS) — that is the
-  manual FALLBACK only (the install-failure state and the Settings card's
-  「手动打开安装包」), never the primary 「立即安装并重启」 button.
+  manual FALLBACK only (the install-failure state), never the primary
+  「立即安装并重启」 button.
 - After the install command resolves, clear the installing flag only on Linux
   (system installer, no exit) — on macOS / Windows the process is already exiting
   and the promise never settles.
-- Both entry points poll download progress with a 400 ms interval **plus one
+- The dialog polls download progress with a 400 ms interval **plus one
   immediate read** after `download_update`, so a finished download shows without
   waiting a full interval.
 
