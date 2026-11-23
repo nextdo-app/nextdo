@@ -10,6 +10,7 @@ import { toIso, ulid, type ClarifyAnswers, type InboxItem, type Value } from '@n
 import {
   addInboxItem,
   applyClarify,
+  completeInboxItem,
   listInboxItems,
   reclarifyAction,
   trashInboxItem,
@@ -17,6 +18,7 @@ import {
   type ReclarifyAnswers,
 } from '../queries/inbox';
 import { listNextActions } from '../queries/actions';
+import { listCompletionRecords, listReviewCompletions } from '../queries/reviews';
 import { openTestDb, type TestDb } from './query-helpers';
 import { FIXTURE_IDS, FIXTURE_NOW } from './fixtures';
 
@@ -121,6 +123,82 @@ describe('capture CRUD', () => {
       await expect(trashInboxItem(db, { id: item.id, now: FIXTURE_NOW })).rejects.toMatchObject({
         code: 'inbox.not-found',
       });
+    } finally {
+      await close();
+    }
+  });
+});
+
+describe('completeInboxItem (issue #106)', () => {
+  it('writes a do_now completion and soft-deletes the capture, without an action', async () => {
+    const { db, close } = await open();
+    try {
+      const item = makeInboxItem({ title: '倒垃圾' });
+      await addInboxItem(db, item);
+      await completeInboxItem(db, { id: item.id, now: FIXTURE_NOW });
+
+      expect(await listInboxItems(db)).toEqual([]);
+      expect(await listNextActions(db)).toEqual([]);
+      const records = await listCompletionRecords(db, { actionIds: [item.id] });
+      expect(records).toHaveLength(1);
+      expect(records[0]).toMatchObject({
+        actionKind: 'do_now',
+        actionId: item.id,
+        completedAt: toIso(FIXTURE_NOW),
+        estMinutes: null,
+      });
+      // The review surfaces resolve the title from the soft-deleted inbox row.
+      expect(await listReviewCompletions(db, FIXTURE_NOW)).toEqual([
+        { id: item.id, title: '倒垃圾', kind: 'do_now' },
+      ]);
+    } finally {
+      await close();
+    }
+  });
+
+  it('throws not-found for a missing or already completed capture (no record written)', async () => {
+    const { db, close } = await open();
+    try {
+      const item = makeInboxItem();
+      await addInboxItem(db, item);
+      await completeInboxItem(db, { id: item.id, now: FIXTURE_NOW });
+
+      await expect(
+        completeInboxItem(db, { id: item.id, now: FIXTURE_NOW }),
+      ).rejects.toMatchObject({ code: 'inbox.not-found' });
+      await expect(
+        completeInboxItem(db, { id: 'missing', now: FIXTURE_NOW }),
+      ).rejects.toMatchObject({ code: 'inbox.not-found' });
+      expect(await listCompletionRecords(db)).toHaveLength(1);
+    } finally {
+      await close();
+    }
+  });
+
+  it('serializes two concurrent completes into one record', async () => {
+    const { db, close } = await open();
+    try {
+      const item = makeInboxItem();
+      await addInboxItem(db, item);
+
+      // A double tap on [完成] — the live-row check must run inside the
+      // write transaction, or both calls read the live row and each writes
+      // its own CompletionRecord.
+      const results = await Promise.allSettled([
+        completeInboxItem(db, { id: item.id, now: FIXTURE_NOW }),
+        completeInboxItem(db, {
+          id: item.id,
+          now: new Date(FIXTURE_NOW.getTime() + 1000),
+        }),
+      ]);
+
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      const rejected = results.filter(
+        (result): result is PromiseRejectedResult => result.status === 'rejected',
+      );
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0]?.reason).toMatchObject({ code: 'inbox.not-found' });
+      expect(await listCompletionRecords(db)).toHaveLength(1);
     } finally {
       await close();
     }

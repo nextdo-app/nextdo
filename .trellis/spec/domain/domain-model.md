@@ -7,10 +7,20 @@
 
 ## The Clarify Decision Table (Proposal §5.2 — complete, no implicit branches)
 
-Every `InboxItem` is resolved by exactly this flow. The UI walks the user through the
-questions one at a time; the resolution is **one DB transaction** that deletes the
-`InboxItem` and creates the target row(s). The target row carries `sourceInboxId`
-(= the deleted item's id) for traceability.
+Every `InboxItem` is resolved by exactly this flow, or by one of the two direct
+outcomes below when clarification would be busywork (issue #106). The UI walks the
+user through the questions one at a time; the resolution is **one DB transaction**
+that deletes the `InboxItem` and creates the target row(s). The target row carries
+`sourceInboxId` (= the deleted item's id) for traceability.
+
+Direct outcomes (no Clarify walk, no target row):
+
+- **Already done** — insert `CompletionRecord(action_kind="do_now", action_id =
+  InboxItem.id, estMinutes = null)` and soft-delete the item in one transaction.
+  No action entity is created; review surfaces resolve the title from the
+  soft-deleted inbox row.
+- **Not needed** — the same soft delete as the table's Trash branch; the item stays
+  restorable from the Trash screen.
 
 ```text
 InboxItem

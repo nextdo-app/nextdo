@@ -39,6 +39,7 @@ export { listReviewRecords, STALL_DAYS, isStalled } from './queries/reviews';
 export {
   addInboxItem,
   applyClarify,
+  completeInboxItem,
   reclarifyAction,
   trashInboxItem,
 } from './queries/inbox';
