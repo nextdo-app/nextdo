@@ -22,6 +22,7 @@ import {
   StorageNextdoError,
   ValidationNextdoError,
   assertValidCalendarAction,
+  assertValidCompletionRecord,
   assertValidInboxItem,
   assertValidNextAction,
   assertValidProject,
@@ -37,6 +38,7 @@ import {
   type CalendarAction,
   type ClarifyAnswers,
   type ClarifyOutcome,
+  type CompletionRecord,
   type InboxItem,
   type NextAction,
   type Project,
@@ -47,6 +49,7 @@ import {
 } from '@nextdo/core';
 import {
   calendarActionToRow,
+  completionRecordToRow,
   inboxItemFromRow,
   inboxItemToRow,
   nextActionToRow,
@@ -65,7 +68,7 @@ import type { ActionKind, NextdoDb } from '../types';
 // Capture CRUD
 // ---------------------------------------------------------------------------
 
-async function loadInboxRow(db: NextdoDb, inboxId: string) {
+async function loadInboxRow(db: Pick<NextdoDb, 'selectFrom'>, inboxId: string) {
   const row = await db
     .selectFrom('inbox_items')
     .selectAll()
@@ -144,6 +147,56 @@ export async function trashInboxItem(
     .set({ deleted_at: nowIso, updated_at: nowIso })
     .where('id', '=', args.id)
     .execute();
+}
+
+/**
+ * Direct completion from the inbox (issue #106): the capture is already done,
+ * so it never enters the Clarify walk. ONE transaction:
+ *
+ *   1. insert a `do_now` CompletionRecord (actionId = the InboxItem id,
+ *      estMinutes = null — no estimate ever existed) — the domain-model's
+ *      "completed on the spot" shape, and the review surfaces resolve the
+ *      title from the (soft-deleted) inbox row;
+ *   2. soft-delete the InboxItem.
+ *
+ * No action entity is created: the capture was never clarified into one.
+ * The soft-deleted inbox row stays restorable from Trash.
+ */
+export async function completeInboxItem(
+  db: NextdoDb,
+  args: { id: string; now: Date },
+): Promise<void> {
+  const { id, now } = args;
+  const nowIso = toIso(now);
+
+  await db.transaction().execute(async (tx) => {
+    // The live-row check lives INSIDE this write transaction: a double tap
+    // on [完成] must serialize here, so the second call sees the
+    // soft-deleted row and throws `inbox.not-found` instead of writing a
+    // second CompletionRecord. A check outside the transaction leaves a
+    // window where both calls read the live row.
+    const inbox = inboxItemFromRow(await loadInboxRow(tx, id));
+    const record: CompletionRecord = {
+      id: ulid(now),
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      deletedAt: null,
+      actionKind: 'do_now',
+      actionId: inbox.id,
+      completedAt: nowIso,
+      estMinutes: null,
+    };
+    assertValidCompletionRecord(record);
+    await tx
+      .insertInto('completion_records')
+      .values({ id: record.id, ...completionRecordToRow(record) })
+      .execute();
+    await tx
+      .updateTable('inbox_items')
+      .set({ deleted_at: nowIso, updated_at: nowIso })
+      .where('id', '=', id)
+      .execute();
+  });
 }
 
 // ---------------------------------------------------------------------------

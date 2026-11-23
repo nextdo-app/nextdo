@@ -69,7 +69,8 @@ jest.mock('@nextdo/db', () => {
     trashAction: async () => undefined,
     // R1: resolves to the created item (id drives the Clarify handoff).
     addInboxItem: jest.fn(async (_db: unknown, item: unknown) => item),
-    trashInboxItem: async () => undefined,
+    completeInboxItem: jest.fn(async () => undefined),
+    trashInboxItem: jest.fn(async () => undefined),
     listInboxItems: async () => [],
     listProjects: async () => [],
     listProjectActions: async () => [],
@@ -125,10 +126,12 @@ import { mockExpoNotifications } from './mocks/expo-notifications';
 import { act, fireEvent, renderRouter, screen, waitFor, within } from 'expo-router/testing-library';
 import { router } from 'expo-router';
 import { Modal } from 'react-native';
-import { addInboxItem } from '@nextdo/db';
-import type { InboxItem } from '@nextdo/core';
+import { addInboxItem, completeInboxItem, trashInboxItem } from '@nextdo/db';
+import { StorageNextdoError, type InboxItem } from '@nextdo/core';
 
 const mockedAddInboxItem = addInboxItem as jest.Mock;
+const mockedCompleteInboxItem = completeInboxItem as jest.Mock;
+const mockedTrashInboxItem = trashInboxItem as jest.Mock;
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -324,5 +327,65 @@ describe('Inbox screen — Paper Serenity rows (design §2)', () => {
     fireEvent.press(screen.getAllByText('处理 →')[1]!);
 
     await waitFor(() => expect(view.getPathname()).toBe('/clarify/inbox-fresh'));
+  });
+
+  it('row [完成] completes the capture without opening the Clarify wizard (#106)', async () => {
+    const view = await renderWithTwoRows();
+    await act(async () => {});
+
+    fireEvent.press(screen.getByLabelText('完成：刚刚记下的事'));
+
+    await waitFor(() =>
+      expect(mockedCompleteInboxItem).toHaveBeenCalledWith(expect.anything(), {
+        id: 'inbox-fresh',
+        now: expect.any(Date),
+      }),
+    );
+    expect(view.getPathname()).toBe('/inbox');
+  });
+
+  it('a repeated [完成] (inbox.not-found) is benign — no error banner (#106)', async () => {
+    await renderWithTwoRows();
+    await act(async () => {});
+
+    // The second tap of a double press finds the row already soft-deleted.
+    mockedCompleteInboxItem.mockRejectedValueOnce(
+      new StorageNextdoError('inbox.not-found', 'No live InboxItem with id inbox-fresh'),
+    );
+    fireEvent.press(screen.getByLabelText('完成：刚刚记下的事'));
+    await act(async () => {});
+
+    // The capture is gone; the user must not see a raw storage error.
+    expect(screen.queryByText('No live InboxItem with id inbox-fresh')).toBeNull();
+    expect(screen.queryByText('这条收件箱记录不存在了')).toBeNull();
+  });
+
+  it('a failed [完成] shows the error banner (#106 failure state)', async () => {
+    await renderWithTwoRows();
+    await act(async () => {});
+
+    mockedCompleteInboxItem.mockRejectedValueOnce(new Error('local write failed'));
+    fireEvent.press(screen.getByLabelText('完成：刚刚记下的事'));
+
+    await waitFor(() => expect(screen.getByText('local write failed')).toBeTruthy());
+    // The row stays in the list so the user can retry.
+    expect(screen.getByText('刚刚记下的事')).toBeTruthy();
+  });
+
+  it('row [废弃] arms first, then soft-deletes the capture (#106)', async () => {
+    await renderWithTwoRows();
+    await act(async () => {});
+
+    // The first tap only arms — a single tap must not discard the capture.
+    fireEvent.press(screen.getByLabelText('废弃：刚刚记下的事'));
+    expect(mockedTrashInboxItem).not.toHaveBeenCalled();
+
+    fireEvent.press(screen.getByLabelText('确认废弃：刚刚记下的事'));
+    await waitFor(() =>
+      expect(mockedTrashInboxItem).toHaveBeenCalledWith(expect.anything(), {
+        id: 'inbox-fresh',
+        now: expect.any(Date),
+      }),
+    );
   });
 });

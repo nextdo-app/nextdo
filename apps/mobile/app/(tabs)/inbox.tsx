@@ -12,8 +12,11 @@
  *   thought dump; its [记录] also leaves the item pending; "再记一条" from
  *   the wizard returns here via the one-shot `recapture=1` route param;
  * - list: oldest first; a row's title opens the Clarify wizard (R3) and the
- *   row's 处理 → button does the same; the trash button confirms inline
- *   (one tap to arm, one tap to delete);
+ *   row's 处理 → button does the same; issue #106 adds the direct outcomes
+ *   for a capture that needs no clarification: [完成] writes a do-now
+ *   completion record (the daily review lists it; the capture stays
+ *   restorable from Trash via 废弃) and [废弃] soft-deletes to Trash. The
+ *   discard action confirms inline (one tap to arm, one tap to confirm);
  * - rows older than 24h carry the warning-colored 优先澄清 meta (the text
  *   itself is the signal — color is never the only one, component-
  *   guidelines);
@@ -31,6 +34,7 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Button, Card, EmptyState, Tag, colors } from '@nextdo/ui';
 import { useInboxItems } from '@/hooks/use-inbox-items';
 import { useAddInboxItem } from '@/hooks/use-add-inbox-item';
+import { useCompleteInboxItem } from '@/hooks/use-complete-inbox-item';
 import { useTrashInboxItem } from '@/hooks/use-trash-inbox-item';
 import { useWaitingForItems } from '@/hooks/use-waiting-for';
 import { useSomedayItems } from '@/hooks/use-someday-items';
@@ -50,15 +54,17 @@ const INPUT_CLASS =
 /** Captures older than this get the warning "优先澄清" meta (design §2). */
 const PRIORITY_AFTER_MS = 24 * 60 * 60 * 1000;
 
-/** One inbox row: tap the title → clarify; 处理 → does the same; trash
- *  arms, then confirms. */
+/** One inbox row: tap the title → clarify; 完成 finishes the capture directly;
+ *  废弃 arms, then trashes it (issue #106). */
 function InboxRow({
   item,
   now,
+  onComplete,
   onTrash,
 }: {
   item: InboxItem;
   now: Date;
+  onComplete: (id: string) => void;
   onTrash: (id: string) => void;
 }) {
   const [armed, setArmed] = useState(false);
@@ -67,37 +73,39 @@ function InboxRow({
 
   return (
     <Card variant="outlined" className="gap-2.5 p-4 rounded-2xl border-border/70 bg-surface dark:border-border-dark/70 dark:bg-surface-dark shadow-2xs">
-      <View className="flex-row items-center gap-3">
-        <Pressable
-          className="flex-1"
-          accessibilityRole="button"
-          accessibilityLabel={`明晰：${item.title}`}
-          onPress={() => router.push(`/clarify/${item.id}`)}
-        >
-          <Text className="font-sans text-base font-medium leading-snug text-ink dark:text-ink-dark">
-            {item.title}
+      <Pressable
+        className="flex-1"
+        accessibilityRole="button"
+        accessibilityLabel={`明晰：${item.title}`}
+        onPress={() => router.push(`/clarify/${item.id}`)}
+      >
+        <Text className="font-sans text-base font-medium leading-snug text-ink dark:text-ink-dark">
+          {item.title}
+        </Text>
+        <View className="mt-1 flex-row items-center gap-1.5">
+          <Text className="font-sans text-xs text-muted dark:text-muted-dark">
+            {formatRelativeTime(item.capturedAt, now)}
           </Text>
-          <View className="mt-1 flex-row items-center gap-1.5">
-            <Text className="font-sans text-xs text-muted dark:text-muted-dark">
-              {formatRelativeTime(item.capturedAt, now)}
+          {needsPriority ? (
+            <Text className="font-sans text-xs font-semibold text-warning dark:text-warning-dark">
+              · 优先澄清
             </Text>
-            {needsPriority ? (
-              <Text className="font-sans text-xs font-semibold text-warning dark:text-warning-dark">
-                · 优先澄清
-              </Text>
-            ) : null}
-          </View>
-        </Pressable>
+          ) : null}
+        </View>
+      </Pressable>
+      <View className="flex-row items-center gap-2">
         <Button
           size="sm"
-          label="处理 →"
-          variant="tinted"
-          onPress={() => router.push(`/clarify/${item.id}`)}
+          label="完成"
+          accessibilityLabel={`完成：${item.title}`}
+          variant="primary"
+          onPress={() => onComplete(item.id)}
         />
         {armed ? (
           <Button
             size="sm"
-            label="确认删除？"
+            label="确认废弃？"
+            accessibilityLabel={`确认废弃：${item.title}`}
             variant="secondary"
             onPress={() => {
               setArmed(false);
@@ -107,11 +115,20 @@ function InboxRow({
         ) : (
           <Button
             size="sm"
-            label="删除"
+            label="废弃"
+            accessibilityLabel={`废弃：${item.title}`}
             variant="ghost"
             onPress={() => setArmed(true)}
           />
         )}
+        <View className="flex-1" />
+        <Button
+          size="sm"
+          label="处理 →"
+          accessibilityLabel={`澄清：${item.title}`}
+          variant="tinted"
+          onPress={() => router.push(`/clarify/${item.id}`)}
+        />
       </View>
     </Card>
   );
@@ -158,6 +175,7 @@ export default function InboxScreen() {
   const { data: waitingItems } = useWaitingForItems();
   const { data: somedayItems } = useSomedayItems();
   const { add, error: captureError } = useAddInboxItem();
+  const { complete, error: completeError } = useCompleteInboxItem();
   const { trash, error: trashError } = useTrashInboxItem();
   const now = useAppClock();
   const { isDark } = useAppTheme();
@@ -213,7 +231,7 @@ export default function InboxScreen() {
     }
   };
 
-  const mutationError = captureError ?? trashError;
+  const mutationError = captureError ?? completeError ?? trashError;
   const startClarifyId = data[0]?.id ?? null;
 
   return (
@@ -333,7 +351,12 @@ export default function InboxScreen() {
               keyExtractor={(item) => item.id}
               contentContainerClassName="gap-2.5 pb-20 md:pb-6"
               renderItem={({ item }) => (
-                <InboxRow item={item} now={now} onTrash={(id) => void trash(id)} />
+                <InboxRow
+                  item={item}
+                  now={now}
+                  onComplete={(id) => void complete(id)}
+                  onTrash={(id) => void trash(id)}
+                />
               )}
               ListFooterComponent={<GtdTipCard />}
             />
