@@ -5,9 +5,18 @@
  * - Fixed footer buttons (always visible on compact screens without scrolling)
  * - 12h / 24h format toggle with intuitive AM/PM indicators
  * - Fine-tune minute adjusters (+5m, -5m, +1m, -1m) for precise time selection
- * - Expanded quick time presets (07:30, 08:30, 09:00, 10:30, 12:30, 14:00, 18:00, 19:30, 21:00, 22:30)
  * - Responsive compact screen layout (< 380px) with adaptive paddings
  * - 100% pure React Native cross-platform implementation (Web, Tauri, iOS, Android)
+ *
+ * Issue #105 (time-selection ergonomics):
+ * - the time section (wheels + fine-tune toolbar) sits BEFORE the calendar
+ *   grid in `datetime` mode, and the wheels come before the 「常用时段」
+ *   chips — the chips wrap and grow downward, so they can never push the
+ *   hour/minute wheels (or the selected row) out of the first screen;
+ * - the chips wrap onto multiple rows (no horizontal scroll, so afternoon /
+ *   evening times are not hidden off-screen);
+ * - the chip list is usage-ranked (`useQuickTimePresets`) and always keeps
+ *   morning / afternoon / evening defaults for a fresh user.
  */
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -22,6 +31,7 @@ import {
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Button, cn, colors } from '@nextdo/ui';
 import { useAppTheme } from '@/lib/theme';
+import { useQuickTimePresets } from '@/hooks/use-quick-time-presets';
 
 const pad = (n: number): string => String(n).padStart(2, '0');
 
@@ -44,19 +54,6 @@ const WHEEL_HEIGHT = 160;
 const WHEEL_PADDING = (WHEEL_HEIGHT - ITEM_HEIGHT) / 2; // 60
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const MINUTES = Array.from({ length: 60 }, (_, i) => i);
-
-const QUICK_TIME_PRESETS = [
-  { label: '07:30', period: '晨间', h: 7, m: 30 },
-  { label: '08:30', period: '早间', h: 8, m: 30 },
-  { label: '09:00', period: '上午', h: 9, m: 0 },
-  { label: '10:30', period: '午前', h: 10, m: 30 },
-  { label: '12:30', period: '午间', h: 12, m: 30 },
-  { label: '14:00', period: '下午', h: 14, m: 0 },
-  { label: '18:00', period: '傍晚', h: 18, m: 0 },
-  { label: '19:30', period: '晚间', h: 19, m: 30 },
-  { label: '21:00', period: '夜间', h: 21, m: 0 },
-  { label: '22:30', period: '睡前', h: 22, m: 30 },
-];
 
 const MINUTE_PRESETS = [0, 15, 30, 45];
 
@@ -137,6 +134,7 @@ export function DateTimePicker({
   const { isDark } = useAppTheme();
   const { width: screenWidth } = useWindowDimensions();
   const isCompact = screenWidth < 380;
+  const { presets: quickTimePresets, record: recordTimeUse } = useQuickTimePresets();
 
   const dateMatch = mode === 'date' ? DATE_ONLY.exec(value) : null;
   // A date-only value is a legitimate seed in datetime mode too: callers that
@@ -193,6 +191,14 @@ export function DateTimePicker({
 
   const hourScrollRef = useRef<ScrollView>(null);
   const minuteScrollRef = useRef<ScrollView>(null);
+  // Issue #105: wheel scrolling must count as a time choice in `datetime`
+  // mode too (it used to leave `timeTouched` false, so confirming emitted a
+  // silent date-only value). Compare against the CURRENT value: the mount
+  // sync scroll lands on the seed value and therefore does not mark a touch.
+  const hourRef = useRef(hour);
+  hourRef.current = hour;
+  const minuteRef = useRef(minute);
+  minuteRef.current = minute;
 
   // Sync hour/minute scroll position
   useEffect(() => {
@@ -244,16 +250,22 @@ export function DateTimePicker({
     }
   }
 
+  // Every explicit selection jumps its wheel INSTANTLY (`animated: false`).
+  // A smooth scroll emits `onScroll` events with the OLD offset while it
+  // travels, and those events write their intermediate value back into
+  // `hour`/`minute` — on web the animation can start late, so a quick
+  // 确定 right after a preset tap silently saved the pre-click time.
+  // An instant jump lands on the chosen offset before any stale event.
   function selectHour(h: number) {
     setTimeTouched(true);
     setHour(h);
-    hourScrollRef.current?.scrollTo({ y: h * ITEM_HEIGHT, animated: true });
+    hourScrollRef.current?.scrollTo({ y: h * ITEM_HEIGHT, animated: false });
   }
 
   function selectMinute(m: number) {
     setTimeTouched(true);
     setMinute(m);
-    minuteScrollRef.current?.scrollTo({ y: m * ITEM_HEIGHT, animated: true });
+    minuteScrollRef.current?.scrollTo({ y: m * ITEM_HEIGHT, animated: false });
   }
 
   function adjustMinute(delta: number) {
@@ -264,8 +276,8 @@ export function DateTimePicker({
     const newM = total % 60;
     setHour(newH);
     setMinute(newM);
-    hourScrollRef.current?.scrollTo({ y: newH * ITEM_HEIGHT, animated: true });
-    minuteScrollRef.current?.scrollTo({ y: newM * ITEM_HEIGHT, animated: true });
+    hourScrollRef.current?.scrollTo({ y: newH * ITEM_HEIGHT, animated: false });
+    minuteScrollRef.current?.scrollTo({ y: newM * ITEM_HEIGHT, animated: false });
   }
 
   function toggleAmPm(targetPeriod: 'AM' | 'PM') {
@@ -273,11 +285,11 @@ export function DateTimePicker({
     if (targetPeriod === 'AM' && hour >= 12) {
       const newH = hour - 12;
       setHour(newH);
-      hourScrollRef.current?.scrollTo({ y: newH * ITEM_HEIGHT, animated: true });
+      hourScrollRef.current?.scrollTo({ y: newH * ITEM_HEIGHT, animated: false });
     } else if (targetPeriod === 'PM' && hour < 12) {
       const newH = hour + 12;
       setHour(newH);
-      hourScrollRef.current?.scrollTo({ y: newH * ITEM_HEIGHT, animated: true });
+      hourScrollRef.current?.scrollTo({ y: newH * ITEM_HEIGHT, animated: false });
     }
   }
 
@@ -285,10 +297,15 @@ export function DateTimePicker({
     if (mode === 'datetime') {
       const date = `${selectedYear}-${pad(selectedMonth)}-${pad(selectedDay)}`;
       const carriesTime = timeTouched || DATETIME_LOCAL.test(value);
+      // Issue #105: only a time the user actually TOUCHED feeds the
+      // usage-ranked presets — confirming a day on a stored deadline must
+      // not upvote the clock time it happened to carry.
+      if (timeTouched) recordTimeUse(hour, minute);
       onConfirm(carriesTime ? `${date}T${pad(hour)}:${pad(minute)}` : date);
     } else if (mode === 'date') {
       onConfirm(`${selectedYear}-${pad(selectedMonth)}-${pad(selectedDay)}`);
     } else {
+      recordTimeUse(hour, minute);
       onConfirm(`${pad(hour)}:${pad(minute)}`);
     }
     onClose();
@@ -674,120 +691,9 @@ export function DateTimePicker({
               )}
             </View>
 
-            {/* Modern Calendar Grid (in date & datetime modes) */}
-            {mode !== 'time' ? (
-              <View className="mb-3 rounded-2xl border border-border/50 bg-surface-container/20 p-3 dark:border-border-dark/50 dark:bg-surface-container-dark/20">
-                {/* Month Navigation Strip */}
-                <View className="mb-2 flex-row items-center justify-between px-1">
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="上个月"
-                    onPress={prevMonth}
-                    className="h-7 w-7 items-center justify-center rounded-xl bg-surface-container/60 active:bg-surface-container dark:bg-surface-container-dark/60"
-                  >
-                    <Ionicons name="chevron-back" size={15} color={isDark ? colors.mutedDark : colors.muted} />
-                  </Pressable>
-
-                  <View className="flex-row items-center justify-center">
-                    <Text className="font-sans text-sm font-bold text-ink dark:text-ink-dark">
-                      {viewYear}年 {pad(viewMonth)}月
-                    </Text>
-                  </View>
-
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="下个月"
-                    onPress={nextMonth}
-                    className="h-7 w-7 items-center justify-center rounded-xl bg-surface-container/60 active:bg-surface-container dark:bg-surface-container-dark/60"
-                  >
-                    <Ionicons name="chevron-forward" size={15} color={isDark ? colors.mutedDark : colors.muted} />
-                  </Pressable>
-                </View>
-
-                {/* Weekday Names Strip */}
-                <View className="mb-1 flex-row">
-                  {WEEKDAY_NAMES.map((col) => (
-                    <View key={col.label} className="flex-1 items-center py-0.5">
-                      <Text
-                        className={cn(
-                          'font-sans text-[11px] font-bold',
-                          col.isWeekend
-                            ? 'text-accent/70 dark:text-accent-dark/70'
-                            : 'text-muted dark:text-muted-dark',
-                        )}
-                      >
-                        {col.label}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-
-                {/* 7-column Calendar Cells */}
-                <View className="flex-row flex-wrap">
-                  {calendarCells.map((cell) => {
-                    const isCurrentMonth = cell.type === 'current';
-                    const isSelected = cell.key === selectedDateKey;
-                    const isToday = cell.key === todayKey;
-
-                    return (
-                      <View key={cell.key} style={{ width: '14.285%' }} className="items-center py-0.5">
-                        <Pressable
-                          accessibilityRole="button"
-                          // Adjacent-month days repeat day numbers (the grid fills whole
-                          // weeks), so their label carries the month — two buttons with the
-                          // same accessible name are indistinguishable.
-                          accessibilityLabel={
-                            isCurrentMonth ? `日 ${cell.day}` : `${cell.month}月${cell.day}日`
-                          }
-                          accessibilityState={{ selected: isSelected }}
-                          onPress={() => {
-                            setSelectedYear(cell.year);
-                            setSelectedMonth(cell.month);
-                            setSelectedDay(cell.day);
-                            if (!isCurrentMonth) {
-                              setViewYear(cell.year);
-                              setViewMonth(cell.month);
-                            }
-                          }}
-                          className={cn(
-                            'h-7 w-7 items-center justify-center rounded-xl transition-all',
-                            isSelected
-                              ? 'bg-accent shadow-sm shadow-accent/40 dark:bg-accent-dark'
-                              : isToday
-                                ? 'border border-accent/80 bg-accent/10 dark:border-accent-dark/80 dark:bg-accent-dark/15'
-                                : 'active:bg-surface-container dark:active:bg-surface-container-dark',
-                          )}
-                        >
-                          <Text
-                            className={cn(
-                              'font-sans text-xs',
-                              isSelected
-                                ? 'font-black text-on-accent dark:text-on-accent-dark'
-                                : isCurrentMonth
-                                  ? isToday
-                                    ? 'font-black text-accent dark:text-accent-dark'
-                                    : 'font-semibold text-ink dark:text-ink-dark'
-                                  : 'text-muted/30 dark:text-muted-dark/30',
-                            )}
-                          >
-                            {cell.day}
-                          </Text>
-                        </Pressable>
-                      </View>
-                    );
-                  })}
-                </View>
-              </View>
-            ) : null}
-
             {/* Time Configuration Section (in time & datetime modes) */}
             {mode !== 'date' ? (
               <View className="gap-2.5">
-                {mode === 'datetime' ? (
-                  <Text className="px-1 font-sans text-[11px] text-muted dark:text-muted-dark">
-                    不调整时刻 = 只记日期（当天截止）
-                  </Text>
-                ) : null}
                 {/* Datetime mode specific format switch header */}
                 {mode === 'datetime' ? (
                   <View className="flex-row items-center justify-between px-1">
@@ -939,6 +845,7 @@ export function DateTimePicker({
                     {/* Hour Scroll Column */}
                     <ScrollView
                       ref={hourScrollRef}
+                      testID="hour-wheel"
                       className="h-full flex-1"
                       style={{ height: WHEEL_HEIGHT }}
                       showsVerticalScrollIndicator={false}
@@ -951,6 +858,7 @@ export function DateTimePicker({
                           23,
                           Math.max(0, Math.round(e.nativeEvent.contentOffset.y / ITEM_HEIGHT)),
                         );
+                        if (h !== hourRef.current) setTimeTouched(true);
                         setHour(h);
                       }}
                     >
@@ -992,6 +900,7 @@ export function DateTimePicker({
                     {/* Minute Scroll Column */}
                     <ScrollView
                       ref={minuteScrollRef}
+                      testID="minute-wheel"
                       className="h-full flex-1"
                       style={{ height: WHEEL_HEIGHT }}
                       showsVerticalScrollIndicator={false}
@@ -1004,6 +913,7 @@ export function DateTimePicker({
                           59,
                           Math.max(0, Math.round(e.nativeEvent.contentOffset.y / ITEM_HEIGHT)),
                         );
+                        if (m !== minuteRef.current) setTimeTouched(true);
                         setMinute(m);
                       }}
                     >
@@ -1118,8 +1028,20 @@ export function DateTimePicker({
                   </View>
                 </View>
 
-                {/* Horizontal Quick Period Presets */}
-                <View className="mt-1">
+                {mode === 'datetime' ? (
+                  <Text className="px-1 font-sans text-[11px] text-muted dark:text-muted-dark">
+                    不调整时刻 = 只记日期（当天截止）
+                  </Text>
+                ) : null}
+
+                {/* Quick time presets (issue #105) sit AFTER the wheels so the
+                    growing chip block cannot push the selected wheel row out
+                    of the modal's clipped viewport. Usage-ranked first,
+                    defaults keep morning/afternoon/evening coverage. Chips
+                    WRAP instead of horizontal-scrolling — otherwise the
+                    afternoon/evening times sit off-screen and the row reads
+                    as "morning only". */}
+                <View>
                   <View className="mb-1.5 flex-row items-center justify-between px-1">
                     <Text className="font-sans text-xs font-bold text-muted dark:text-muted-dark">
                       常用时段
@@ -1128,12 +1050,8 @@ export function DateTimePicker({
                       快速点选
                     </Text>
                   </View>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={{ gap: 6, paddingHorizontal: 1 }}
-                  >
-                    {QUICK_TIME_PRESETS.map((p) => {
+                  <View className="flex-row flex-wrap gap-1.5">
+                    {quickTimePresets.map((p) => {
                       const isPresetActive = hour === p.h && minute === p.m;
                       return (
                         <Pressable
@@ -1175,7 +1093,113 @@ export function DateTimePicker({
                         </Pressable>
                       );
                     })}
-                  </ScrollView>
+                  </View>
+                </View>
+              </View>
+            ) : null}
+
+            {/* Modern Calendar Grid (in date & datetime modes) */}
+            {mode !== 'time' ? (
+              <View className="mb-3 rounded-2xl border border-border/50 bg-surface-container/20 p-3 dark:border-border-dark/50 dark:bg-surface-container-dark/20">
+                {/* Month Navigation Strip */}
+                <View className="mb-2 flex-row items-center justify-between px-1">
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="上个月"
+                    onPress={prevMonth}
+                    className="h-7 w-7 items-center justify-center rounded-xl bg-surface-container/60 active:bg-surface-container dark:bg-surface-container-dark/60"
+                  >
+                    <Ionicons name="chevron-back" size={15} color={isDark ? colors.mutedDark : colors.muted} />
+                  </Pressable>
+
+                  <View className="flex-row items-center justify-center">
+                    <Text className="font-sans text-sm font-bold text-ink dark:text-ink-dark">
+                      {viewYear}年 {pad(viewMonth)}月
+                    </Text>
+                  </View>
+
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="下个月"
+                    onPress={nextMonth}
+                    className="h-7 w-7 items-center justify-center rounded-xl bg-surface-container/60 active:bg-surface-container dark:bg-surface-container-dark/60"
+                  >
+                    <Ionicons name="chevron-forward" size={15} color={isDark ? colors.mutedDark : colors.muted} />
+                  </Pressable>
+                </View>
+
+                {/* Weekday Names Strip */}
+                <View className="mb-1 flex-row">
+                  {WEEKDAY_NAMES.map((col) => (
+                    <View key={col.label} className="flex-1 items-center py-0.5">
+                      <Text
+                        className={cn(
+                          'font-sans text-[11px] font-bold',
+                          col.isWeekend
+                            ? 'text-accent/70 dark:text-accent-dark/70'
+                            : 'text-muted dark:text-muted-dark',
+                        )}
+                      >
+                        {col.label}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+
+                {/* 7-column Calendar Cells */}
+                <View className="flex-row flex-wrap">
+                  {calendarCells.map((cell) => {
+                    const isCurrentMonth = cell.type === 'current';
+                    const isSelected = cell.key === selectedDateKey;
+                    const isToday = cell.key === todayKey;
+
+                    return (
+                      <View key={cell.key} style={{ width: '14.285%' }} className="items-center py-0.5">
+                        <Pressable
+                          accessibilityRole="button"
+                          // Adjacent-month days repeat day numbers (the grid fills whole
+                          // weeks), so their label carries the month — two buttons with the
+                          // same accessible name are indistinguishable.
+                          accessibilityLabel={
+                            isCurrentMonth ? `日 ${cell.day}` : `${cell.month}月${cell.day}日`
+                          }
+                          accessibilityState={{ selected: isSelected }}
+                          onPress={() => {
+                            setSelectedYear(cell.year);
+                            setSelectedMonth(cell.month);
+                            setSelectedDay(cell.day);
+                            if (!isCurrentMonth) {
+                              setViewYear(cell.year);
+                              setViewMonth(cell.month);
+                            }
+                          }}
+                          className={cn(
+                            'h-7 w-7 items-center justify-center rounded-xl transition-all',
+                            isSelected
+                              ? 'bg-accent shadow-sm shadow-accent/40 dark:bg-accent-dark'
+                              : isToday
+                                ? 'border border-accent/80 bg-accent/10 dark:border-accent-dark/80 dark:bg-accent-dark/15'
+                                : 'active:bg-surface-container dark:active:bg-surface-container-dark',
+                          )}
+                        >
+                          <Text
+                            className={cn(
+                              'font-sans text-xs',
+                              isSelected
+                                ? 'font-black text-on-accent dark:text-on-accent-dark'
+                                : isCurrentMonth
+                                  ? isToday
+                                    ? 'font-black text-accent dark:text-accent-dark'
+                                    : 'font-semibold text-ink dark:text-ink-dark'
+                                  : 'text-muted/30 dark:text-muted-dark/30',
+                            )}
+                          >
+                            {cell.day}
+                          </Text>
+                        </Pressable>
+                      </View>
+                    );
+                  })}
                 </View>
               </View>
             ) : null}
