@@ -8,11 +8,19 @@
  *   guess), and
  * - the row still covers morning / afternoon / evening instead of only 上午.
  *
- * Usage is a device-local UI convenience (not account data), so it lives in
- * the same platform key-value matrix as the other device preferences:
- *   native (iOS/Android) → `expo-secure-store`
+ * Usage is a device-local UI convenience (not account data), so it lives on
+ * the device only:
+ *   native (iOS/Android) → a JSON file under `expo-file-system`
  *   browser web / Tauri → `localStorage`
  *   Node / jest         → in-memory
+ *
+ * #109: this used `expo-secure-store` like the other device preferences. The
+ * first SecureStore WRITE on Android generates a Keystore key, and on the
+ * reporting device that write aborts the process right after confirming a
+ * time — only the confirmed-time path crashed, while simply opening the
+ * picker (read) stayed fine. These counters are not secrets, so the file
+ * backend avoids the Keystore path entirely. Existing counts reset once
+ * after this change; that is an ordering hint, not user data.
  *
  * Stored shape (JSON): `{ "counts": { "HH:mm": <uses> } }`. Reads are cached
  * in the module so a reopened modal renders its presets without a flash; the
@@ -175,18 +183,43 @@ function createWebStore(): KeyValue {
   };
 }
 
-/** null when the module cannot be loaded (a bare Node/jest fallback path
- *  then takes over instead of the whole read throwing). */
-function createSecureStoreStore(): KeyValue | null {
+interface ExpoFileSystemLegacy {
+  documentDirectory: string | null;
+  makeDirectoryAsync(path: string, options?: { intermediates?: boolean }): Promise<void>;
+  readAsStringAsync(path: string): Promise<string>;
+  writeAsStringAsync(path: string, contents: string): Promise<void>;
+}
+
+/**
+ * Native store: ONE JSON file. #109 rules out `expo-secure-store` here — its
+ * first write path (Keystore key generation) killed the Android process when
+ * the picker confirmed a time. Preferences like this never needed encryption.
+ * null when the module or its documents directory is unavailable (a bare
+ * Node/jest fallback then takes over instead of the whole read throwing).
+ */
+function createFileStore(): KeyValue | null {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const store = require('expo-secure-store') as {
-      getItemAsync(key: string): Promise<string | null>;
-      setItemAsync(key: string, value: string): Promise<void>;
-    };
+    const fs = require('expo-file-system/legacy') as ExpoFileSystemLegacy;
+    if (fs.documentDirectory === null) return null;
+    const directory = `${fs.documentDirectory}nextdo`;
+    const file = `${directory}/time-presets.json`;
     return {
-      getItem: (key) => store.getItemAsync(key),
-      setItem: (key, value) => store.setItemAsync(key, value),
+      async getItem() {
+        try {
+          return await fs.readAsStringAsync(file);
+        } catch {
+          return null;
+        }
+      },
+      async setItem(_key, value) {
+        try {
+          await fs.makeDirectoryAsync(directory, { intermediates: true });
+        } catch {
+          // already exists
+        }
+        await fs.writeAsStringAsync(file, value);
+      },
     };
   } catch {
     return null;
@@ -200,8 +233,8 @@ let writeChain: Promise<void> = Promise.resolve();
 
 function getBackend(): KeyValue {
   if (backend === null) {
-    const secure = isReactNativeRuntime() ? createSecureStoreStore() : null;
-    backend = secure ?? (getWebLocalStorage() !== null ? createWebStore() : createMemoryStore());
+    const file = isReactNativeRuntime() ? createFileStore() : null;
+    backend = file ?? (getWebLocalStorage() !== null ? createWebStore() : createMemoryStore());
   }
   return backend;
 }
