@@ -65,8 +65,9 @@
 - `mode="datetime"` is the third mode (task 10-17): it emits
   `'YYYY-MM-DDTHH:mm'`, and — because its wheels start on a real time — it
   emits plain `'YYYY-MM-DD'` when the user picked a day and never touched a
-  time control (the 「不调整时刻 = 只记日期（当天截止）」 hint sits above the
-  wheels). That date-only shape is the deadline convention: stored as that
+  time control (issue #110 surfaces that state in the header summary as
+  `… · 只记日期` instead of a separate hint under the wheels). That
+  date-only shape is the deadline convention: stored as that
   day's local 23:59:59 via `endOfLocalDayIso`, read back with the plain-date
   wording (`DATE_ONLY_DEADLINE_HHMM` sentinel in `packages/core`
   `deadline.ts`). Only a deadline that carries a real time spells it out

@@ -61,7 +61,7 @@ describe('CaptureSchedulePreview', () => {
     fireEvent.press(screen.getByText('修改'));
     expect(screen.getAllByText('修改识别到的时间').length).toBeGreaterThan(0);
 
-    fireEvent.press(screen.getByLabelText('快捷 15分'));
+    fireEvent.press(screen.getByLabelText('分钟 15'));
     fireEvent.press(screen.getByText('确定'));
 
     expect(onChange).toHaveBeenCalledWith(

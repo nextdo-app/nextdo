@@ -29,7 +29,7 @@ describe('DateTimePicker', () => {
     });
   }
 
-  it('renders time mode with hour/minute wheels, quick time presets, and minute chips', async () => {
+  it('renders time mode with hour/minute wheels and quick time presets', async () => {
     render(
       <DateTimePicker
         mode="time"
@@ -46,8 +46,9 @@ describe('DateTimePicker', () => {
     expect(screen.getByLabelText('小时 14')).toBeTruthy();
     expect(screen.getByLabelText('分钟 30')).toBeTruthy();
 
-    // Fast preset minutes (:15)
-    fireEvent.press(screen.getByLabelText('快捷 15分'));
+    // Minute selection through the wheel (the :15 minute chip was removed
+    // in the #110 redesign — the wheel owns the minute).
+    fireEvent.press(screen.getByLabelText('分钟 15'));
     expect(screen.getByText('14:15')).toBeTruthy();
 
     // Select hour 09
@@ -117,7 +118,7 @@ describe('DateTimePicker', () => {
       />,
     );
 
-    expect(screen.getByText('09月30日')).toBeTruthy();
+    expect(screen.getByText('9月30日 周三 · 只记日期')).toBeTruthy();
     await pressConfirm();
     expect(onConfirm).toHaveBeenCalledWith('2026-09-30');
   });
@@ -135,7 +136,7 @@ describe('DateTimePicker', () => {
     );
 
     fireEvent.press(screen.getByLabelText('快捷 明天'));
-    fireEvent.press(screen.getByLabelText('快捷 15分')); // minute → :15
+    fireEvent.press(screen.getByLabelText('分钟 15')); // minute → :15
     await pressConfirm();
     expect(onConfirm).toHaveBeenCalledWith('2026-09-26T14:15');
   });
@@ -169,7 +170,7 @@ describe('DateTimePicker', () => {
       />,
     );
 
-    expect(screen.getByText('2026年09月25日')).toBeTruthy();
+    expect(screen.getByText('9月25日 周五')).toBeTruthy();
 
     // Quick presets exist
     expect(screen.getByLabelText('快捷 今天')).toBeTruthy();
@@ -179,15 +180,15 @@ describe('DateTimePicker', () => {
 
     // Click "快捷 下月一日" -> 2026-10-01
     fireEvent.press(screen.getByLabelText('快捷 下月一日'));
-    expect(screen.getByText('2026年10月01日')).toBeTruthy();
+    expect(screen.getByText('10月1日 周四')).toBeTruthy();
 
     // Click "快捷 明天" -> 2026-09-26
     fireEvent.press(screen.getByLabelText('快捷 明天'));
-    expect(screen.getByText('2026年09月26日')).toBeTruthy();
+    expect(screen.getByText('9月26日 周六')).toBeTruthy();
 
     // Click specific day in calendar grid
     fireEvent.press(screen.getByLabelText('日 28'));
-    expect(screen.getByText('2026年09月28日')).toBeTruthy();
+    expect(screen.getByText('9月28日 周一')).toBeTruthy();
 
     await pressConfirm();
     expect(onConfirm).toHaveBeenCalledWith('2026-09-28');
@@ -220,7 +221,7 @@ describe('DateTimePicker', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('supports 12h/24h toggle, AM/PM switching, and minute fine-tuning (Issue 31)', async () => {
+  it('supports 12h/24h toggle and AM/PM switching (Issue 31, #110)', async () => {
     render(
       <DateTimePicker
         mode="time"
@@ -239,30 +240,19 @@ describe('DateTimePicker', () => {
 
     // Switch to 12h mode
     fireEvent.press(screen.getByLabelText('12小时制'));
-    expect(screen.getByText('12小时制')).toBeTruthy();
+    expect(screen.getByText('12h')).toBeTruthy();
     expect(screen.getByLabelText('切换到下午')).toBeTruthy();
     expect(screen.getByLabelText('切换到上午')).toBeTruthy();
     expect(screen.getByLabelText('当前选中时间').props.children).toBe('08:30');
 
-    // Fine-tune minute +5m -> 08:35
-    fireEvent.press(screen.getByLabelText('微调 加5分钟'));
-    expect(screen.getByLabelText('当前选中时间').props.children).toBe('08:35');
-
-    // Fine-tune minute +1m -> 08:36
-    fireEvent.press(screen.getByLabelText('微调 加1分钟'));
-    expect(screen.getByLabelText('当前选中时间').props.children).toBe('08:36');
-
-    // Fine-tune minute -5m -> 08:31
-    fireEvent.press(screen.getByLabelText('微调 减5分钟'));
-    expect(screen.getByLabelText('当前选中时间').props.children).toBe('08:31');
-
-    // Switch to PM -> 20:31 (08:31 PM)
+    // Switch to PM -> 20:30 (08:30 PM). The ±1m/±5m steppers were removed in
+    // the #110 redesign; the wheel is the only minute control.
     fireEvent.press(screen.getByLabelText('切换到下午'));
-    expect(screen.getByLabelText('当前选中时间').props.children).toBe('08:31');
+    expect(screen.getByLabelText('当前选中时间').props.children).toBe('08:30');
 
     // Confirm and verify 24h formatted string output
     await pressConfirm();
-    expect(onConfirm).toHaveBeenCalledWith('20:31');
+    expect(onConfirm).toHaveBeenCalledWith('20:30');
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
