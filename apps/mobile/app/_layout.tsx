@@ -63,6 +63,7 @@ import {
 } from '@nextdo/db';
 import { logger } from '@nextdo/core';
 import { POWERSYNC_WEB_WORKER_PATH } from '@/lib/env';
+import { installDiagnosticLog } from '@/lib/diagnostics/event-log';
 import { useAppFonts } from '@/hooks/use-app-fonts';
 import { FocusProvider } from '@/components/focus-provider';
 import { FocusIslandClient } from '@/components/focus-island-client';
@@ -286,6 +287,13 @@ function MainRootLayout() {
     if (isReactNativeRuntime()) {
       void maybeRequestNotificationPermission();
     }
+  }, []);
+
+  // In-app diagnostics (issue #109 follow-up): persist warn/error lines and
+  // route uncaught JS errors into the same log. Idempotent; the durable sink
+  // is bounded and never records user content.
+  useEffect(() => {
+    installDiagnosticLog();
   }, []);
 
   // `isDark` drives the StatusBar only. The `<html class="dark">` write that

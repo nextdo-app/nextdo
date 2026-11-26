@@ -15,8 +15,16 @@ export {
   SyncNextdoError,
   ValidationNextdoError,
 } from './lib/errors';
-export { getLogLevel, logger, setLogLevel } from './lib/logger';
-export type { LogLevel } from './lib/logger';
+export {
+  clearRecentLogs,
+  describeLogExtra,
+  getLogLevel,
+  getRecentLogs,
+  logger,
+  setLogLevel,
+  subscribeToLogs,
+} from './lib/logger';
+export type { LogEntry, LogErrorInfo, LogLevel, LogListener } from './lib/logger';
 export {
   SNOOZE_PRESETS,
   daysBetween,

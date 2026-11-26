@@ -1799,6 +1799,28 @@ export default function SettingsScreen() {
         {/* Section 5: 关于与更新 */}
         <SectionHeader title="关于与更新" icon="information-circle-outline" />
         <Card className="gap-3.5 p-4">
+          <Pressable
+            accessibilityRole="link"
+            accessibilityLabel="打开诊断与反馈"
+            onPress={() => router.push('/diagnostics')}
+            className="flex-row items-center justify-between rounded-xl border border-border/80 bg-surface-container/40 p-3.5 active:opacity-85 dark:border-border-dark/80 dark:bg-surface-container-dark/30"
+          >
+            <View className="flex-1 min-w-0 flex-row items-center gap-3 pr-2">
+              <View className="h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/10 dark:bg-accent-dark/15">
+                <Ionicons name="bug-outline" size={16} color={isDark ? colors.accentDark : colors.accent} />
+              </View>
+              <View className="flex-1 min-w-0">
+                <Text className="font-sans text-sm font-semibold text-ink dark:text-ink-dark">
+                  诊断与反馈
+                </Text>
+                <Text className="mt-0.5 font-sans text-xs leading-tight text-muted dark:text-muted-dark">
+                  查看本机日志，复制诊断报告并反馈问题。
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={14} color={isDark ? colors.mutedDark : colors.muted} />
+          </Pressable>
+
           <View className="flex-row items-center justify-between">
             <View className="flex-row items-center gap-2.5">
               <View className="h-8 w-8 rounded-lg bg-surface-container/60 dark:bg-surface-container-dark/60 items-center justify-center shrink-0">
