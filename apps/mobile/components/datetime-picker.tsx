@@ -244,6 +244,38 @@ export function DateTimePicker({
    */
   const [timeTouched, setTimeTouched] = useState(false);
 
+  /**
+   * Issue #109: Android's ScrollView keeps its fling/snap scroller alive
+   * after the finger lifts, and `onDetachedFromWindow` does NOT abort it.
+   * Confirming while a wheel is still settling tears the dialog down under
+   * the animator and aborts the process. Track the drag -> momentum lifecycle
+   * and hold the close until both wheels report settled.
+   *
+   * The 300 ms fallback covers a drag that ends without momentum: Android
+   * never emits onMomentumScrollEnd for it.
+   */
+  const [wheelsSettled, setWheelsSettled] = useState(true);
+  const [pendingConfirm, setPendingConfirm] = useState(false);
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /**
+   * The body is a vertical ScrollView and the wheels are nested vertical
+   * ScrollViews. On Android the outer one wins the gesture unless it cannot
+   * scroll at all — the wheel then looks frozen while its sliver still
+   * updates. Disable the outer scroll whenever the content fits the dialog
+   * (the #110 one-screen layout); small screens keep it scrollable.
+   */
+  const [bodyScrollable, setBodyScrollable] = useState(true);
+  const bodyLayoutHeight = useRef(0);
+  const bodyContentHeight = useRef(0);
+
+  function updateBodyScrollable() {
+    // A few px of rounding/sub-pixel overflow must NOT keep the outer
+    // ScrollView active: it would still steal the wheel drag. Only a real
+    // overflow (a genuinely short screen) keeps the body scrollable.
+    setBodyScrollable(bodyContentHeight.current > bodyLayoutHeight.current + 8);
+  }
+
   const hourScrollRef = useRef<ScrollView>(null);
   const minuteScrollRef = useRef<ScrollView>(null);
   // Issue #105: wheel scrolling must count as a time choice in `datetime`
@@ -271,6 +303,39 @@ export function DateTimePicker({
     }, 50);
     return () => clearTimeout(timer);
   }, [mode, isWide]);
+
+  function clearSettleTimer() {
+    if (settleTimer.current !== null) {
+      clearTimeout(settleTimer.current);
+      settleTimer.current = null;
+    }
+  }
+
+  function beginWheelDrag() {
+    clearSettleTimer();
+    setWheelsSettled(false);
+  }
+
+  function endWheelDrag() {
+    // No momentum after this drag -> settle on the fallback timer.
+    // onMomentumScrollBegin cancels it when a fling actually starts.
+    clearSettleTimer();
+    settleTimer.current = setTimeout(() => {
+      settleTimer.current = null;
+      setWheelsSettled(true);
+    }, 300);
+  }
+
+  function endWheelMomentum() {
+    clearSettleTimer();
+    setWheelsSettled(true);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (settleTimer.current !== null) clearTimeout(settleTimer.current);
+    };
+  }, []);
 
   const quickPresets = getQuickDatePresets(now);
   const selectedDateKey = `${selectedYear}-${pad(selectedMonth)}-${pad(selectedDay)}`;
@@ -345,7 +410,7 @@ export function DateTimePicker({
 
   const carriesTime = timeTouched || DATETIME_LOCAL.test(value);
 
-  function confirm() {
+  function finishConfirm() {
     if (mode === 'datetime') {
       const date = `${selectedYear}-${pad(selectedMonth)}-${pad(selectedDay)}`;
       // Issue #105: only a time the user actually TOUCHED feeds the
@@ -361,6 +426,25 @@ export function DateTimePicker({
     }
     onClose();
   }
+
+  // Read the newest finishConfirm from the settle effect below.
+  const finishRef = useRef<() => void>(() => undefined);
+  finishRef.current = finishConfirm;
+
+  function confirm() {
+    // #109: never unmount the dialog while a wheel is still flinging.
+    if (!wheelsSettled) {
+      setPendingConfirm(true);
+      return;
+    }
+    finishConfirm();
+  }
+
+  useEffect(() => {
+    if (!pendingConfirm || !wheelsSettled) return;
+    setPendingConfirm(false);
+    finishRef.current();
+  }, [pendingConfirm, wheelsSettled]);
 
   const calendarCells = buildCalendarCells(viewYear, viewMonth);
 
@@ -409,7 +493,7 @@ export function DateTimePicker({
               accessibilityState={{ selected: isSelected }}
               onPress={() => applyDate(preset.date)}
               className={cn(
-                'flex-1 items-center justify-center rounded-xl border px-1 py-1.5',
+                'flex-1 items-center justify-center rounded-xl border px-1 py-1',
                 isSelected
                   ? 'border-accent bg-accent/10 dark:border-accent-dark dark:bg-accent-dark/15'
                   : 'border-border/70 bg-transparent active:bg-surface-container/60 dark:border-border-dark/70 dark:active:bg-surface-container-dark/60',
@@ -688,12 +772,20 @@ export function DateTimePicker({
             snapToInterval={ITEM_HEIGHT}
             decelerationRate="fast"
             contentContainerStyle={{ paddingTop: WHEEL_PADDING, paddingBottom: WHEEL_PADDING }}
+            onScrollBeginDrag={beginWheelDrag}
+            onScrollEndDrag={endWheelDrag}
+            onMomentumScrollBegin={clearSettleTimer}
+            onMomentumScrollEnd={endWheelMomentum}
             onScroll={(e) => {
               const h = Math.min(
                 23,
                 Math.max(0, Math.round(e.nativeEvent.contentOffset.y / ITEM_HEIGHT)),
               );
-              if (h !== hourRef.current) setTimeTouched(true);
+              // Mid-scroll this fires every frame; re-rendering the 84 rows
+              // for an unchanged value is what makes the wheel feel frozen on
+              // Android. Only a value CHANGE is worth a render.
+              if (h === hourRef.current) return;
+              setTimeTouched(true);
               setHour(h);
             }}
           >
@@ -743,12 +835,17 @@ export function DateTimePicker({
             snapToInterval={ITEM_HEIGHT}
             decelerationRate="fast"
             contentContainerStyle={{ paddingTop: WHEEL_PADDING, paddingBottom: WHEEL_PADDING }}
+            onScrollBeginDrag={beginWheelDrag}
+            onScrollEndDrag={endWheelDrag}
+            onMomentumScrollBegin={clearSettleTimer}
+            onMomentumScrollEnd={endWheelMomentum}
             onScroll={(e) => {
               const m = Math.min(
                 59,
                 Math.max(0, Math.round(e.nativeEvent.contentOffset.y / ITEM_HEIGHT)),
               );
-              if (m !== minuteRef.current) setTimeTouched(true);
+              if (m === minuteRef.current) return;
+              setTimeTouched(true);
               setMinute(m);
             }}
           >
@@ -786,16 +883,10 @@ export function DateTimePicker({
           clipped viewport. Usage-ranked first, defaults keep
           morning/afternoon/evening coverage. Chips WRAP instead of
           horizontal-scrolling — otherwise the afternoon/evening times sit
-          off-screen and the row reads as "morning only". */}
+          off-screen and the row reads as "morning only". The old section
+          heading is gone (#109): it cost a row, and the chips are readable
+          on their own; the height is what lets the outer scroll stay off. */}
       <View>
-        <View className="mb-1 flex-row items-center justify-between">
-          <Text className="font-sans text-xs font-bold text-muted dark:text-muted-dark">
-            常用时段
-          </Text>
-          <Text className="font-sans text-[11px] text-muted/60 dark:text-muted-dark/60">
-            快速点选
-          </Text>
-        </View>
         <View className="flex-row flex-wrap gap-1.5">
           {quickTimePresets.map((p) => {
             const isPresetActive = hour === p.h && minute === p.m;
@@ -874,7 +965,7 @@ export function DateTimePicker({
           )}
         >
           {/* Top Bar (Fixed Header): title + one-line current-selection summary */}
-          <View className="mb-3 flex-shrink-0 flex-row items-start justify-between">
+          <View className="mb-2 flex-shrink-0 flex-row items-start justify-between">
             <View className="min-w-0 flex-1 pr-2">
               <Text
                 numberOfLines={1}
@@ -931,6 +1022,15 @@ export function DateTimePicker({
             style={{ flexGrow: 0, flexShrink: 1 }}
             showsVerticalScrollIndicator={false}
             nestedScrollEnabled
+            scrollEnabled={bodyScrollable}
+            onLayout={(event) => {
+              bodyLayoutHeight.current = event.nativeEvent.layout.height;
+              updateBodyScrollable();
+            }}
+            onContentSizeChange={(_width, height) => {
+              bodyContentHeight.current = height;
+              updateBodyScrollable();
+            }}
             contentContainerStyle={{ paddingBottom: 2 }}
           >
             {mode === 'datetime' ? (
@@ -943,7 +1043,7 @@ export function DateTimePicker({
                   <View className="min-w-0 flex-1">{timeSection}</View>
                 </View>
               ) : (
-                <View className="gap-3">
+                <View className="gap-2">
                   {timeSection}
                   {dateSection}
                 </View>
