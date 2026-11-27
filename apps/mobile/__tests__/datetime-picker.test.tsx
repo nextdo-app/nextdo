@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { Dimensions } from 'react-native';
 import { DateTimePicker } from '../components/datetime-picker';
 
@@ -80,6 +80,31 @@ describe('DateTimePicker', () => {
     fireEvent.press(screen.getByLabelText('快捷 明天'));
     await pressConfirm();
     expect(onConfirm).toHaveBeenCalledWith('2026-09-26');
+  });
+
+  it('waits for a flinging wheel to settle before closing (#109)', async () => {
+    render(
+      <DateTimePicker
+        mode="datetime"
+        title="选择截止时间"
+        value=""
+        now={now}
+        onConfirm={onConfirm}
+        onClose={onClose}
+      />,
+    );
+
+    // A wheel mid-fling must not have its dialog torn down: the Android
+    // scroller is still running and detaching it aborted the process.
+    fireEvent(screen.getByTestId('hour-wheel'), 'scrollBeginDrag');
+    fireEvent.press(screen.getByText('确定'));
+    expect(onConfirm).not.toHaveBeenCalled();
+
+    fireEvent(screen.getByTestId('hour-wheel'), 'momentumScrollEnd');
+    await waitFor(() => {
+      expect(onConfirm).toHaveBeenCalledWith('2026-09-25');
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('datetime mode counts wheel scrolling as a time choice (#105)', async () => {
