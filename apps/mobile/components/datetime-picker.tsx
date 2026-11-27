@@ -245,17 +245,17 @@ export function DateTimePicker({
   const [timeTouched, setTimeTouched] = useState(false);
 
   /**
-   * Issue #109: Android's ScrollView keeps its fling/snap scroller alive
-   * after the finger lifts, and `onDetachedFromWindow` does NOT abort it.
-   * Confirming while a wheel is still settling tears the dialog down under
-   * the animator and aborts the process. Track the drag -> momentum lifecycle
-   * and hold the close until both wheels report settled.
-   *
+   * Issue #109 (second pass): on Android a wheel drag that re-renders the
+   * ScrollView aborts the process, and the fling/snap scroller also survives
+   * detach. So a drag must cause ZERO React updates:
+   * - the settled/pending flags are refs, not state;
+   * - onScroll only records the offset;
+   * - the value is committed (one setState) after the gesture stops.
    * The 300 ms fallback covers a drag that ends without momentum: Android
    * never emits onMomentumScrollEnd for it.
    */
-  const [wheelsSettled, setWheelsSettled] = useState(true);
-  const [pendingConfirm, setPendingConfirm] = useState(false);
+  const wheelsSettledRef = useRef(true);
+  const pendingConfirmRef = useRef(false);
   const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /**
@@ -286,6 +286,11 @@ export function DateTimePicker({
   hourRef.current = hour;
   const minuteRef = useRef(minute);
   minuteRef.current = minute;
+  // Live wheel offsets: written by onScroll and by explicit selection, never
+  // rewritten by a render — otherwise a re-render during the drag would make
+  // the commit read a stale offset.
+  const hourOffsetRef = useRef(hour * ITEM_HEIGHT);
+  const minuteOffsetRef = useRef(minute * ITEM_HEIGHT);
 
   // Sync hour/minute scroll position.
   //
@@ -298,6 +303,8 @@ export function DateTimePicker({
   useEffect(() => {
     if (mode === 'date') return;
     const timer = setTimeout(() => {
+      hourOffsetRef.current = hourRef.current * ITEM_HEIGHT;
+      minuteOffsetRef.current = minuteRef.current * ITEM_HEIGHT;
       hourScrollRef.current?.scrollTo({ y: hourRef.current * ITEM_HEIGHT, animated: false });
       minuteScrollRef.current?.scrollTo({ y: minuteRef.current * ITEM_HEIGHT, animated: false });
     }, 50);
@@ -313,22 +320,50 @@ export function DateTimePicker({
 
   function beginWheelDrag() {
     clearSettleTimer();
-    setWheelsSettled(false);
+    wheelsSettledRef.current = false;
   }
 
-  function endWheelDrag() {
-    // No momentum after this drag -> settle on the fallback timer.
-    // onMomentumScrollBegin cancels it when a fling actually starts.
+  function markWheelsSettled() {
+    wheelsSettledRef.current = true;
+    if (pendingConfirmRef.current) {
+      pendingConfirmRef.current = false;
+      finishRef.current();
+    }
+  }
+
+  // Android is the platform that aborts under a mid-gesture re-render, so
+  // there the value commits only when the gesture stops. iOS/web keep the
+  // live sliver (their momentum/scroll events behave differently anyway).
+  const commitLive = Platform.OS !== 'android';
+
+  function commitWheel(kind: 'hour' | 'minute') {
+    const offset = kind === 'hour' ? hourOffsetRef.current : minuteOffsetRef.current;
+    const max = kind === 'hour' ? 23 : 59;
+    const value = Math.min(max, Math.max(0, Math.round(offset / ITEM_HEIGHT)));
+    const current = kind === 'hour' ? hourRef.current : minuteRef.current;
+    if (value === current) return;
+    setTimeTouched(true);
+    if (kind === 'hour') setHour(value);
+    else setMinute(value);
+  }
+
+  function endWheelDrag(kind: 'hour' | 'minute') {
+    // Commit once the finger is up; a fling may still follow and its
+    // onMomentumScrollEnd commits the final value again.
+    commitWheel(kind);
+    // No momentum -> settle on the fallback timer. onMomentumScrollBegin
+    // cancels it when a fling actually starts.
     clearSettleTimer();
     settleTimer.current = setTimeout(() => {
       settleTimer.current = null;
-      setWheelsSettled(true);
+      markWheelsSettled();
     }, 300);
   }
 
-  function endWheelMomentum() {
+  function endWheelMomentum(kind: 'hour' | 'minute') {
     clearSettleTimer();
-    setWheelsSettled(true);
+    commitWheel(kind);
+    markWheelsSettled();
   }
 
   useEffect(() => {
@@ -386,12 +421,14 @@ export function DateTimePicker({
   function selectHour(h: number) {
     setTimeTouched(true);
     setHour(h);
+    hourOffsetRef.current = h * ITEM_HEIGHT;
     hourScrollRef.current?.scrollTo({ y: h * ITEM_HEIGHT, animated: false });
   }
 
   function selectMinute(m: number) {
     setTimeTouched(true);
     setMinute(m);
+    minuteOffsetRef.current = m * ITEM_HEIGHT;
     minuteScrollRef.current?.scrollTo({ y: m * ITEM_HEIGHT, animated: false });
   }
 
@@ -400,10 +437,12 @@ export function DateTimePicker({
     if (targetPeriod === 'AM' && hour >= 12) {
       const newH = hour - 12;
       setHour(newH);
+      hourOffsetRef.current = newH * ITEM_HEIGHT;
       hourScrollRef.current?.scrollTo({ y: newH * ITEM_HEIGHT, animated: false });
     } else if (targetPeriod === 'PM' && hour < 12) {
       const newH = hour + 12;
       setHour(newH);
+      hourOffsetRef.current = newH * ITEM_HEIGHT;
       hourScrollRef.current?.scrollTo({ y: newH * ITEM_HEIGHT, animated: false });
     }
   }
@@ -427,24 +466,18 @@ export function DateTimePicker({
     onClose();
   }
 
-  // Read the newest finishConfirm from the settle effect below.
+  // Read the newest finishConfirm from the wheel settle handlers above.
   const finishRef = useRef<() => void>(() => undefined);
   finishRef.current = finishConfirm;
 
   function confirm() {
     // #109: never unmount the dialog while a wheel is still flinging.
-    if (!wheelsSettled) {
-      setPendingConfirm(true);
+    if (!wheelsSettledRef.current) {
+      pendingConfirmRef.current = true;
       return;
     }
     finishConfirm();
   }
-
-  useEffect(() => {
-    if (!pendingConfirm || !wheelsSettled) return;
-    setPendingConfirm(false);
-    finishRef.current();
-  }, [pendingConfirm, wheelsSettled]);
 
   const calendarCells = buildCalendarCells(viewYear, viewMonth);
 
@@ -773,20 +806,14 @@ export function DateTimePicker({
             decelerationRate="fast"
             contentContainerStyle={{ paddingTop: WHEEL_PADDING, paddingBottom: WHEEL_PADDING }}
             onScrollBeginDrag={beginWheelDrag}
-            onScrollEndDrag={endWheelDrag}
+            onScrollEndDrag={() => endWheelDrag('hour')}
             onMomentumScrollBegin={clearSettleTimer}
-            onMomentumScrollEnd={endWheelMomentum}
+            onMomentumScrollEnd={() => endWheelMomentum('hour')}
             onScroll={(e) => {
-              const h = Math.min(
-                23,
-                Math.max(0, Math.round(e.nativeEvent.contentOffset.y / ITEM_HEIGHT)),
-              );
-              // Mid-scroll this fires every frame; re-rendering the 84 rows
-              // for an unchanged value is what makes the wheel feel frozen on
-              // Android. Only a value CHANGE is worth a render.
-              if (h === hourRef.current) return;
-              setTimeTouched(true);
-              setHour(h);
+              // On Android: record only — a setState here re-renders the
+              // ScrollView mid-gesture, which aborts the process (#109).
+              hourOffsetRef.current = e.nativeEvent.contentOffset.y;
+              if (commitLive) commitWheel('hour');
             }}
           >
             {HOURS.map((h) => {
@@ -836,17 +863,12 @@ export function DateTimePicker({
             decelerationRate="fast"
             contentContainerStyle={{ paddingTop: WHEEL_PADDING, paddingBottom: WHEEL_PADDING }}
             onScrollBeginDrag={beginWheelDrag}
-            onScrollEndDrag={endWheelDrag}
+            onScrollEndDrag={() => endWheelDrag('minute')}
             onMomentumScrollBegin={clearSettleTimer}
-            onMomentumScrollEnd={endWheelMomentum}
+            onMomentumScrollEnd={() => endWheelMomentum('minute')}
             onScroll={(e) => {
-              const m = Math.min(
-                59,
-                Math.max(0, Math.round(e.nativeEvent.contentOffset.y / ITEM_HEIGHT)),
-              );
-              if (m === minuteRef.current) return;
-              setTimeTouched(true);
-              setMinute(m);
+              minuteOffsetRef.current = e.nativeEvent.contentOffset.y;
+              if (commitLive) commitWheel('minute');
             }}
           >
             {MINUTES.map((m) => {
