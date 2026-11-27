@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import { Dimensions } from 'react-native';
+import { Dimensions, Modal, Platform } from 'react-native';
 import { DateTimePicker } from '../components/datetime-picker';
 
 describe('DateTimePicker', () => {
@@ -125,7 +125,7 @@ describe('DateTimePicker', () => {
       nativeEvent: { contentOffset: { y: 9 * 40 } },
     });
     // The wheel commits on gesture end, not mid-scroll (#109).
-    fireEvent(screen.getByTestId('hour-wheel'), 'scrollEndDrag');
+    fireEvent(screen.getByTestId('hour-wheel'), 'momentumScrollEnd');
     await pressConfirm();
     expect(onConfirm).toHaveBeenCalledWith('2026-09-25T09:30');
   });
@@ -459,5 +459,119 @@ describe('DateTimePicker', () => {
     expect(screen.getByLabelText('时段 09:00')).toBeTruthy();
     expect(screen.getByLabelText('时段 14:00')).toBeTruthy();
     expect(screen.getByLabelText('时段 19:30')).toBeTruthy();
+  });
+});
+
+describe('Android wheel confirmation and dismissal', () => {
+  const originalPlatform = Platform.OS;
+  const now = new Date(2026, 8, 25, 14, 30);
+  const onConfirm = jest.fn();
+  const onClose = jest.fn();
+
+  beforeEach(() => {
+    Platform.OS = 'android';
+    jest.useFakeTimers();
+    jest.clearAllMocks();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    Platform.OS = originalPlatform;
+  });
+
+  async function openPicker(mode: 'time' | 'datetime' = 'time') {
+    render(
+      <DateTimePicker
+        mode={mode}
+        title="选择时间"
+        value={mode === 'time' ? '14:30' : ''}
+        now={now}
+        onConfirm={onConfirm}
+        onClose={onClose}
+      />,
+    );
+    await act(async () => { jest.advanceTimersByTime(60); });
+  }
+
+  function scroll(kind: 'hour' | 'minute', value: number) {
+    fireEvent.scroll(screen.getByTestId(`${kind}-wheel`), {
+      nativeEvent: { contentOffset: { y: value * 40 } },
+    });
+  }
+
+  function startFling(kind: 'hour' | 'minute', value: number) {
+    const wheel = screen.getByTestId(`${kind}-wheel`);
+    fireEvent(wheel, 'scrollBeginDrag');
+    scroll(kind, value);
+    fireEvent(wheel, 'scrollEndDrag');
+    fireEvent(wheel, 'momentumScrollBegin');
+  }
+
+  it.each(['time', 'datetime'] as const)('confirms the final offset while %s confirmation is pending', async (mode) => {
+    await openPicker(mode);
+    startFling('hour', 15);
+    fireEvent.press(screen.getByText('确定'));
+    expect(onConfirm).not.toHaveBeenCalled();
+
+    scroll('hour', 18);
+    await act(async () => {
+      fireEvent(screen.getByTestId('hour-wheel'), 'momentumScrollEnd');
+    });
+    expect(onConfirm).toHaveBeenCalledWith(mode === 'time' ? '18:30' : '2026-09-25T18:30');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the displayed value unchanged until momentum ends', async () => {
+    await openPicker();
+    startFling('hour', 15);
+    scroll('hour', 18);
+    expect(screen.getByTestId('datetime-picker-summary').props.children).toBe('14:30');
+    await act(async () => {
+      fireEvent(screen.getByTestId('hour-wheel'), 'momentumScrollEnd');
+    });
+    expect(screen.getByTestId('datetime-picker-summary').props.children).toBe('18:30');
+  });
+
+  it('waits for both wheels before confirming', async () => {
+    await openPicker();
+    startFling('hour', 18);
+    startFling('minute', 45);
+    fireEvent.press(screen.getByText('确定'));
+    fireEvent(screen.getByTestId('minute-wheel'), 'momentumScrollEnd');
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent(screen.getByTestId('hour-wheel'), 'momentumScrollEnd');
+    });
+    expect(onConfirm).toHaveBeenCalledWith('18:45');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('confirms after a drag without momentum settles', async () => {
+    await openPicker();
+    fireEvent(screen.getByTestId('minute-wheel'), 'scrollBeginDrag');
+    scroll('minute', 45);
+    fireEvent(screen.getByTestId('minute-wheel'), 'scrollEndDrag');
+    fireEvent.press(screen.getByText('确定'));
+    expect(onConfirm).not.toHaveBeenCalled();
+    await act(async () => { jest.advanceTimersByTime(300); });
+    expect(onConfirm).toHaveBeenCalledWith('14:45');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['cancel', 'header', 'backdrop', 'back'] as const)('waits before closing through %s and discards pending confirmation', async (entry) => {
+    await openPicker();
+    startFling('hour', 18);
+    fireEvent.press(screen.getByText('确定'));
+    if (entry === 'cancel') fireEvent.press(screen.getByText('取消'));
+    else if (entry === 'back') fireEvent(screen.UNSAFE_getByType(Modal), 'requestClose');
+    else if (entry === 'header') fireEvent.press(screen.getByLabelText('关闭'));
+    else fireEvent.press(screen.getByLabelText('关闭选择器'));
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent(screen.getByTestId('hour-wheel'), 'momentumScrollEnd');
+    });
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

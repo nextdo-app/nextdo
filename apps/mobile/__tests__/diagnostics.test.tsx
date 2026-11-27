@@ -203,8 +203,10 @@ describe('DiagnosticsScreen', () => {
     expect(openURL).toHaveBeenCalledWith('https://github.com/nextdo-app/nextdo/issues/new');
   });
 
-  it('surfaces a clipboard failure instead of pretending to copy', async () => {
-    (Clipboard.setStringAsync as jest.Mock).mockRejectedValueOnce(new Error('denied'));
+  it.each(['rejection', 'false'])('surfaces a clipboard failure returned as %s', async (result) => {
+    const copy = Clipboard.setStringAsync as jest.Mock;
+    if (result === 'rejection') copy.mockRejectedValueOnce(new Error('denied'));
+    else copy.mockResolvedValueOnce(false);
     await renderLoaded();
     fireEvent.press(screen.getByText('复制诊断报告'));
     await waitFor(() => {

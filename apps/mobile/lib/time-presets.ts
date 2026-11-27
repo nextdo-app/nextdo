@@ -14,13 +14,8 @@
  *   browser web / Tauri → `localStorage`
  *   Node / jest         → in-memory
  *
- * #109: this used `expo-secure-store` like the other device preferences. The
- * first SecureStore WRITE on Android generates a Keystore key, and on the
- * reporting device that write aborts the process right after confirming a
- * time — only the confirmed-time path crashed, while simply opening the
- * picker (read) stayed fine. These counters are not secrets, so the file
- * backend avoids the Keystore path entirely. Existing counts reset once
- * after this change; that is an ordering hint, not user data.
+ * Usage counters are non-secret device preferences. Native storage uses a
+ * plain JSON file; task and account data use their own storage contracts.
  *
  * Stored shape (JSON): `{ "counts": { "HH:mm": <uses> } }`. Reads are cached
  * in the module so a reopened modal renders its presets without a flash; the
@@ -191,9 +186,7 @@ interface ExpoFileSystemLegacy {
 }
 
 /**
- * Native store: ONE JSON file. #109 rules out `expo-secure-store` here — its
- * first write path (Keystore key generation) killed the Android process when
- * the picker confirmed a time. Preferences like this never needed encryption.
+ * Native store: one JSON file for non-secret usage counters.
  * null when the module or its documents directory is unavailable (a bare
  * Node/jest fallback then takes over instead of the whole read throwing).
  */

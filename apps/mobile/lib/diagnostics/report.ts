@@ -12,7 +12,7 @@ import { getLogLevel, type LogEntry } from '@nextdo/core';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-import { DIAGNOSTIC_RETENTION_MS } from './storage';
+import { DIAGNOSTIC_RETENTION_MS, utf8Bytes } from './storage';
 
 /** Keep the paste small enough for a GitHub issue text box. */
 const MAX_REPORT_BYTES = 60 * 1024;
@@ -28,18 +28,6 @@ export interface DiagnosticEnvironment {
   locale: string;
   theme: 'light' | 'dark';
   logLevel: string;
-}
-
-function utf8Bytes(value: string): number {
-  let bytes = 0;
-  for (const char of value) {
-    const code = char.codePointAt(0) ?? 0;
-    if (code <= 0x7f) bytes += 1;
-    else if (code <= 0x7ff) bytes += 2;
-    else if (code <= 0xffff) bytes += 3;
-    else bytes += 4;
-  }
-  return bytes;
 }
 
 function readDevice(): { model: string; os: string } {
