@@ -748,3 +748,22 @@ Topics: [README.md](../../../README.md)
 ### Git Commits
 
 (No associated commits)
+
+
+## Session 97: 修复 Android 时间选择器闪退（#109）
+<!-- trellis-session: v=3 fp=d9ddd799010cb01f -->
+
+**Date**: 2026-11-27
+**Task**: 修复 Android 时间选择器闪退（#109）
+**Branch**: `main`
+
+### Summary
+
+A/B 定位到转盘手势：滚动中重渲染与 fling 未结束时关闭 Modal 导致 Android 进程崩溃；0.2.5 改为手势期间零更新、停止后提交、关闭前等待，并在内容一屏时禁用外层滚动。SecureStore 假设已排除。详见 topic。
+Topics: [.trellis/research/android-datetime-picker-crash.md](../../research/android-datetime-picker-crash.md)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `97ef7f9` | fix(datetime): no re-render while a wheel is being dragged (#109) |
