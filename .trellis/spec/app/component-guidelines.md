@@ -276,10 +276,9 @@
 - Device preferences use the `lib/theme.ts` / `lib/habit-reminders.ts` platform
   matrix (native → `expo-secure-store`, web/Tauri → `localStorage`, Node →
   memory). EXCEPTION (#109): `lib/time-presets.ts` uses a plain JSON file
-  under `expo-file-system` on native — its first SecureStore WRITE (Keystore
-  key generation) aborted the Android process when the picker confirmed a
-  time, and these usage counters are not secrets. Secrets still use the
-  matrix. Do NOT store them through `packages/db/src/owner-token.ts`: the
+  under `expo-file-system` on native because these usage counters are not
+  secrets. The storage choice is independent of the wheel gesture fix.
+  Secrets still use the matrix. Do NOT store them through `packages/db/src/owner-token.ts`: the
   desktop stronghold backend enforces a two-key contract and rejects any other
   key with `storage.multi-key` — it is for secrets, not preferences. (The
   matrix is now duplicated across four modules; consolidating it is worthwhile

@@ -126,16 +126,11 @@ interface WebWindow {
   ): void;
 }
 
-let globalHandlersInstalled = false;
-
 /**
  * Route uncaught JS errors into the same log. The previous handler is always
  * called afterwards so crash reporting / dev overlay behaviour is unchanged.
  */
-export function installGlobalErrorHandlers(): void {
-  if (globalHandlersInstalled) return;
-  globalHandlersInstalled = true;
-
+function installGlobalErrorHandlers(): void {
   const candidate = (globalThis as typeof globalThis & { ErrorUtils?: ErrorUtilsLike }).ErrorUtils;
   if (candidate !== undefined && typeof candidate.setGlobalHandler === 'function') {
     const previous = candidate.getGlobalHandler?.();

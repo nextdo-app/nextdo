@@ -65,6 +65,8 @@ const WHEEL_PADDING = (WHEEL_HEIGHT - ITEM_HEIGHT) / 2; // 40
 const WHEEL_FADE = 28;
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const MINUTES = Array.from({ length: 60 }, (_, i) => i);
+type Wheel = 'hour' | 'minute';
+type CloseAction = 'confirm' | 'cancel';
 
 export interface DateTimePickerProps {
   mode: 'date' | 'time' | 'datetime';
@@ -245,18 +247,13 @@ export function DateTimePicker({
   const [timeTouched, setTimeTouched] = useState(false);
 
   /**
-   * Issue #109 (second pass): on Android a wheel drag that re-renders the
-   * ScrollView aborts the process, and the fling/snap scroller also survives
-   * detach. So a drag must cause ZERO React updates:
-   * - the settled/pending flags are refs, not state;
-   * - onScroll only records the offset;
-   * - the value is committed (one setState) after the gesture stops.
-   * The 300 ms fallback covers a drag that ends without momentum: Android
-   * never emits onMomentumScrollEnd for it.
+   * Keep Android wheel gestures free of React updates. Commit the offsets
+   * and allow the dialog to close only after both wheels stop. Each wheel
+   * has a fallback timer for a drag that ends without momentum.
    */
-  const wheelsSettledRef = useRef(true);
-  const pendingConfirmRef = useRef(false);
-  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeWheels = useRef(new Set<Wheel>());
+  const pendingClose = useRef<CloseAction | null>(null);
+  const settleTimers = useRef(new Map<Wheel, ReturnType<typeof setTimeout>>());
 
   /**
    * The body is a vertical ScrollView and the wheels are nested vertical
@@ -311,24 +308,19 @@ export function DateTimePicker({
     return () => clearTimeout(timer);
   }, [mode, isWide]);
 
-  function clearSettleTimer() {
-    if (settleTimer.current !== null) {
-      clearTimeout(settleTimer.current);
-      settleTimer.current = null;
-    }
+  function clearSettleTimer(kind: Wheel) {
+    clearTimeout(settleTimers.current.get(kind));
+    settleTimers.current.delete(kind);
   }
 
-  function beginWheelDrag() {
-    clearSettleTimer();
-    wheelsSettledRef.current = false;
+  function beginWheelDrag(kind: Wheel) {
+    clearSettleTimer(kind);
+    activeWheels.current.add(kind);
   }
 
-  function markWheelsSettled() {
-    wheelsSettledRef.current = true;
-    if (pendingConfirmRef.current) {
-      pendingConfirmRef.current = false;
-      finishRef.current();
-    }
+  function wheelValue(kind: Wheel) {
+    const offset = kind === 'hour' ? hourOffsetRef.current : minuteOffsetRef.current;
+    return Math.min(kind === 'hour' ? 23 : 59, Math.max(0, Math.round(offset / ITEM_HEIGHT)));
   }
 
   // Android is the platform that aborts under a mid-gesture re-render, so
@@ -336,10 +328,8 @@ export function DateTimePicker({
   // live sliver (their momentum/scroll events behave differently anyway).
   const commitLive = Platform.OS !== 'android';
 
-  function commitWheel(kind: 'hour' | 'minute') {
-    const offset = kind === 'hour' ? hourOffsetRef.current : minuteOffsetRef.current;
-    const max = kind === 'hour' ? 23 : 59;
-    const value = Math.min(max, Math.max(0, Math.round(offset / ITEM_HEIGHT)));
+  function commitWheel(kind: Wheel) {
+    const value = wheelValue(kind);
     const current = kind === 'hour' ? hourRef.current : minuteRef.current;
     if (value === current) return;
     setTimeTouched(true);
@@ -347,28 +337,29 @@ export function DateTimePicker({
     else setMinute(value);
   }
 
-  function endWheelDrag(kind: 'hour' | 'minute') {
-    // Commit once the finger is up; a fling may still follow and its
-    // onMomentumScrollEnd commits the final value again.
-    commitWheel(kind);
-    // No momentum -> settle on the fallback timer. onMomentumScrollBegin
-    // cancels it when a fling actually starts.
-    clearSettleTimer();
-    settleTimer.current = setTimeout(() => {
-      settleTimer.current = null;
-      markWheelsSettled();
-    }, 300);
+  function settleWheel(kind: Wheel) {
+    clearSettleTimer(kind);
+    activeWheels.current.delete(kind);
+    if (activeWheels.current.size > 0) return;
+    const action = pendingClose.current;
+    pendingClose.current = null;
+    if (action !== null) {
+      finishRef.current(action);
+    } else {
+      commitWheel('hour');
+      commitWheel('minute');
+    }
   }
 
-  function endWheelMomentum(kind: 'hour' | 'minute') {
-    clearSettleTimer();
-    commitWheel(kind);
-    markWheelsSettled();
+  function endWheelDrag(kind: Wheel) {
+    clearSettleTimer(kind);
+    settleTimers.current.set(kind, setTimeout(() => settleWheel(kind), 300));
   }
 
   useEffect(() => {
+    const timers = settleTimers.current;
     return () => {
-      if (settleTimer.current !== null) clearTimeout(settleTimer.current);
+      for (const timer of timers.values()) clearTimeout(timer);
     };
   }, []);
 
@@ -450,34 +441,42 @@ export function DateTimePicker({
   const carriesTime = timeTouched || DATETIME_LOCAL.test(value);
 
   function finishConfirm() {
+    // A momentum-end event can confirm before React renders the final time.
+    const finalHour = wheelValue('hour');
+    const finalMinute = wheelValue('minute');
+    const touched = timeTouched || finalHour !== hour || finalMinute !== minute;
+    const includeTime = touched || DATETIME_LOCAL.test(value);
     if (mode === 'datetime') {
       const date = `${selectedYear}-${pad(selectedMonth)}-${pad(selectedDay)}`;
       // Issue #105: only a time the user actually TOUCHED feeds the
       // usage-ranked presets — confirming a day on a stored deadline must
       // not upvote the clock time it happened to carry.
-      if (timeTouched) recordTimeUse(hour, minute);
-      onConfirm(carriesTime ? `${date}T${pad(hour)}:${pad(minute)}` : date);
+      if (touched) recordTimeUse(finalHour, finalMinute);
+      onConfirm(includeTime ? `${date}T${pad(finalHour)}:${pad(finalMinute)}` : date);
     } else if (mode === 'date') {
       onConfirm(`${selectedYear}-${pad(selectedMonth)}-${pad(selectedDay)}`);
     } else {
-      recordTimeUse(hour, minute);
-      onConfirm(`${pad(hour)}:${pad(minute)}`);
+      recordTimeUse(finalHour, finalMinute);
+      onConfirm(`${pad(finalHour)}:${pad(finalMinute)}`);
     }
     onClose();
   }
 
-  // Read the newest finishConfirm from the wheel settle handlers above.
-  const finishRef = useRef<() => void>(() => undefined);
-  finishRef.current = finishConfirm;
+  const finishRef = useRef<(action: CloseAction) => void>(() => undefined);
+  finishRef.current = (action) => {
+    if (action === 'confirm') finishConfirm();
+    else onClose();
+  };
 
-  function confirm() {
-    // #109: never unmount the dialog while a wheel is still flinging.
-    if (!wheelsSettledRef.current) {
-      pendingConfirmRef.current = true;
+  function requestClose(action: CloseAction) {
+    if (activeWheels.current.size > 0) {
+      pendingClose.current = action;
       return;
     }
-    finishConfirm();
+    finishRef.current(action);
   }
+
+  const cancel = () => requestClose('cancel');
 
   const calendarCells = buildCalendarCells(viewYear, viewMonth);
 
@@ -505,7 +504,7 @@ export function DateTimePicker({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel="关闭"
-      onPress={onClose}
+      onPress={cancel}
       className="h-8 w-8 items-center justify-center rounded-full bg-surface-container/70 active:bg-surface-container dark:bg-surface-container-dark/70"
     >
       <Ionicons name="close" size={16} color={isDark ? colors.mutedDark : colors.muted} />
@@ -805,10 +804,10 @@ export function DateTimePicker({
             snapToInterval={ITEM_HEIGHT}
             decelerationRate="fast"
             contentContainerStyle={{ paddingTop: WHEEL_PADDING, paddingBottom: WHEEL_PADDING }}
-            onScrollBeginDrag={beginWheelDrag}
+            onScrollBeginDrag={() => beginWheelDrag('hour')}
             onScrollEndDrag={() => endWheelDrag('hour')}
-            onMomentumScrollBegin={clearSettleTimer}
-            onMomentumScrollEnd={() => endWheelMomentum('hour')}
+            onMomentumScrollBegin={() => beginWheelDrag('hour')}
+            onMomentumScrollEnd={() => settleWheel('hour')}
             onScroll={(e) => {
               // On Android: record only — a setState here re-renders the
               // ScrollView mid-gesture, which aborts the process (#109).
@@ -862,10 +861,10 @@ export function DateTimePicker({
             snapToInterval={ITEM_HEIGHT}
             decelerationRate="fast"
             contentContainerStyle={{ paddingTop: WHEEL_PADDING, paddingBottom: WHEEL_PADDING }}
-            onScrollBeginDrag={beginWheelDrag}
+            onScrollBeginDrag={() => beginWheelDrag('minute')}
             onScrollEndDrag={() => endWheelDrag('minute')}
-            onMomentumScrollBegin={clearSettleTimer}
-            onMomentumScrollEnd={() => endWheelMomentum('minute')}
+            onMomentumScrollBegin={() => beginWheelDrag('minute')}
+            onMomentumScrollEnd={() => settleWheel('minute')}
             onScroll={(e) => {
               minuteOffsetRef.current = e.nativeEvent.contentOffset.y;
               if (commitLive) commitWheel('minute');
@@ -958,7 +957,7 @@ export function DateTimePicker({
   ) : null;
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible transparent animationType="fade" onRequestClose={cancel}>
       <View
         className={cn(
           'flex-1 items-center justify-center bg-black/60',
@@ -970,7 +969,7 @@ export function DateTimePicker({
           accessibilityRole="button"
           accessibilityLabel="关闭选择器"
           className="absolute inset-0"
-          onPress={onClose}
+          onPress={cancel}
         />
 
         {/* Modal Window Container: the dialog is the ONLY card (issue #110) */}
@@ -1080,10 +1079,10 @@ export function DateTimePicker({
           {/* Fixed Footer Buttons: always docked at the bottom */}
           <View className="mt-3 flex-shrink-0 flex-row gap-2.5 border-t border-border/40 pt-2.5 dark:border-border-dark/40">
             <View className="flex-1">
-              <Button label="取消" variant="secondary" onPress={onClose} />
+              <Button label="取消" variant="secondary" onPress={cancel} />
             </View>
             <View className="flex-1">
-              <Button label="确定" onPress={confirm} />
+              <Button label="确定" onPress={() => requestClose('confirm')} />
             </View>
           </View>
         </View>

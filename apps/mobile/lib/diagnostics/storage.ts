@@ -6,15 +6,16 @@
  * `packages/core/src/lib/logger.ts`). Storage follows the same platform
  * matrix as the app's other device preferences:
  *
- *   native (iOS/Android) → `expo-file-system/legacy`, a 0600 file under the
+ *   native (iOS/Android) → `expo-file-system/legacy`, a file under the
  *                          app's document directory
  *   web / Tauri          → `localStorage`
- *   Node / jest          → in-memory (the module still works without RN)
+ *   browser without storage → in-memory
  *
  * Both backends are bounded like Tungsten Edge's IssueLog: 14 days and
  * 256 KB. Old lines are dropped before a write, so the store can never grow
  * without limit.
  */
+import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 
 export const DIAGNOSTIC_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
@@ -22,75 +23,15 @@ export const DIAGNOSTIC_MAX_BYTES = 256 * 1024;
 export const DIAGNOSTIC_FILE_NAME = 'diagnostics.log.jsonl';
 export const DIAGNOSTIC_WEB_KEY = 'nextdo.diagnostics.log';
 
-interface FileSystemLegacy {
-  documentDirectory: string | null;
-  makeDirectoryAsync(path: string, options?: { intermediates?: boolean }): Promise<void>;
-  readAsStringAsync(path: string): Promise<string>;
-  writeAsStringAsync(path: string, contents: string): Promise<void>;
-  deleteAsync(path: string, options?: { idempotent?: boolean }): Promise<void>;
-}
-
-let fileSystem: FileSystemLegacy | null | undefined;
+const directory = Platform.OS !== 'web' && FileSystem.documentDirectory !== null
+  ? `${FileSystem.documentDirectory}diagnostics`
+  : null;
+const file = directory === null ? null : `${directory}/${DIAGNOSTIC_FILE_NAME}`;
 let memoryText = '';
 let writeChain: Promise<void> = Promise.resolve();
 
-function getFileSystem(): FileSystemLegacy | null {
-  if (fileSystem !== undefined) return fileSystem;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    fileSystem = require('expo-file-system/legacy') as FileSystemLegacy;
-  } catch {
-    fileSystem = null;
-  }
-  return fileSystem;
-}
-
-function useWebStorage(): boolean {
-  return Platform.OS === 'web' && typeof globalThis.localStorage !== 'undefined';
-}
-
-function webStorage(): Storage | null {
-  return useWebStorage() ? globalThis.localStorage : null;
-}
-
-function webGet(): string {
-  const storage = webStorage();
-  if (storage === null) return memoryText;
-  try {
-    return storage.getItem(DIAGNOSTIC_WEB_KEY) ?? '';
-  } catch {
-    return memoryText;
-  }
-}
-
-function webSet(value: string): void {
-  const storage = webStorage();
-  if (storage === null) {
-    memoryText = value;
-    return;
-  }
-  try {
-    if (value === '') storage.removeItem(DIAGNOSTIC_WEB_KEY);
-    else storage.setItem(DIAGNOSTIC_WEB_KEY, value);
-  } catch {
-    // Quota / private mode — keep the session usable through memory.
-    memoryText = value;
-  }
-}
-
-function nativeDirectory(): string | null {
-  const fs = getFileSystem();
-  if (fs === null || fs.documentDirectory === null) return null;
-  return `${fs.documentDirectory}diagnostics`;
-}
-
-function nativeFile(): string | null {
-  const directory = nativeDirectory();
-  return directory === null ? null : `${directory}/${DIAGNOSTIC_FILE_NAME}`;
-}
-
 /** UTF-8 byte length without relying on TextEncoder (absent on some Hermes builds). */
-function utf8Bytes(value: string): number {
+export function utf8Bytes(value: string): number {
   let bytes = 0;
   for (const char of value) {
     const code = char.codePointAt(0) ?? 0;
@@ -141,34 +82,34 @@ export function trimDiagnosticLines(lines: readonly string[], now: Date): string
 }
 
 async function readText(): Promise<string> {
-  const fs = getFileSystem();
-  const file = nativeFile();
-  if (fs !== null && file !== null && !useWebStorage()) {
+  if (file !== null) {
     try {
-      return await fs.readAsStringAsync(file);
+      return await FileSystem.readAsStringAsync(file);
     } catch {
       return '';
     }
   }
-  return webGet();
+  try {
+    const storage = globalThis.localStorage;
+    return storage === undefined ? memoryText : storage.getItem(DIAGNOSTIC_WEB_KEY) ?? '';
+  } catch {
+    return memoryText;
+  }
 }
 
 async function writeText(value: string): Promise<void> {
-  const fs = getFileSystem();
-  const file = nativeFile();
-  if (fs !== null && file !== null && !useWebStorage()) {
-    const directory = nativeDirectory();
-    if (directory !== null) {
-      try {
-        await fs.makeDirectoryAsync(directory, { intermediates: true });
-      } catch {
-        // already exists
-      }
-    }
-    await fs.writeAsStringAsync(file, value);
+  if (file !== null && directory !== null) {
+    await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
+    await FileSystem.writeAsStringAsync(file, value);
     return;
   }
-  webSet(value);
+  memoryText = value;
+  try {
+    if (value === '') globalThis.localStorage?.removeItem(DIAGNOSTIC_WEB_KEY);
+    else globalThis.localStorage?.setItem(DIAGNOSTIC_WEB_KEY, value);
+  } catch {
+    // Keep the current session's log when browser storage is unavailable.
+  }
 }
 
 /** All persisted lines, oldest first. Unreadable stores yield an empty list. */

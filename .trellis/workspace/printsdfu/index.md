@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 96
-- **Last Active**: 2026-11-22
+- **Total Sessions**: 97
+- **Last Active**: 2026-11-27
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~752 | Active |
+| `journal-2.md` | ~769 | Active |
 | `journal-1.md` | ~1990 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 97 | 2026-11-27 | 修复 Android 时间选择器闪退（#109） | `97ef7f9` | `main` |
 | 96 | 2026-11-22 | 修正 README 中 Web/PWA 提醒承诺（#93） | - | `docs/web-push-93` |
 | 95 | 2026-11-22 | 刷新过时文档 sync.md 与 backlog（#104） | - | `docs-refresh-104` |
 | 94 | 2026-11-22 | 回顾详情支持跳转项目/等待/Someday（#67） | - | `feat/review-links-67` |

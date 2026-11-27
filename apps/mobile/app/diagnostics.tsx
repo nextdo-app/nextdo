@@ -96,11 +96,9 @@ export default function DiagnosticsScreen() {
     [isDark],
   );
   const [entries, setEntries] = useState<LogEntry[] | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [copyFailed, setCopyFailed] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
   const [linkFailed, setLinkFailed] = useState(false);
-  const [clearArmed, setClearArmed] = useState(false);
-  const [cleared, setCleared] = useState(false);
+  const [clearStatus, setClearStatus] = useState<'idle' | 'armed' | 'cleared'>('idle');
 
   useEffect(() => {
     installDiagnosticLog();
@@ -114,43 +112,40 @@ export default function DiagnosticsScreen() {
   }, []);
 
   useEffect(() => {
-    if (!copied) return;
-    const timer = setTimeout(() => setCopied(false), 2500);
+    if (copyStatus !== 'copied') return;
+    const timer = setTimeout(() => setCopyStatus('idle'), 2500);
     return () => clearTimeout(timer);
-  }, [copied]);
+  }, [copyStatus]);
 
   // The destructive action needs two taps; the arm state expires so a
   // stray first tap never leaves 「再次点击确认」 armed indefinitely.
   useEffect(() => {
-    if (!clearArmed) return;
-    const timer = setTimeout(() => setClearArmed(false), 4000);
+    if (clearStatus !== 'armed') return;
+    const timer = setTimeout(() => setClearStatus('idle'), 4000);
     return () => clearTimeout(timer);
-  }, [clearArmed]);
+  }, [clearStatus]);
 
   async function copyReport(): Promise<void> {
     const report = buildDiagnosticReport(entries ?? [], environment, new Date());
     try {
-      await Clipboard.setStringAsync(report);
-      setCopyFailed(false);
-      setCleared(false);
-      setCopied(true);
+      const copied = await Clipboard.setStringAsync(report);
+      if (copied) setClearStatus('idle');
+      setCopyStatus(copied ? 'copied' : 'failed');
     } catch {
       // A denied clipboard (non-secure context, permission prompt dismissed)
       // must say so instead of looking like a successful copy.
-      setCopied(false);
-      setCopyFailed(true);
+      setCopyStatus('failed');
     }
   }
 
   async function clearLogs(): Promise<void> {
-    if (!clearArmed) {
-      setClearArmed(true);
+    if (clearStatus !== 'armed') {
+      setClearStatus('armed');
       return;
     }
     await clearAllDiagnosticLogs();
     setEntries([]);
-    setClearArmed(false);
-    setCleared(true);
+    setClearStatus('cleared');
   }
 
   const recent = (entries ?? []).slice(-20).reverse();
@@ -192,7 +187,7 @@ export default function DiagnosticsScreen() {
 
         <View className="mt-3 gap-2">
           <Button
-            label={copied ? '已复制到剪贴板' : copyFailed ? '复制失败，请重试' : '复制诊断报告'}
+            label={copyStatus === 'copied' ? '已复制到剪贴板' : copyStatus === 'failed' ? '复制失败，请重试' : '复制诊断报告'}
             onPress={() => {
               void copyReport();
             }}
@@ -207,9 +202,9 @@ export default function DiagnosticsScreen() {
           />
           <Button
             label={
-              clearArmed
+              clearStatus === 'armed'
                 ? '再次点击确认清空'
-                : cleared
+                : clearStatus === 'cleared'
                   ? '已清空本机日志'
                   : '清空本机日志'
             }
