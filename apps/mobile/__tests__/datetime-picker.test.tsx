@@ -124,6 +124,8 @@ describe('DateTimePicker', () => {
     fireEvent.scroll(screen.getByTestId('hour-wheel'), {
       nativeEvent: { contentOffset: { y: 9 * 40 } },
     });
+    // The wheel commits on gesture end, not mid-scroll (#109).
+    fireEvent(screen.getByTestId('hour-wheel'), 'scrollEndDrag');
     await pressConfirm();
     expect(onConfirm).toHaveBeenCalledWith('2026-09-25T09:30');
   });
